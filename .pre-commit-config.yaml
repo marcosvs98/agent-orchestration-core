@@ -1,0 +1,170 @@
+repos:
+  - repo: 'https://github.com/pre-commit/pre-commit-hooks'
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: '[A01] Removendo espaços em branco no final das linhas'
+        stages:
+          - pre-commit
+      - id: debug-statements
+        name: '[A02] Removendo statements de debug (pdb, rdb)'
+        stages:
+          - pre-commit
+      - id: end-of-file-fixer
+        name: '[A03] Garantindo uma linha em branco no final dos arquivos'
+        stages:
+          - pre-commit
+      - id: check-executables-have-shebangs
+        name: '[A04] Garantindo que executáveis não binários tenham shebang'
+        stages:
+          - pre-commit
+      - id: check-builtin-literals
+        name: >-
+          [A05] Requerendo sintaxe literal ao inicializar tipos nativos do
+          Python
+        stages:
+          - pre-commit
+      - id: check-vcs-permalinks
+        name: '[A06] Garantindo que links para repositórios (VCS) sejam permalinks'
+        stages:
+          - pre-commit
+      - id: destroyed-symlinks
+        name: '[A07] Detectando symlinks alterados para arquivos regulares'
+        stages:
+          - pre-commit
+      - id: detect-private-key
+        name: '[A08] Detectando a presença de chaves privadas'
+        stages:
+          - pre-commit
+      - id: fix-byte-order-marker
+        name: '[A09] Removendo marca de ordem de byte UTF-8'
+        stages:
+          - pre-commit
+      - id: forbid-new-submodules
+        name: '[A10] Prevenindo a adição de novos submódulos git'
+        stages:
+          - pre-commit
+      - id: forbid-submodules
+        name: '[A11] Proibindo qualquer submódulo no repositório'
+        stages:
+          - pre-commit
+      - id: no-commit-to-branch
+        name: '[A12] Impedindo commits em branches principais'
+        stages:
+          - pre-commit
+          - pre-push
+        args:
+          - '--branch'
+          - main
+          - '--branch'
+          - master
+      - id: sort-simple-yaml
+        name: '[A13] Ordenando arquivos YAML simples com preservação de comentários'
+        stages:
+          - pre-commit
+      - id: pretty-format-json
+        name: '[A14] Formatando arquivos JSON com padrão definido'
+        stages:
+          - pre-commit
+        args:
+          - '--indent=4'
+          - '--no-ensure-ascii'
+          - '--autofix'
+      - id: check-json
+        name: '[A15] Verificando se os arquivos JSON possuem sintaxe válida'
+        stages:
+          - pre-commit
+      - id: check-toml
+        name: '[A16] Verificando se os arquivos TOML possuem sintaxe válida'
+        stages:
+          - pre-commit
+      - id: check-added-large-files
+        name: '[A17] Verificando se arquivos grandes foram adicionados'
+        stages:
+          - pre-commit
+      - id: check-xml
+        name: '[A18] Verificando se os arquivos XML possuem sintaxe válida'
+        stages:
+          - pre-commit
+      - id: check-yaml
+        name: '[A19] Verificando se os arquivos YAML possuem sintaxe válida'
+        stages:
+          - pre-commit
+        args:
+          - '--unsafe'
+      - id: check-case-conflict
+        name: >-
+          [A20] Verificando se existem arquivos que gerariam conflitos de
+          maiúsculas/minúsculas
+        stages:
+          - pre-commit
+      - id: check-merge-conflict
+        name: '[A21] Verificando se existem conflitos de merge nos arquivos'
+        stages:
+          - pre-commit
+      - id: check-symlinks
+        name: '[A22] Verificando symlinks que não apontam para nada'
+        stages:
+          - pre-commit
+      - id: check-ast
+        name: '[A23] Verificando se os arquivos Python são válidos'
+        stages:
+          - pre-commit
+      - id: name-tests-test
+        name: '[A25] Verificando se os arquivos de teste possuem nome correto'
+        stages:
+          - pre-commit
+        args:
+          - '--pytest-test-first'
+        exclude: (mocks/|/tests/mocks/).*
+  - repo: local
+    hooks:
+      - id: mypy
+        name: '[B01] Verificando tipos estáticos no código Python'
+        entry: mypy
+        language: system
+        types:
+          - python
+        args:
+          - '--namespace-packages'
+          - '--explicit-package-bases'
+          - '--disallow-untyped-defs'
+          - '--warn-unused-ignores'
+          - '--cache-dir=.mypy_cache'
+        exclude: ^(src/tests/|src/.*/migrations/)
+  - repo: 'https://github.com/astral-sh/ruff-pre-commit'
+    rev: v0.14.10
+    hooks:
+      - id: ruff-format
+        name: '[B02] Fazendo formatação automática de código (ruff format)'
+        stages:
+          - pre-commit
+        exclude: ^src/tests/
+      - id: ruff
+        name: '[B03] Análisando de qualidade código (ruff check)'
+        stages:
+          - pre-commit
+        args:
+          - '--fix'
+          - '--unsafe-fixes'
+        exclude: ^src/tests/
+  - repo: local
+    hooks:
+      - id: pylint
+        name: '[B04] Analisando qualidade e boas práticas no código Python'
+        entry: pylint
+        language: system
+        types:
+          - python
+        args:
+          - '--rcfile=.pylintrc'
+          - '--output-format=colorized'
+        exclude: ^(src/tests/|resources/scripts/|src/infra/database/migrations/)
+
+default_install_hook_types:
+  - commit-msg
+  - post-commit
+  - pre-commit
+  - pre-push
+  - prepare-commit-msg
+exclude: ^resources/

@@ -1,0 +1,1 @@
+# Schemas for tenants domain

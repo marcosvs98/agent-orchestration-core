@@ -1,0 +1,68 @@
+import sys
+from fastapi import FastAPI
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager  
+
+from settings import APPLICATION_NAME, APPLICATION_VERSION, CACHE_SILENT_MODE
+from adapters.observability.logging import get_logger, configure_logger
+from rest import init_middlewares, init_routes
+from containers import ApplicationContainer
+
+configure_logger(is_async=False)
+
+logger = get_logger()
+
+logger.debug(
+    "Python version",
+    major=sys.version_info.major,
+    minor=sys.version_info.minor,
+    micro=sys.version_info.micro,
+)
+
+
+def create_app() -> FastAPI:
+    container = ApplicationContainer()
+    container.config.from_dict(
+        {
+            "application_name": APPLICATION_NAME,
+        }
+    )
+    container.init_resources()
+    container.wire(modules=[__name__])
+
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        logger.info("Service started")
+        yield
+        logger.info("Agent Router shutdown")
+        container.shutdown_resources()
+        logger.debug("Service resources cleaned")
+
+    app = FastAPI(
+        title=APPLICATION_NAME,
+        description="...",
+        version=APPLICATION_VERSION,
+        lifespan=lifespan,
+    )
+
+    app.state.container = container
+    init_middlewares(app)
+
+    init_routes(
+        app,
+[
+            container.tenants.tenants_controller(),
+            container.flows.flows_controller(),
+            container.agents.agents_controller(),
+            container.tools.tools_controller(),
+            container.ai_policy.ai_controller(),
+            container.rag.rag_controller(),
+            container.execution.execution_controller(),
+            container.execution.execution_plane_controller(),
+            container.onboarding.onboarding_controller(),
+        ]
+    )
+    return app
+
+# app = create_app()
