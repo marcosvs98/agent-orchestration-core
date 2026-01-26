@@ -15,11 +15,19 @@ class ActiveBillingPolicyVersion(ORMBaseModel):
     )
     billing_policy_version_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey("billing_policy_version.billing_policy_version_id", ondelete="RESTRICT"),
+        ForeignKey(
+            "billing_policy_version.billing_policy_version_id", ondelete="RESTRICT"
+        ),
         nullable=False,
     )
-    activated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    activated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     activated_by_principal_id = Column(String(length=128), nullable=False)
     justification = Column(String(length=512), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

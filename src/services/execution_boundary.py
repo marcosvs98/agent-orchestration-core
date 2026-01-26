@@ -4,14 +4,18 @@ from domain.governance.schemas.scopes import Scope
 from domain.governance.services.access_policy_service import AccessPolicyService
 from domain.governance.services.rate_limit_service import RateLimitService
 from domain.execution.schemas.execution import (
+    AgentRun,
     FlowRun,
     FlowRunCreate,
+    GraphState,
+    NodeRun,
     ToolRun,
     ToolRunCreate,
     ExecutionEvent,
 )
 from domain.execution.services.execution_service import ExecutionService
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
+from exceptions.service_exceptions import NotFoundServiceException
 from utils.auth import AuthContext
 
 
@@ -34,7 +38,7 @@ class ExecutionBoundary:
         auth: AuthContext,
         endpoint: str,
         idempotency_key: str,
-        payload: FlowRunCreate,
+        flow_run: FlowRunCreate,
         channel: str,
         headers: dict[str, str],
         external_message_id: str | None,
@@ -45,7 +49,7 @@ class ExecutionBoundary:
             tenant_id=auth.tenant_id,
             principal_type=auth.principal_type,
             principal_id=auth.principal_id,
-            action=str(Scope.ExecutionFlowRunCreate),
+            action=Scope.ExecutionFlowRunCreate,
         )
         await self.access_policy_service.authorize(
             tenant_id=auth.tenant_id,
@@ -58,7 +62,7 @@ class ExecutionBoundary:
             tenant_id=auth.tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=payload,
+            flow_run=flow_run,
             channel=channel,
             headers=headers,
             external_message_id=external_message_id,
@@ -88,7 +92,7 @@ class ExecutionBoundary:
         auth: AuthContext,
         endpoint: str,
         idempotency_key: str,
-        payload: ToolRunCreate,
+        tool_run: ToolRunCreate,
     ) -> ToolRun:
         await self.rate_limit_service.enforce(
             tenant_id=auth.tenant_id,
@@ -107,7 +111,7 @@ class ExecutionBoundary:
             tenant_id=auth.tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=payload,
+            tool_run=tool_run,
         )
 
     async def list_execution_events(
@@ -133,4 +137,101 @@ class ExecutionBoundary:
         )
         return await self.execution_service.list_execution_events(
             flow_run_id=flow_run_id, correlation_id=correlation_id, limit=limit
+        )
+
+    async def get_flow_run(self, *, auth: AuthContext, flow_run_id: str) -> FlowRun:
+        await self.rate_limit_service.enforce(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            action=str(Scope.ExecutionFlowRunGet),
+        )
+        await self.access_policy_service.authorize(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            scopes=auth.scopes,
+            action=str(Scope.ExecutionFlowRunGet),
+        )
+        flow_run = await self.execution_service.get_flow_run(flow_run_id)
+        (
+            session_id,
+            tenant_id,
+        ) = await self.execution_service.repository.get_flow_context(UUID(flow_run_id))
+        if tenant_id != auth.tenant_id:
+            raise NotFoundServiceException(message="flow_run_not_found")
+        return flow_run
+
+    async def get_graph_state(
+        self, *, auth: AuthContext, flow_run_id: str
+    ) -> GraphState:
+        await self.rate_limit_service.enforce(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            action=str(Scope.ExecutionGraphStateGet),
+        )
+        await self.access_policy_service.authorize(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            scopes=auth.scopes,
+            action=str(Scope.ExecutionGraphStateGet),
+        )
+        (
+            session_id,
+            tenant_id,
+        ) = await self.execution_service.repository.get_flow_context(UUID(flow_run_id))
+        if tenant_id != auth.tenant_id:
+            raise NotFoundServiceException(message="flow_run_not_found")
+        return await self.execution_service.get_graph_state(flow_run_id)
+
+    async def list_node_runs(
+        self,
+        *,
+        auth: AuthContext,
+        flow_run_id: str | None = None,
+        limit: int = 200,
+    ) -> list[NodeRun]:
+        await self.rate_limit_service.enforce(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            action=str(Scope.ExecutionNodeRunsList),
+        )
+        await self.access_policy_service.authorize(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            scopes=auth.scopes,
+            action=str(Scope.ExecutionNodeRunsList),
+        )
+        flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
+        return await self.execution_service.list_node_runs(
+            tenant_id=auth.tenant_id, flow_run_id=flow_run_uuid, limit=limit
+        )
+
+    async def list_agent_runs(
+        self,
+        *,
+        auth: AuthContext,
+        flow_run_id: str | None = None,
+        limit: int = 200,
+    ) -> list[AgentRun]:
+        await self.rate_limit_service.enforce(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            action=str(Scope.ExecutionAgentRunsList),
+        )
+        await self.access_policy_service.authorize(
+            tenant_id=auth.tenant_id,
+            principal_type=auth.principal_type,
+            principal_id=auth.principal_id,
+            scopes=auth.scopes,
+            action=str(Scope.ExecutionAgentRunsList),
+        )
+        flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
+        return await self.execution_service.list_agent_runs(
+            tenant_id=auth.tenant_id, flow_run_id=flow_run_uuid, limit=limit
         )

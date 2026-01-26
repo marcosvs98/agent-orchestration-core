@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from enum import StrEnum
+from typing import Any, Dict, List
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
+
+
+class EdgeKind(StrEnum):
+    NORMAL = "NORMAL"
+    LOOP = "LOOP"
 
 
 class FlowGraphNodeSpec(BaseModel):
@@ -15,7 +21,7 @@ class FlowGraphEdge(BaseModel):
     from_node: str
     to_node: str
     condition: str
-    edge_kind: Literal["NORMAL", "LOOP"] = "NORMAL"
+    edge_kind: EdgeKind = EdgeKind.NORMAL
 
     @field_validator("condition")
     @classmethod

@@ -20,5 +20,7 @@ class AuthoringEvent(ORMBaseModel):
     change_type = Column(String(length=64), nullable=False)
     principal_id = Column(String(length=128), nullable=False)
     justification = Column(String(length=512), nullable=False)
-    occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    occurred_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     schema_version = Column(Integer, nullable=False, server_default="1")

@@ -1,5 +1,13 @@
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
 
@@ -15,7 +23,10 @@ class AgentVersion(ORMBaseModel):
     )
     ai_execution_policy_version_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey("ai_execution_policy_version.ai_execution_policy_version_id", ondelete="RESTRICT"),
+        ForeignKey(
+            "ai_execution_policy_version.ai_execution_policy_version_id",
+            ondelete="RESTRICT",
+        ),
         nullable=True,
     )
     rag_config_id = Column(
@@ -28,9 +39,16 @@ class AgentVersion(ORMBaseModel):
     version_minor = Column(Integer, nullable=False, server_default="0")
     version_patch = Column(Integer, nullable=False, server_default="0")
     config_hash = Column(String(length=128), nullable=True)
+    description = Column(Text(), nullable=True)
 
     supported_tool_schema_version = Column(Integer, nullable=True)
     supported_tool_config_hash_prefix = Column(String(length=128), nullable=True)
+    persona_config = Column(JSONB, nullable=True)
+    system_prompt_template_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("system_prompt_template.template_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
     __table_args__ = (
         UniqueConstraint(

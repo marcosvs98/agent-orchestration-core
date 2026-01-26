@@ -1,19 +1,33 @@
-from domain.flows.ports.service import FlowsServicePort
-from exceptions.service_exceptions import NotImplementedServiceException
-
 from uuid import UUID
+
+from domain.flows.ports.service import FlowsServicePort
 
 from domain.common.schemas.change import ChangeRequest
 from domain.common.schemas.versioning import VersionStatus
-from domain.flows.ports.service import FlowsServicePort
+
 from domain.flows.repositories.flows_repository import FlowsRepository
 from domain.governance.repositories.execution_limit_policy_repository import (
     ExecutionLimitPolicyRepository,
 )
-from domain.governance.repositories.authoring_event_repository import AuthoringEventRepository
+from domain.governance.repositories.authoring_event_repository import (
+    AuthoringEventRepository,
+)
+from domain.flows.schemas.flows import (
+    ConditionExpression,
+    ConditionExpressionCreate,
+    Flow,
+    FlowCreate,
+    FlowVersion,
+    FlowVersionCreate,
+    Node,
+    NodeCreate,
+    Router,
+    RouterCreate,
+    RoutingRule,
+    RoutingRuleCreate,
+)
 from domain.flows.schemas.graph import (
     FlowGraphCompileRequest,
-    FlowGraphCreate,
     FlowGraphDefinition,
     FlowGraphDraftCreate,
 )
@@ -160,10 +174,13 @@ class FlowsService(FlowsServicePort):
         if draft is None:
             raise NotFoundServiceException(message="flow_graph_draft_not_found")
         if draft.status != "VALIDATED":
-            raise ResourceBlockedServiceException(message="flow_graph_draft_not_validated")
+            raise ResourceBlockedServiceException(
+                message="flow_graph_draft_not_validated"
+            )
         definition = FlowGraphDefinition.model_validate(draft.definition)
         FlowGraphDraftValidator.validate(definition)
         snapshot_payload, graph_hash = self.compiler.compile(definition)
+
         snapshot = await self.repository.create_flow_graph_snapshot(
             flow_version_id=payload.flow_version_id,
             snapshot=snapshot_payload,
@@ -183,7 +200,9 @@ class FlowsService(FlowsServicePort):
         )
         return snapshot
 
-    async def validate_flow_version(self, *, tenant_id: UUID, flow_id: str, flow_version_id: str):
+    async def validate_flow_version(
+        self, *, tenant_id: UUID, flow_id: str, flow_version_id: str
+    ):
         flow_uuid = UUID(flow_id)
         version_uuid = UUID(flow_version_id)
         flow = await self.repository.get_flow(flow_uuid)
@@ -195,45 +214,26 @@ class FlowsService(FlowsServicePort):
         if version.status != VersionStatus.DRAFT:
             raise ResourceBlockedServiceException(message="flow_version_not_draft")
 
-        nodes = await self.repository.list_nodes_for_flow_version(version_uuid)
-        if not nodes:
-            raise DomainValidationException(message="flow_version_has_no_nodes")
+        draft = await self.repository.get_flow_graph_draft(version_uuid)
+        if draft is None:
+            raise DomainValidationException(message="flow_graph_draft_not_found")
+        if draft.status != "VALIDATED":
+            raise DomainValidationException(message="flow_graph_draft_not_validated")
 
-        node_ids = {n.node_id for n in nodes}
-        rules = await self.repository.list_routing_rules_for_flow_version(version_uuid)
-        for rule in rules:
-            if rule.from_node_id not in node_ids or rule.to_node_id not in node_ids:
-                raise DomainValidationException(message="routing_rule_cross_version")
-
-        adjacency: dict[UUID, set[UUID]] = {nid: set() for nid in node_ids}
-        for rule in rules:
-            adjacency[rule.from_node_id].add(rule.to_node_id)
-
-        visited: set[UUID] = set()
-        stack: set[UUID] = set()
-
-        def dfs(nid: UUID) -> None:
-            visited.add(nid)
-            stack.add(nid)
-            for nxt in adjacency.get(nid, set()):
-                if nxt not in visited:
-                    dfs(nxt)
-                elif nxt in stack:
-                    raise DomainValidationException(message="cycle_detected")
-            stack.remove(nid)
-
-        for nid in node_ids:
-            if nid not in visited:
-                dfs(nid)
-
-        policy = await self.limit_policy_repository.get_default_policy_for_tenant(tenant_id)
+        policy = await self.limit_policy_repository.get_default_policy_for_tenant(
+            tenant_id
+        )
         if policy is None:
-            raise ResourceBlockedServiceException(message="execution_limit_policy_not_configured")
+            raise ResourceBlockedServiceException(
+                message="execution_limit_policy_not_configured"
+            )
         published = await self.limit_policy_repository.get_published_policy_version(
             policy.execution_limit_policy_id
         )
         if published is None:
-            raise ResourceBlockedServiceException(message="execution_limit_policy_not_published")
+            raise ResourceBlockedServiceException(
+                message="execution_limit_policy_not_published"
+            )
 
         await self.repository.set_flow_version_status(
             flow_version_id=version_uuid, status=VersionStatus.VALIDATED
@@ -304,7 +304,9 @@ class FlowsService(FlowsServicePort):
             raise ResourceBlockedServiceException(message="flow_version_not_published")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
-        snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(version_uuid)
+        snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(
+            version_uuid
+        )
         if snapshot is None:
             raise ResourceBlockedServiceException(message="flow_graph_snapshot_missing")
         await self.repository.upsert_active_flow_version(
@@ -348,7 +350,9 @@ class FlowsService(FlowsServicePort):
             raise ResourceBlockedServiceException(message="flow_version_not_published")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
-        snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(version_uuid)
+        snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(
+            version_uuid
+        )
         if snapshot is None:
             raise ResourceBlockedServiceException(message="flow_graph_snapshot_missing")
         await self.repository.upsert_active_flow_version(
@@ -370,35 +374,284 @@ class FlowsService(FlowsServicePort):
             schema_version=1,
         )
         return version
-    async def list_flows(self):
-        raise NotImplementedServiceException()
 
-    async def create_flow(self, flow_create):
-        raise NotImplementedServiceException()
+    async def list_flows(self, *, tenant_id: UUID, limit: int = 200) -> list[Flow]:
+        flows = await self.repository.list_flows(tenant_id=tenant_id, limit=limit)
+        return [
+            Flow(
+                id=flow.flow_id,
+                name=flow.name,
+                description=flow.description,
+                tags=flow.tags,
+                created_by=flow.created_by,
+            )
+            for flow in flows
+        ]
 
-    async def get_flow(self, flow_id: str):
-        raise NotImplementedServiceException()
+    async def create_flow(
+        self, *, tenant_id: UUID, flow_create: FlowCreate, principal_id: str
+    ) -> Flow:
+        if not flow_create.name or not flow_create.name.strip():
+            raise DomainValidationException(message="flow_name_required")
 
-    async def list_flow_versions(self, flow_id: str):
-        raise NotImplementedServiceException()
+        model = await self.repository.create_flow(
+            tenant_id=tenant_id,
+            name=flow_create.name.strip(),
+            description=flow_create.description,
+            tags=flow_create.tags,
+            created_by=principal_id,
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="flow",
+            resource_id=model.flow_id,
+            version_id=None,
+            event_type="FLOW_CREATED",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create flow",
+            schema_version=1,
+        )
+        return Flow(id=model.flow_id, name=model.name)
 
-    async def create_flow_version(self, flow_id: str, flow_version_create):
-        raise NotImplementedServiceException()
+    async def get_flow(self, *, tenant_id: UUID, flow_id: str) -> Flow:
+        flow_uuid = UUID(flow_id)
+        model = await self.repository.get_flow(flow_uuid)
+        if model is None or model.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        return Flow(
+            id=model.flow_id,
+            name=model.name,
+            description=model.description,
+            tags=model.tags,
+            created_by=model.created_by,
+        )
 
-    async def list_nodes(self, flow_id: str, flow_version_id: str):
-        raise NotImplementedServiceException()
+    async def list_flow_versions(
+        self, *, tenant_id: UUID, flow_id: str, status_filter: list[str] | None = None
+    ) -> list[FlowVersion]:
+        flow_uuid = UUID(flow_id)
+        flow = await self.repository.get_flow(flow_uuid)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        versions = await self.repository.list_flow_versions(
+            flow_id=flow_uuid, status_filter=status_filter
+        )
+        return [
+            FlowVersion(
+                id=version.flow_version_id,
+                flow_id=version.flow_id,
+                status=version.status,
+                version_major=version.version_major,
+                version_minor=version.version_minor,
+                version_patch=version.version_patch,
+                config_hash=version.config_hash,
+                min_agent_version_major=version.min_agent_version_major,
+                min_agent_version_minor=version.min_agent_version_minor,
+                min_agent_version_patch=version.min_agent_version_patch,
+            )
+            for version in versions
+        ]
 
-    async def create_node(self, node_create):
-        raise NotImplementedServiceException()
+    async def create_flow_version(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_id: str,
+        flow_version_create: FlowVersionCreate,
+        principal_id: str,
+    ) -> FlowVersion:
+        flow_uuid = UUID(flow_id)
+        flow = await self.repository.get_flow(flow_uuid)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        model = await self.repository.create_flow_version(
+            flow_id=flow_uuid,
+            source_version_id=flow_version_create.source_version_id,
+            version_major=flow_version_create.version_major,
+            version_minor=flow_version_create.version_minor,
+            version_patch=flow_version_create.version_patch,
+            min_agent_version_major=flow_version_create.min_agent_version_major,
+            min_agent_version_minor=flow_version_create.min_agent_version_minor,
+            min_agent_version_patch=flow_version_create.min_agent_version_patch,
+            created_by=principal_id,
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="flow",
+            resource_id=flow_uuid,
+            version_id=model.flow_version_id,
+            event_type="FLOW_VERSION_CREATED",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create flow version",
+            schema_version=1,
+        )
+        return FlowVersion(
+            id=model.flow_version_id,
+            flow_id=model.flow_id,
+            status=model.status,
+            version_major=model.version_major,
+            version_minor=model.version_minor,
+            version_patch=model.version_patch,
+            config_hash=model.config_hash,
+            min_agent_version_major=model.min_agent_version_major,
+            min_agent_version_minor=model.min_agent_version_minor,
+            min_agent_version_patch=model.min_agent_version_patch,
+        )
 
-    async def list_routers(self):
-        raise NotImplementedServiceException()
+    async def list_nodes(
+        self, *, tenant_id: UUID, flow_id: str, flow_version_id: str
+    ) -> list[Node]:
+        flow_uuid = UUID(flow_id)
+        version_uuid = UUID(flow_version_id)
+        flow = await self.repository.get_flow(flow_uuid)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        version = await self.repository.get_flow_version(version_uuid)
+        if version is None or version.flow_id != flow_uuid:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        nodes = await self.repository.list_nodes_for_flow_version(version_uuid)
+        return [
+            Node(
+                id=node.node_id,
+                flow_version_id=node.flow_version_id,
+                ai_task_id=node.ai_task_id,
+            )
+            for node in nodes
+        ]
 
-    async def create_router(self, router_create):
-        raise NotImplementedServiceException()
+    async def create_node(
+        self, *, tenant_id: UUID, node_create: NodeCreate, principal_id: str
+    ) -> Node:
+        version = await self.repository.get_flow_version(node_create.flow_version_id)
+        if version is None:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        flow = await self.repository.get_flow(version.flow_id)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        model = await self.repository.create_node(
+            flow_version_id=node_create.flow_version_id,
+            ai_task_id=node_create.ai_task_id,
+            created_by=principal_id,
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="node",
+            resource_id=model.node_id,
+            version_id=node_create.flow_version_id,
+            event_type="NODE_CREATED",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create node",
+            schema_version=1,
+        )
+        return Node(
+            id=model.node_id,
+            flow_version_id=model.flow_version_id,
+            ai_task_id=model.ai_task_id,
+        )
 
-    async def create_routing_rule(self, routing_rule_create):
-        raise NotImplementedServiceException()
+    async def list_routers(self, *, tenant_id: UUID, limit: int = 200) -> list[Router]:
+        routers = await self.repository.list_routers(tenant_id=tenant_id, limit=limit)
+        return [
+            Router(id=router.router_id, node_id=router.node_id) for router in routers
+        ]
 
-    async def create_condition_expression(self, condition_expression_create):
-        raise NotImplementedServiceException()
+    async def create_router(
+        self, *, tenant_id: UUID, router_create: RouterCreate, principal_id: str
+    ) -> Router:
+        node_model = await self.repository.get_node(router_create.node_id)
+        if node_model is None:
+            raise NotFoundServiceException(message="node_not_found")
+        version = await self.repository.get_flow_version(node_model.flow_version_id)
+        if version is None:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        flow = await self.repository.get_flow(version.flow_id)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        model = await self.repository.create_router(
+            node_id=router_create.node_id, created_by=principal_id
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="router",
+            resource_id=model.router_id,
+            version_id=None,
+            event_type="ROUTER_CREATED",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create router",
+            schema_version=1,
+        )
+        return Router(id=model.router_id, node_id=model.node_id)
+
+    async def create_condition_expression(
+        self,
+        *,
+        tenant_id: UUID,
+        condition_expression_create: ConditionExpressionCreate,
+        principal_id: str,
+    ) -> ConditionExpression:
+        model = await self.repository.create_condition_expression(
+            expression=condition_expression_create.expression, created_by=principal_id
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="condition_expression",
+            resource_id=model.condition_expression_id,
+            version_id=None,
+            event_type="CONDITION_EXPRESSION_CREATED",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create condition expression",
+            schema_version=1,
+        )
+        return ConditionExpression(
+            id=model.condition_expression_id, expression=model.expression
+        )
+
+    async def create_routing_rule(
+        self,
+        *,
+        tenant_id: UUID,
+        routing_rule_create: RoutingRuleCreate,
+        principal_id: str,
+    ) -> RoutingRule:
+        router_model = await self.repository.get_router(routing_rule_create.router_id)
+        if router_model is None:
+            raise NotFoundServiceException(message="router_not_found")
+        router_node = await self.repository.get_node(router_model.node_id)
+        if router_node is None:
+            raise NotFoundServiceException(message="router_node_not_found")
+        version = await self.repository.get_flow_version(router_node.flow_version_id)
+        if version is None:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        flow = await self.repository.get_flow(version.flow_id)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        model = await self.repository.create_routing_rule(
+            router_id=routing_rule_create.router_id,
+            condition_expression_id=routing_rule_create.condition_expression_id,
+            from_node_id=routing_rule_create.from_node_id,
+            to_node_id=routing_rule_create.to_node_id,
+            created_by=principal_id,
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="routing_rule",
+            resource_id=model.routing_rule_id,
+            version_id=None,
+            event_type="ROUTING_RULE_CREATED",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create routing rule",
+            schema_version=1,
+        )
+        return RoutingRule(
+            id=model.routing_rule_id,
+            router_id=model.router_id,
+            condition_expression_id=model.condition_expression_id,
+            from_node_id=model.from_node_id,
+            to_node_id=model.to_node_id,
+        )

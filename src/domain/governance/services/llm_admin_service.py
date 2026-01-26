@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from domain.governance.repositories.llm_model_mapping_repository import LLMModelMappingRepository
+from domain.governance.repositories.llm_model_mapping_repository import (
+    LLMModelMappingRepository,
+)
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from domain.governance.repositories.llm_provider_repository import LLMProviderRepository
 

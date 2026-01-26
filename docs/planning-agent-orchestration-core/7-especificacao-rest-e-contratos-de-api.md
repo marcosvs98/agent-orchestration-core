@@ -137,4 +137,3 @@ Auditoria é reproduzível.
 • “migração automática implícita”
 
 ---
-

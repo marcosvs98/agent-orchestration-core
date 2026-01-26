@@ -159,4 +159,3 @@ Nada de log scraping.
 • “endpoint mágico” que faz tudo
 
 ---
-

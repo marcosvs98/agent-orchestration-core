@@ -17,6 +17,12 @@ class ToolImportRequest(BaseModel):
     name: str | None = None
 
 
+class AvailableTool(BaseModel):
+    name: str | None
+    tool_id: UUID
+    tool_config_id: UUID
+
+
 class ToolConfig(BaseModel):
     id: UUID
     tool_id: UUID
@@ -31,6 +37,7 @@ class ToolConfig(BaseModel):
 
 class ToolConfigCreate(BaseModel):
     tool_id: UUID
+    source_config_id: UUID | None = None
     config: dict[str, object] | None = None
     version_major: int | None = None
     version_minor: int | None = None

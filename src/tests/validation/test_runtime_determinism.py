@@ -56,6 +56,7 @@ async def test_replay_produces_same_event_shape(mocker):
         lifecycle=lifecycle,
         limits=mocker.MagicMock(),
     )
+    service.llm_executor = mocker.MagicMock()
 
     payload = FlowRunCreate(
         flow_version_id=flow_version_id,
@@ -105,6 +106,7 @@ async def test_flow_run_blocks_without_active_pointer(mocker):
         lifecycle=lifecycle,
         limits=mocker.MagicMock(),
     )
+    service.llm_executor = mocker.MagicMock()
 
     payload = FlowRunCreate(flow_version_id=flow_version_id, session_id=session_id)
 

@@ -3,7 +3,9 @@ from uuid import UUID
 from sqlalchemy import select
 
 from infra.database import DatabaseConnection
-from infra.database.models.governance.access_policy import AccessPolicy as AccessPolicyModel
+from infra.database.models.governance.access_policy import (
+    AccessPolicy as AccessPolicyModel,
+)
 from infra.database.models.governance.access_policy_version import (
     AccessPolicyVersion as AccessPolicyVersionModel,
 )
@@ -14,10 +16,14 @@ class AccessPolicyRepository:
     def __init__(self, database_connection: DatabaseConnection) -> None:
         self.db = database_connection
 
-    async def get_default_policy_for_tenant(self, tenant_id: UUID) -> AccessPolicyModel | None:
+    async def get_default_policy_for_tenant(
+        self, tenant_id: UUID
+    ) -> AccessPolicyModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(AccessPolicyModel).where(AccessPolicyModel.tenant_id == tenant_id)
+                select(AccessPolicyModel).where(
+                    AccessPolicyModel.tenant_id == tenant_id
+                )
             )
             return result.scalars().first()
 

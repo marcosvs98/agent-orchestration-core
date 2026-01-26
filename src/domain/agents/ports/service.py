@@ -24,17 +24,43 @@ class AgentsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def validate_agent_version(self, *, tenant_id, agent_id: str, agent_version_id: str):
+    async def validate_agent_version(
+        self, *, tenant_id, agent_id: str, agent_version_id: str
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def publish_agent_version(self, *, tenant_id, agent_id: str, agent_version_id: str, principal_id: str, change_request):
+    async def publish_agent_version(
+        self,
+        *,
+        tenant_id,
+        agent_id: str,
+        agent_version_id: str,
+        principal_id: str,
+        change_request,
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def activate_agent_version(self, *, tenant_id, agent_id: str, agent_version_id: str, principal_id: str, change_request):
+    async def activate_agent_version(
+        self,
+        *,
+        tenant_id,
+        agent_id: str,
+        agent_version_id: str,
+        principal_id: str,
+        change_request,
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def rollback_agent_version(self, *, tenant_id, agent_id: str, agent_version_id: str, principal_id: str, change_request):
+    async def rollback_agent_version(
+        self,
+        *,
+        tenant_id,
+        agent_id: str,
+        agent_version_id: str,
+        principal_id: str,
+        change_request,
+    ):
         raise NotImplementedServiceException()

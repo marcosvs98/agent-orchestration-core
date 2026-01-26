@@ -10,7 +10,9 @@ from exceptions.service_exceptions import DomainValidationException
 
 
 class GuardrailEngine:
-    def __init__(self, redis_adapter: RedisAdapter, cost_engine: CostEngine | None = None) -> None:
+    def __init__(
+        self, redis_adapter: RedisAdapter, cost_engine: CostEngine | None = None
+    ) -> None:
         self.redis = redis_adapter
         self.cost_engine = cost_engine
 
@@ -55,14 +57,16 @@ class GuardrailEngine:
 
         max_cost_flow = policy_llm.get("max_cost_usd_per_flow_run")
         max_cost_tenant = policy_llm.get("max_cost_usd_per_tenant_window")
-        tenant_cost_ttl = policy_llm.get("tenant_cost_window_seconds") or 3600
+        policy_llm.get("tenant_cost_window_seconds", 3600)
         max_calls_flow = policy_llm.get("max_llm_calls_per_flow_run")
         max_calls_tenant = policy_llm.get("max_llm_calls_per_tenant_window")
-        tenant_calls_ttl = policy_llm.get("tenant_llm_calls_window_seconds") or 3600
+        tenant_calls_ttl = policy_llm.get("tenant_llm_calls_window_seconds", 3600)
         max_latency_ms_hard = policy_llm.get("max_latency_ms_hard")
         degrade_model_alias = policy_llm.get("degrade_model_alias")
 
-        estimated_cost = await self._estimate_cost(provider, provider_model, request, policy_llm)
+        estimated_cost = await self._estimate_cost(
+            provider, provider_model, request, policy_llm
+        )
         flow_cost_key = self._flow_cost_key(flow_run_id)
         tenant_cost_key = self._tenant_cost_key(tenant_id)
         current_flow_cost = await self._get_cost(flow_cost_key)
@@ -71,21 +75,31 @@ class GuardrailEngine:
         # Rate limits
         flow_calls_key = self._flow_calls_key(flow_run_id)
         tenant_calls_key = self._tenant_calls_key(tenant_id)
-        flow_calls = await self.redis.incr_with_ttl(flow_calls_key, ttl=tenant_calls_ttl)
-        tenant_calls = await self.redis.incr_with_ttl(tenant_calls_key, ttl=tenant_calls_ttl)
+        flow_calls = await self.redis.incr_with_ttl(
+            flow_calls_key, ttl=tenant_calls_ttl
+        )
+        tenant_calls = await self.redis.incr_with_ttl(
+            tenant_calls_key, ttl=tenant_calls_ttl
+        )
 
         if max_calls_flow is not None and flow_calls > int(max_calls_flow):
             return GuardrailDecision(
                 decision=GuardrailDecisionType.BLOCK,
                 reason_code="RATE_LIMIT_FLOW_RUN",
-                applied_limits={"max_llm_calls_per_flow_run": max_calls_flow, "current_calls": flow_calls},
+                applied_limits={
+                    "max_llm_calls_per_flow_run": max_calls_flow,
+                    "current_calls": flow_calls,
+                },
                 overrides=overrides,
             )
         if max_calls_tenant is not None and tenant_calls > int(max_calls_tenant):
             return GuardrailDecision(
                 decision=GuardrailDecisionType.BLOCK,
                 reason_code="RATE_LIMIT_TENANT",
-                applied_limits={"max_llm_calls_per_tenant_window": max_calls_tenant, "current_calls": tenant_calls},
+                applied_limits={
+                    "max_llm_calls_per_tenant_window": max_calls_tenant,
+                    "current_calls": tenant_calls,
+                },
                 overrides=overrides,
             )
 
@@ -105,10 +119,15 @@ class GuardrailEngine:
             return GuardrailDecision(
                 decision=GuardrailDecisionType.BLOCK,
                 reason_code="COST_LIMIT_FLOW_RUN",
-                applied_limits={"max_cost_usd_per_flow_run": max_cost_flow, "projected_cost": projected_flow_cost},
+                applied_limits={
+                    "max_cost_usd_per_flow_run": max_cost_flow,
+                    "projected_cost": projected_flow_cost,
+                },
                 overrides=overrides,
             )
-        if max_cost_tenant is not None and projected_tenant_cost > float(max_cost_tenant):
+        if max_cost_tenant is not None and projected_tenant_cost > float(
+            max_cost_tenant
+        ):
             if degrade_model_alias:
                 overrides["model_alias"] = degrade_model_alias
                 applied_limits["max_cost_usd_per_tenant_window"] = max_cost_tenant
@@ -128,7 +147,11 @@ class GuardrailEngine:
                 overrides=overrides,
             )
 
-        if max_latency_ms_hard is not None and request.max_latency_ms and request.max_latency_ms > max_latency_ms_hard:
+        if (
+            max_latency_ms_hard is not None
+            and request.max_latency_ms
+            and request.max_latency_ms > max_latency_ms_hard
+        ):
             overrides["max_latency_ms"] = max_latency_ms_hard
             applied_limits["max_latency_ms_hard"] = max_latency_ms_hard
 
@@ -155,7 +178,9 @@ class GuardrailEngine:
         flow_cost = await self._get_cost(flow_cost_key)
         tenant_cost = await self._get_cost(tenant_cost_key)
         await self._set_cost(flow_cost_key, flow_cost + cost_usd, ttl=tenant_cost_ttl)
-        await self._set_cost(tenant_cost_key, tenant_cost + cost_usd, ttl=tenant_cost_ttl)
+        await self._set_cost(
+            tenant_cost_key, tenant_cost + cost_usd, ttl=tenant_cost_ttl
+        )
 
     async def _estimate_cost(
         self,

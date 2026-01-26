@@ -3,7 +3,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from infra.database import DatabaseConnection
-from infra.database.models.governance.authoring_event import AuthoringEvent as AuthoringEventModel
+from infra.database.models.governance.authoring_event import (
+    AuthoringEvent as AuthoringEventModel,
+)
 
 
 class AuthoringEventRepository:

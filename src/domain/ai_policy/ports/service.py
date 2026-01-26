@@ -12,7 +12,9 @@ class AIServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def create_ai_execution_policy_version(self, ai_execution_policy_version_create):
+    async def create_ai_execution_policy_version(
+        self, ai_execution_policy_version_create
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod

@@ -1,20 +1,37 @@
 PYTHON ?= python3
 
-.PHONY: validate-setup validate-seed validate-down validate-logs validate-test
+.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo test-flow-demo test-trace-hierarchy
 
 validate-setup:
 	resources/scripts/validation_setup.sh
 
-validate-seed:
-	docker compose run --rm --entrypoint "" app bash -c "python resources/scripts/wait_for_db.py && python resources/scripts/validation_seed.py"
+pc-config:
+	@PYTHONPATH=src python3.13 -m pre_commit install --install-hooks
 
-validate-down:
-	docker compose down
+pc-after-commit:
+	@PYTHONPATH=src python3.13 -m pre_commit run --from-ref origin/main --to-ref HEAD
 
-validate-logs:
-	docker compose logs --tail=50 app
+pc-run-all:
+	@PYTHONPATH=src python3.13 -m pre_commit run --all-files
 
-validate-test:
-	resources/scripts/validation_setup.sh
-	make validate-seed
-	DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/agent_router PYTEST_ADDOPTS="--no-cov --cov-fail-under=0" bash -c "source .venv/bin/activate && PYTHONPATH=src pytest src/tests/validation_integration -m validation_integration"
+pc-run:
+	@PYTHONPATH=src python3.13 -m pre_commit run
+
+gen-admin-token:
+	@PYTHONPATH=src python3 resources/generate_jwt_token.py
+
+run-seed:
+	@PYTHONPATH=src python3 resources/scripts/seeds/seed_main.py
+
+seed-demo:
+	docker compose run --rm --entrypoint "" app bash -c "python scripts/wait_for_db.py && PYTHONPATH=/app/src:/app/scripts python /app/resources/scripts/seeds/demo/run.py"
+	#@PYTHONPATH=src python resources/scripts/seeds/demo/run.py
+
+test-flow-demo:
+	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo.py
+
+test-trace-hierarchy:
+	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/test_trace_hierarchy.py
+
+migrate:
+	@PYTHONPATH=src alembic upgrade head

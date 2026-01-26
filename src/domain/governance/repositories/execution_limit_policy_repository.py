@@ -37,7 +37,9 @@ class ExecutionLimitPolicyRepository:
                     ExecutionLimitPolicyVersionModel.execution_limit_policy_id
                     == execution_limit_policy_id
                 )
-                .where(ExecutionLimitPolicyVersionModel.status == VersionStatus.PUBLISHED)
+                .where(
+                    ExecutionLimitPolicyVersionModel.status == VersionStatus.PUBLISHED
+                )
                 .order_by(
                     ExecutionLimitPolicyVersionModel.version_major.desc(),
                     ExecutionLimitPolicyVersionModel.version_minor.desc(),

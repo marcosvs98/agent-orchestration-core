@@ -16,7 +16,12 @@ class RunStatus(StrEnum):
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     RunStatus.CREATED: {RunStatus.QUEUED, RunStatus.CANCELLED, RunStatus.FAILED},
     RunStatus.QUEUED: {RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.FAILED},
-    RunStatus.RUNNING: {RunStatus.WAITING_INPUT, RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED},
+    RunStatus.RUNNING: {
+        RunStatus.WAITING_INPUT,
+        RunStatus.COMPLETED,
+        RunStatus.FAILED,
+        RunStatus.CANCELLED,
+    },
     RunStatus.WAITING_INPUT: {RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.FAILED},
     RunStatus.COMPLETED: set(),
     RunStatus.FAILED: set(),

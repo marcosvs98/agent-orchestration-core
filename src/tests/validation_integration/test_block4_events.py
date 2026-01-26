@@ -24,7 +24,7 @@ async def test_events_enable_audit_trail(db_session) -> None:
         payload={"input": {"text": "audit"}},
     )
     await db_session.flush()
-    
+
     started_event_id = await append_execution_event(
         db_session,
         tenant_id=TENANT_ID,
@@ -35,7 +35,7 @@ async def test_events_enable_audit_trail(db_session) -> None:
         payload={"channel": "http"},
         event_sequence=1,
     )
-    
+
     await append_execution_event(
         db_session,
         tenant_id=TENANT_ID,

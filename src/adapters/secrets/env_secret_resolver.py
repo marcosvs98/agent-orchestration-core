@@ -9,7 +9,7 @@ class EnvSecretResolver(SecretResolverPort):
         if not secret_ref.startswith("env:"):
             raise DomainValidationException(message="unsupported_secret_ref")
         env_key = secret_ref.removeprefix("env:")
-        value = os.getenv(env_key)
+        value = os.getenv(env_key.upper())
         if value is None or not value:
             raise DomainValidationException(message="secret_not_found")
         return value

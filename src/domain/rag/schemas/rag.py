@@ -22,6 +22,7 @@ class RagConfig(BaseModel):
 class RagConfigCreate(BaseModel):
     vector_store_id: UUID
     options: dict[str, object] | None = None
+    source_version_id: UUID | None = None
     version_major: int | None = None
     version_minor: int | None = None
     version_patch: int | None = None

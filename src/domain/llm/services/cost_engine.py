@@ -22,7 +22,13 @@ class CostEngine:
         except (TypeError, ValueError):
             return 0
 
-    async def compute_cost(self, *, provider: str, provider_model: str, token_usage: Mapping[str, int] | None) -> float:
+    async def compute_cost(
+        self,
+        *,
+        provider: str,
+        provider_model: str,
+        token_usage: Mapping[str, int] | None,
+    ) -> float:
         pricing = await self.pricing_repository.get_active_pricing(
             provider=provider, provider_model=provider_model
         )

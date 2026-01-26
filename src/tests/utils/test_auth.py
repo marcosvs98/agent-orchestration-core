@@ -78,3 +78,44 @@ class TestAuth:
         with pytest.raises(AuthorizationDeniedException):
             auth_module.get_auth_context(credentials=credentials)
 
+    def test_get_auth_context_allows_tenant_id_none_with_tenants_create_scope(self):
+        token = _make_token(
+            secret=auth_module.JWT_SECRET,
+            algorithm=auth_module.JWT_ALGORITHM,
+            claims={
+                "iss": auth_module.JWT_ISSUER,
+                "aud": auth_module.JWT_AUDIENCE,
+                "exp": 9999999999,
+                "principal_type": "human",
+                "principal_id": "admin-123",
+                "scopes": ["tenants:create"],
+            },
+        )
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        ctx = auth_module.get_auth_context(credentials=credentials)
+        assert ctx.tenant_id is None
+        assert ctx.principal_type == "human"
+        assert ctx.principal_id == "admin-123"
+        assert "tenants:create" in ctx.scopes
+
+    def test_get_auth_context_allows_tenant_id_with_tenants_create_scope(self):
+        tenant_id = uuid4()
+        token = _make_token(
+            secret=auth_module.JWT_SECRET,
+            algorithm=auth_module.JWT_ALGORITHM,
+            claims={
+                "iss": auth_module.JWT_ISSUER,
+                "aud": auth_module.JWT_AUDIENCE,
+                "exp": 9999999999,
+                "tenant_id": str(tenant_id),
+                "principal_type": "human",
+                "principal_id": "admin-123",
+                "scopes": ["tenants:create"],
+            },
+        )
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        ctx = auth_module.get_auth_context(credentials=credentials)
+        assert ctx.tenant_id == tenant_id
+        assert ctx.principal_type == "human"
+        assert ctx.principal_id == "admin-123"
+        assert "tenants:create" in ctx.scopes

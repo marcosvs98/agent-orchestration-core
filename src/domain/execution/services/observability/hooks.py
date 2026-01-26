@@ -1,42 +1,59 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from typing import Any, Dict
 from uuid import UUID
 
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.events import ExecutionEventType
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 
 logger = logging.getLogger(__name__)
 
 
-class ExecutionEventHook:
-    async def on_flow_start(self, **kwargs: Any) -> None:  # pragma: no cover - interface
-        raise NotImplementedError()
+class ExecutionEventHook(ABC):
+    @abstractmethod
+    async def on_flow_start(self, **kwargs: Any) -> None:
+        pass
 
-    async def on_node_start(self, **kwargs: Any) -> None:  # pragma: no cover - interface
-        raise NotImplementedError()
+    @abstractmethod
+    async def on_node_start(self, **kwargs: Any) -> None:
+        pass
 
-    async def on_node_complete(self, **kwargs: Any) -> None:  # pragma: no cover - interface
-        raise NotImplementedError()
+    @abstractmethod
+    async def on_node_complete(self, **kwargs: Any) -> None:
+        pass
 
-    async def on_edge_evaluated(self, **kwargs: Any) -> None:  # pragma: no cover - interface
-        raise NotImplementedError()
+    @abstractmethod
+    async def on_edge_evaluated(self, **kwargs: Any) -> None:
+        pass
 
-    async def on_flow_complete(self, **kwargs: Any) -> None:  # pragma: no cover - interface
-        raise NotImplementedError()
+    @abstractmethod
+    async def on_flow_complete(self, **kwargs: Any) -> None:
+        pass
 
-    async def on_flow_failed(self, **kwargs: Any) -> None:  # pragma: no cover - interface
-        raise NotImplementedError()
+    @abstractmethod
+    async def on_flow_failed(self, **kwargs: Any) -> None:
+        pass
 
 
 class DbExecutionEventHook(ExecutionEventHook):
-    def __init__(self, repository: ExecutionRepository) -> None:
+    def __init__(
+        self,
+        repository: ExecutionRepository,
+        tracer: RuntimeTracerPort | None = None,
+    ) -> None:
         self.repository = repository
+        self.tracer = tracer
 
-    async def _safe_emit(self, *, event_type: ExecutionEventType, data: Dict[str, Any]) -> None:
+    async def _safe_emit(
+        self, *, event_type: ExecutionEventType, data: Dict[str, Any]
+    ) -> None:
         try:
-            await self.repository.append_execution_event(**data, event_type=event_type.value)
+            await self.repository.append_execution_event(
+                **data, event_type=event_type.value
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to append execution event (swallowed): %s", exc)
 
@@ -51,6 +68,11 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
+        if self.tracer:
+            self.tracer.create_event(
+                event_type=ExecutionEventType.FlowStarted,
+                input=payload,
+            )
         await self._safe_emit(
             event_type=ExecutionEventType.FlowStarted,
             data={
@@ -159,6 +181,11 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
+        if self.tracer:
+            self.tracer.create_event(
+                event_type=ExecutionEventType.FlowCompleted,
+                input=payload,
+            )
         await self._safe_emit(
             event_type=ExecutionEventType.FlowCompleted,
             data={
@@ -185,6 +212,11 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
+        if self.tracer:
+            self.tracer.create_event(
+                event_type=ExecutionEventType.FlowFailed,
+                input=payload,
+            )
         await self._safe_emit(
             event_type=ExecutionEventType.FlowFailed,
             data={

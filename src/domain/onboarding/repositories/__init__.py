@@ -1,1 +1,3 @@
-# Repositories for onboarding domain
+from domain.onboarding.repositories.onboarding_repository import OnboardingRepository
+
+__all__ = ["OnboardingRepository"]

@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parents[3]
+src_path = project_root / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
+from sqlalchemy import select
+
+from infra.database import get_db
+from infra.database.models.governance.runtime_policy import RuntimePolicy
+
+from seeds.demo.ids import (
+    FLOW_DEMO_ID,
+    RUNTIME_POLICY_TENANT_ID,
+    TENANT_DEMO_ID,
+    PRINCIPAL_SYSTEM,
+)
+
+
+async def seed_runtime_policy() -> None:
+    async with get_db() as session:
+        result = await session.execute(
+            select(RuntimePolicy).where(
+                RuntimePolicy.runtime_policy_id == RUNTIME_POLICY_TENANT_ID
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing is None:
+            policy_definition = {
+                "limits": {
+                    "max_nodes": 50,
+                    "max_depth": 20,
+                    "max_edges_per_node": 3,
+                    "max_total_duration_ms": 60000,
+                    "max_node_duration_ms": 15000,
+                    "max_loop_iterations": 10,
+                },
+                "execution": {
+                    "fail_on_multiple_true_edges": True,
+                    "fail_on_missing_graph": True,
+                    "allow_parallel_nodes": False,
+                },
+                "tools": {
+                    "max_retries": 2,
+                    "circuit_breaker": {
+                        "failure_threshold": 5,
+                        "window_seconds": 60,
+                    },
+                },
+                "llm": {
+                    "max_retries": 3,
+                    "timeout_ms": 30000,
+                },
+            }
+
+            runtime_policy = RuntimePolicy(
+                runtime_policy_id=RUNTIME_POLICY_TENANT_ID,
+                tenant_id=TENANT_DEMO_ID,
+                scope="TENANT",
+                flow_id=None,
+                version="1",
+                status="ACTIVE",
+                policy_definition=policy_definition,
+                created_by=PRINCIPAL_SYSTEM,
+            )
+            session.add(runtime_policy)
+            await session.commit()

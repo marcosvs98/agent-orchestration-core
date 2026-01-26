@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from domain.tools.schemas.tools import (
     AgentVersionToolBinding,
@@ -6,7 +6,6 @@ from domain.tools.schemas.tools import (
     Tool,
     ToolConfig,
     ToolConfigCreate,
-    ToolCreate,
     ToolImportRequest,
 )
 from domain.tools.services.tools_service import ToolsService
@@ -29,38 +28,113 @@ class ToolsController:
 
     def _bind_routes(self) -> None:
         r = self.router.add_api_route
-        r("/tools/import-openapi", self.import_tool, methods=["POST"], response_model=Tool, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/tools", self.list_tools, methods=["GET"], response_model=list[Tool], responses=self._resp405())
-        r("/tool-configs", self.list_tool_configs, methods=["GET"], response_model=list[ToolConfig], responses=self._resp405())
-        r("/tool-configs", self.create_tool_config, methods=["POST"], response_model=ToolConfig, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/tool-configs/{tool_config_id}:publish", self.publish_tool_config, methods=["POST"], response_model=ToolConfig, responses=self._resp405())
-        r("/tool-configs/{tool_config_id}:deprecate", self.deprecate_tool_config, methods=["POST"], response_model=ToolConfig, responses=self._resp405())
-        r("/tool-configs/{tool_config_id}:disable", self.disable_tool_config, methods=["POST"], response_model=ToolConfig, responses=self._resp405())
-        r("/agent-version-tool-bindings", self.create_agent_version_tool_binding, methods=["POST"], response_model=AgentVersionToolBinding, status_code=status.HTTP_201_CREATED, responses=self._resp405())
+        r(
+            "/tools/import-openapi",
+            self.import_tool,
+            methods=["POST"],
+            response_model=Tool,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/tools",
+            self.list_tools,
+            methods=["GET"],
+            response_model=list[Tool],
+        )
+        r(
+            "/tool-configs",
+            self.list_tool_configs,
+            methods=["GET"],
+            response_model=list[ToolConfig],
+        )
+        r(
+            "/tool-configs",
+            self.create_tool_config,
+            methods=["POST"],
+            response_model=ToolConfig,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/tool-configs/{tool_config_id}:publish",
+            self.publish_tool_config,
+            methods=["POST"],
+            response_model=ToolConfig,
+            responses=self._resp405(),
+        )
+        r(
+            "/tool-configs/{tool_config_id}:deprecate",
+            self.deprecate_tool_config,
+            methods=["POST"],
+            response_model=ToolConfig,
+            responses=self._resp405(),
+        )
+        r(
+            "/tool-configs/{tool_config_id}:disable",
+            self.disable_tool_config,
+            methods=["POST"],
+            response_model=ToolConfig,
+            responses=self._resp405(),
+        )
+        r(
+            "/agent-version-tool-bindings",
+            self.create_agent_version_tool_binding,
+            methods=["POST"],
+            response_model=AgentVersionToolBinding,
+            status_code=status.HTTP_201_CREATED,
+        )
 
     def _resp405(self) -> dict[int, dict[str, object]]:
         return {status.HTTP_405_METHOD_NOT_ALLOWED: {"model": ErrorResponse}}
 
-    async def import_tool(self, __: ToolImportRequest, _: AuthContext = Depends(get_auth_context)) -> Tool:
-        raise MethodNotAllowedPlaceholderException()
+    async def import_tool(
+        self,
+        tool_import_request: ToolImportRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> Tool:
+        return await self.service.import_tool(
+            tenant_id=auth.tenant_id,
+            tool_import_request=tool_import_request,
+            principal_id=auth.principal_id,
+        )
 
-    async def list_tools(self, _: AuthContext = Depends(get_auth_context)) -> list[Tool]:
-        raise MethodNotAllowedPlaceholderException()
+    async def list_tools(
+        self,
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[Tool]:
+        return await self.service.list_tools(tenant_id=auth.tenant_id, limit=limit)
 
     async def list_tool_configs(
-        self, status_filter: list[str] | None = None, _: AuthContext = Depends(get_auth_context)
+        self,
+        status_filter: list[str] | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
     ) -> list[ToolConfig]:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.list_tool_configs(
+            tenant_id=auth.tenant_id, status_filter=status_filter, limit=limit
+        )
 
-    async def create_tool_config(self, __: ToolConfigCreate, _: AuthContext = Depends(get_auth_context)) -> ToolConfig:
-        raise MethodNotAllowedPlaceholderException()
+    async def create_tool_config(
+        self,
+        tool_config_create: ToolConfigCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> ToolConfig:
+        return await self.service.create_tool_config(
+            tenant_id=auth.tenant_id,
+            tool_config_create=tool_config_create,
+            principal_id=auth.principal_id,
+        )
 
     async def create_agent_version_tool_binding(
         self,
-        __: AgentVersionToolBindingCreate,
-        _: AuthContext = Depends(get_auth_context),
+        binding_create: AgentVersionToolBindingCreate,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> AgentVersionToolBinding:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.create_agent_version_tool_binding(
+            tenant_id=auth.tenant_id,
+            binding_create=binding_create,
+            principal_id=auth.principal_id,
+        )
 
     async def publish_tool_config(
         self, tool_config_id: str, _: AuthContext = Depends(get_auth_context)

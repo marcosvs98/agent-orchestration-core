@@ -6,5 +6,7 @@ from domain.llm.schemas.llm import LLMRequest, LLMResult
 
 
 class LLMProviderPort(Protocol):
-    async def infer(self, request: LLMRequest) -> LLMResult:  # pragma: no cover - interface
+    async def infer(
+        self, request: LLMRequest
+    ) -> LLMResult:  # pragma: no cover - interface
         ...

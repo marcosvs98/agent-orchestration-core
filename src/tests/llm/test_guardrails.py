@@ -153,8 +153,8 @@ async def test_llm_executor_blocks_on_guardrail():
         )
     )
     executor = LLMExecutor(
-        provider,
         repo,
+        provider,
         guardrail_engine=guardrail,
     )
     request = LLMRequest(task_type=LLMTaskType.INTENT_SELECTION, model_alias="m")
@@ -188,8 +188,8 @@ async def test_llm_executor_degrades_and_calls_provider():
         )
     )
     executor = LLMExecutor(
-        provider,
         repo,
+        provider,
         guardrail_engine=guardrail,
         provider_selector=_Selector(),
         provider_factory=_ProviderFactory(provider),

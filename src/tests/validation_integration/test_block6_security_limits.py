@@ -30,14 +30,14 @@ async def test_fail_closed_and_limits_present(db_session) -> None:
         )
     )
     exec_limit = exec_limit_result.scalar_one_or_none()
-    
+
     rate_limit_result = await db_session.execute(
         sa.select(RateLimitPolicyVersion).where(
             RateLimitPolicyVersion.rate_limit_policy_version_id == RATE_LIMIT_VERSION_ID
         )
     )
     rate_limit = rate_limit_result.scalar_one_or_none()
-    
+
     access_policy_result = await db_session.execute(
         sa.select(AccessPolicyVersion).where(
             AccessPolicyVersion.access_policy_version_id == ACCESS_POLICY_VERSION_ID

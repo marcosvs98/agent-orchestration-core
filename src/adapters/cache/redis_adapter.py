@@ -66,8 +66,12 @@ class RedisAdapter:
         await self.client.set(key, json.dumps(data, default=str), ex=ttl)
 
     @silent_mode_wrapper
-    async def set_if_not_exists(self, key: str, data: dict[str, Any], ttl: int = 300) -> bool:
-        result = await self.client.set(key, json.dumps(data, default=str), ex=ttl, nx=True)
+    async def set_if_not_exists(
+        self, key: str, data: dict[str, Any], ttl: int = 300
+    ) -> bool:
+        result = await self.client.set(
+            key, json.dumps(data, default=str), ex=ttl, nx=True
+        )
         return bool(result)
 
     @silent_mode_wrapper

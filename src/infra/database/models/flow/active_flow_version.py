@@ -23,6 +23,8 @@ class ActiveFlowVersion(ORMBaseModel):
         ForeignKey("flow_graph_snapshot.flow_graph_snapshot_id", ondelete="RESTRICT"),
         nullable=True,
     )
-    activated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    activated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     activated_by_principal_id = Column(String(length=128), nullable=False)
     justification = Column(String(length=512), nullable=False)

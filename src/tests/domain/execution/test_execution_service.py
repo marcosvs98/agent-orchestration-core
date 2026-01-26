@@ -15,6 +15,7 @@ from domain.execution.services.state_machine import (
 from exceptions.service_exceptions import (
     AIOutputValidationException,
     IdempotencyInProgressException,
+    NotFoundServiceException,
     RagNotAllowedException,
     ResourceBlockedServiceException,
     SchemaIncompatibleException,
@@ -72,12 +73,14 @@ class TestExecutionService:
         limits = MagicMock()
         limits.assert_can_create_agent_run = AsyncMock()
         limits.assert_can_create_tool_run = AsyncMock()
-        return ExecutionService(
+        service = ExecutionService(
             repository=repository,
             idempotency=idempotency_service,
             lifecycle=RunLifecycleStateMachine(),
             limits=limits,
         )
+        service.llm_executor = MagicMock()
+        return service
 
     @pytest.mark.asyncio
     async def test_create_flow_run_creates_new_run_when_idempotency_key_not_used(
@@ -490,3 +493,222 @@ class TestExecutionService:
         assert result.output.get("answer") == "ok"
         repository.update_agent_run_result.assert_called_once()
         repository.append_execution_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_flow_run_returns_complete_flow_run(
+        self, execution_service, repository
+    ):
+        from datetime import datetime, timezone
+
+        flow_run_id = uuid4()
+        session_id = uuid4()
+        started_at = datetime.now(timezone.utc)
+        finished_at = datetime.now(timezone.utc)
+
+        repository.get_flow_run.return_value = SimpleNamespace(
+            flow_run_id=flow_run_id,
+            origin_flow_run_id=None,
+            flow_version_id=uuid4(),
+            session_id=session_id,
+            interaction_id=uuid4(),
+            status="COMPLETED",
+            canonical_status="SUCCESS",
+            correlation_id=uuid4(),
+            started_at=started_at,
+            finished_at=finished_at,
+            waiting_reason=None,
+            waiting_deadline_at=None,
+            input={"test": "input"},
+            output={"test": "output"},
+            error={},
+            trace_id=uuid4(),
+            flow_graph_snapshot_id=uuid4(),
+            execution_plan_hash="hash1",
+            runtime_policy_hash="hash2",
+            tool_catalog_hash="hash3",
+            llm_provider_config_hash="hash4",
+        )
+        repository.list_execution_events = AsyncMock(return_value=[])
+
+        result = await execution_service.get_flow_run(str(flow_run_id))
+
+        assert result.id == flow_run_id
+        assert result.status == "COMPLETED"
+        assert result.trace_id is not None
+        assert result.execution_plan_hash == "hash1"
+        repository.get_flow_run.assert_called_once_with(flow_run_id)
+
+    @pytest.mark.asyncio
+    async def test_get_flow_run_raises_when_not_found(
+        self, execution_service, repository
+    ):
+        flow_run_id = uuid4()
+        repository.get_flow_run.return_value = None
+
+        with pytest.raises(NotFoundServiceException, match="flow_run_not_found"):
+            await execution_service.get_flow_run(str(flow_run_id))
+
+    @pytest.mark.asyncio
+    async def test_get_graph_state_returns_graph_state(
+        self, execution_service, repository
+    ):
+        flow_run_id = uuid4()
+        graph_state_id = uuid4()
+        last_node_run_id = uuid4()
+
+        repository.get_flow_run.return_value = SimpleNamespace(
+            flow_run_id=flow_run_id, session_id=uuid4()
+        )
+        repository.get_graph_state.return_value = SimpleNamespace(
+            graph_state_id=graph_state_id,
+            flow_run_id=flow_run_id,
+            state={"key": "value"},
+            last_node_run_id=last_node_run_id,
+        )
+
+        result = await execution_service.get_graph_state(str(flow_run_id))
+
+        assert result.id == graph_state_id
+        assert result.flow_run_id == flow_run_id
+        assert result.state == {"key": "value"}
+        assert result.last_node_run_id == last_node_run_id
+        repository.get_flow_run.assert_called_once_with(flow_run_id)
+        repository.get_graph_state.assert_called_once_with(flow_run_id)
+
+    @pytest.mark.asyncio
+    async def test_get_graph_state_raises_when_flow_run_not_found(
+        self, execution_service, repository
+    ):
+        flow_run_id = uuid4()
+        repository.get_flow_run.return_value = None
+
+        with pytest.raises(NotFoundServiceException, match="flow_run_not_found"):
+            await execution_service.get_graph_state(str(flow_run_id))
+
+    @pytest.mark.asyncio
+    async def test_get_graph_state_raises_when_graph_state_not_found(
+        self, execution_service, repository
+    ):
+        flow_run_id = uuid4()
+        repository.get_flow_run.return_value = SimpleNamespace(
+            flow_run_id=flow_run_id, session_id=uuid4()
+        )
+        repository.get_graph_state.return_value = None
+
+        with pytest.raises(NotFoundServiceException, match="graph_state_not_found"):
+            await execution_service.get_graph_state(str(flow_run_id))
+
+    @pytest.mark.asyncio
+    async def test_list_node_runs_returns_empty_list_when_no_results(
+        self, execution_service, repository
+    ):
+        tenant_id = uuid4()
+        repository.list_node_runs = AsyncMock(return_value=[])
+
+        result = await execution_service.list_node_runs(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+        assert result == []
+        repository.list_node_runs.assert_called_once_with(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_node_runs_returns_node_runs_filtered_by_tenant(
+        self, execution_service, repository
+    ):
+        from datetime import datetime, timezone
+
+        tenant_id = uuid4()
+        flow_run_id = uuid4()
+        node_run_id = uuid4()
+        started_at = datetime.now(timezone.utc)
+
+        mock_node_run = SimpleNamespace(
+            node_run_id=node_run_id,
+            flow_run_id=flow_run_id,
+            node_id=uuid4(),
+            status="COMPLETED",
+            canonical_status="SUCCESS",
+            correlation_id=uuid4(),
+            started_at=started_at,
+            finished_at=None,
+            input={"test": "input"},
+            output={"test": "output"},
+            error={},
+        )
+        repository.list_node_runs = AsyncMock(return_value=[mock_node_run])
+
+        result = await execution_service.list_node_runs(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+        assert len(result) == 1
+        assert result[0].id == node_run_id
+        assert result[0].status == "COMPLETED"
+        repository.list_node_runs.assert_called_once_with(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_agent_runs_returns_empty_list_when_no_results(
+        self, execution_service, repository
+    ):
+        tenant_id = uuid4()
+        repository.list_agent_runs = AsyncMock(return_value=[])
+
+        result = await execution_service.list_agent_runs(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+        assert result == []
+        repository.list_agent_runs.assert_called_once_with(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_agent_runs_returns_agent_runs_filtered_by_tenant(
+        self, execution_service, repository
+    ):
+        from datetime import datetime, timezone
+        from decimal import Decimal
+
+        tenant_id = uuid4()
+        flow_run_id = uuid4()
+        agent_run_id = uuid4()
+        started_at = datetime.now(timezone.utc)
+
+        mock_agent_run = SimpleNamespace(
+            agent_run_id=agent_run_id,
+            node_run_id=uuid4(),
+            ai_task_id=uuid4(),
+            agent_version_id=uuid4(),
+            ai_execution_policy_version_id=uuid4(),
+            billing_policy_version_id=uuid4(),
+            model="gpt-4o",
+            input_tokens=100,
+            output_tokens=50,
+            estimated_cost=Decimal("0.001"),
+            status="COMPLETED",
+            canonical_status="SUCCESS",
+            correlation_id=uuid4(),
+            started_at=started_at,
+            finished_at=None,
+            input={"test": "input"},
+            output={"test": "output"},
+            error={},
+        )
+        repository.list_agent_runs = AsyncMock(return_value=[mock_agent_run])
+
+        result = await execution_service.list_agent_runs(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )
+
+        assert len(result) == 1
+        assert result[0].id == agent_run_id
+        assert result[0].status == "COMPLETED"
+        assert result[0].estimated_cost == 0.001
+        repository.list_agent_runs.assert_called_once_with(
+            tenant_id=tenant_id, flow_run_id=None, limit=200
+        )

@@ -5,7 +5,13 @@ from fastapi import Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
-from settings import JWT_ALGORITHM, JWT_AUDIENCE, JWT_ISSUER, JWT_LEEWAY_SECONDS, JWT_SECRET
+from settings import (
+    JWT_ALGORITHM,
+    JWT_AUDIENCE,
+    JWT_ISSUER,
+    JWT_LEEWAY_SECONDS,
+    JWT_SECRET,
+)
 from exceptions.service_exceptions import (
     AuthenticationFailedException,
     AuthorizationDeniedException,
@@ -18,7 +24,7 @@ class AuthContext:
     def __init__(
         self,
         *,
-        tenant_id: UUID,
+        tenant_id: UUID | None,
         principal_type: str,
         principal_id: str,
         scopes: set[str],
@@ -41,9 +47,15 @@ def get_auth_context(
     if credentials is None or not credentials.scheme.lower() == "bearer":
         raise AuthenticationFailedException(message="missing_bearer_token")
     if not JWT_SECRET:
-        raise AuthenticationFailedException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, message="auth_not_configured")
+        raise AuthenticationFailedException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            message="auth_not_configured",
+        )
     if not JWT_ISSUER or not JWT_AUDIENCE:
-        raise AuthenticationFailedException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, message="jwt_issuer_audience_not_configured")
+        raise AuthenticationFailedException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            message="jwt_issuer_audience_not_configured",
+        )
     token = credentials.credentials
     try:
         payload = jwt.decode(
@@ -73,23 +85,6 @@ def get_auth_context(
     if exp + int(JWT_LEEWAY_SECONDS) <= now:
         raise AuthenticationFailedException(message="token_expired")
 
-    tenant_value = payload.get("tenant_id")
-    if tenant_value is None:
-        raise AuthorizationDeniedException(message="tenant_id_claim_required")
-    try:
-        tenant_id = UUID(str(tenant_value))
-    except ValueError:
-        raise AuthorizationDeniedException(message="tenant_id_claim_invalid") from None
-
-    principal_type = payload.get("principal_type")
-    if principal_type not in {"human", "machine"}:
-        raise AuthorizationDeniedException(message="principal_type_claim_required")
-
-    principal_id_value = payload.get("principal_id") or payload.get("sub")
-    if principal_id_value is None or not str(principal_id_value).strip():
-        raise AuthorizationDeniedException(message="principal_id_claim_required")
-    principal_id = str(principal_id_value)
-
     scopes_value = payload.get("scopes")
     if scopes_value is None:
         raise AuthorizationDeniedException(message="scopes_claim_required")
@@ -101,6 +96,30 @@ def get_auth_context(
         raise AuthorizationDeniedException(message="scopes_claim_invalid")
     if not scopes:
         raise AuthorizationDeniedException(message="scopes_claim_empty")
+
+    has_tenant_create_scope = "tenants:create" in scopes
+
+    tenant_value = payload.get("tenant_id")
+    if tenant_value is None:
+        if not has_tenant_create_scope:
+            raise AuthorizationDeniedException(message="tenant_id_claim_required")
+        tenant_id = None
+    else:
+        try:
+            tenant_id = UUID(str(tenant_value))
+        except ValueError:
+            raise AuthorizationDeniedException(
+                message="tenant_id_claim_invalid"
+            ) from None
+
+    principal_type = payload.get("principal_type")
+    if principal_type not in {"human", "machine"}:
+        raise AuthorizationDeniedException(message="principal_type_claim_required")
+
+    principal_id_value = payload.get("principal_id") or payload.get("sub")
+    if principal_id_value is None or not str(principal_id_value).strip():
+        raise AuthorizationDeniedException(message="principal_id_claim_required")
+    principal_id = str(principal_id_value)
 
     return AuthContext(
         tenant_id=tenant_id,

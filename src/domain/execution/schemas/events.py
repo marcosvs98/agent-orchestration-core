@@ -45,3 +45,5 @@ class ExecutionEventType(StrEnum):
     BillingPolicyViolated = "BillingPolicyViolated"
     ValidationFailed = "ValidationFailed"
     SecretAccessed = "SecretAccessed"
+    NodePromptUpdated = "NodePromptUpdated"
+    NodePromptExecuted = "NodePromptExecuted"

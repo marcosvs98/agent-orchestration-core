@@ -5,11 +5,16 @@ from pydantic import BaseModel
 
 class Flow(BaseModel):
     id: UUID
-    name: str | None = None
+    name: str
+    description: str | None = None
+    tags: list[str] | None = None
+    created_by: str | None = None
 
 
 class FlowCreate(BaseModel):
-    name: str | None = None
+    name: str
+    description: str | None = None
+    tags: list[str] | None = None
 
 
 class FlowVersion(BaseModel):

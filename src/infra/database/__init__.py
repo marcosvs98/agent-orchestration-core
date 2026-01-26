@@ -5,7 +5,7 @@ from typing import NewType
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, AsyncEngine
 from sqlalchemy.orm import sessionmaker
-from infra.database.models.base_model import ORMBaseModel
+from infra.database.models.base import ORMBaseModel
 from settings import DATABASE_URL
 from adapters.observability.logging import EnvironmentSet, ENVIRONMENT
 
@@ -38,7 +38,7 @@ class DatabaseConnection:
                 await session.commit()
             except Exception as exc:
                 await session.rollback()
-                raise exc
+                raise exc from exc
             finally:
                 await session.close()
 
@@ -52,7 +52,7 @@ async def get_db() -> _AsyncGeneratorContextManager[AsyncSession]:  # type: igno
             await session.commit()
         except Exception as exc:
             await session.rollback()
-            raise exc
+            raise exc from exc
         finally:
             await session.close()
 

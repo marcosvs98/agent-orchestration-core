@@ -5,7 +5,9 @@ from sqlalchemy import select
 
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
-from infra.database.models.governance.runtime_policy import RuntimePolicy as RuntimePolicyModel
+from infra.database.models.governance.runtime_policy import (
+    RuntimePolicy as RuntimePolicyModel,
+)
 
 
 class RuntimePolicyRepository:
@@ -37,10 +39,14 @@ class RuntimePolicyRepository:
             await session.commit()
             return instance
 
-    async def activate_policy(self, runtime_policy_id: UUID, principal_id: str) -> RuntimePolicyModel:
+    async def activate_policy(
+        self, runtime_policy_id: UUID, principal_id: str
+    ) -> RuntimePolicyModel:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(RuntimePolicyModel).where(RuntimePolicyModel.runtime_policy_id == runtime_policy_id)
+                select(RuntimePolicyModel).where(
+                    RuntimePolicyModel.runtime_policy_id == runtime_policy_id
+                )
             )
             instance = result.scalar_one_or_none()
             if instance is None:
@@ -60,7 +66,9 @@ class RuntimePolicyRepository:
             await session.commit()
             return instance
 
-    async def get_active_flow_policy(self, tenant_id: UUID, flow_id: UUID) -> RuntimePolicyModel | None:
+    async def get_active_flow_policy(
+        self, tenant_id: UUID, flow_id: UUID
+    ) -> RuntimePolicyModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(RuntimePolicyModel).where(
@@ -72,7 +80,9 @@ class RuntimePolicyRepository:
             )
             return result.scalar_one_or_none()
 
-    async def get_active_tenant_policy(self, tenant_id: UUID) -> RuntimePolicyModel | None:
+    async def get_active_tenant_policy(
+        self, tenant_id: UUID
+    ) -> RuntimePolicyModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(RuntimePolicyModel).where(
@@ -86,6 +96,8 @@ class RuntimePolicyRepository:
     async def list_policies(self, tenant_id: UUID) -> list[RuntimePolicyModel]:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(RuntimePolicyModel).where(RuntimePolicyModel.tenant_id == tenant_id)
+                select(RuntimePolicyModel).where(
+                    RuntimePolicyModel.tenant_id == tenant_id
+                )
             )
             return list(result.scalars().all())

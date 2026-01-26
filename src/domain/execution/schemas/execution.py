@@ -2,6 +2,8 @@ from uuid import UUID
 
 from enum import StrEnum
 from pydantic import BaseModel, model_validator
+
+
 class FlowFailureReason(StrEnum):
     POLICY_VIOLATION = "POLICY_VIOLATION"
     TIMEOUT = "TIMEOUT"
@@ -9,6 +11,10 @@ class FlowFailureReason(StrEnum):
     CIRCUIT_BREAKER_OPEN = "CIRCUIT_BREAKER_OPEN"
     MISSING_GRAPH = "MISSING_GRAPH"
     MAX_STEPS_EXCEEDED = "MAX_STEPS_EXCEEDED"
+    NODE_NOT_FOUND = "NODE_NOT_FOUND"
+    UNKNOWN_NODE_TYPE = "UNKNOWN_NODE_TYPE"
+    NO_MATCHING_EDGE = "NO_MATCHING_EDGE"
+    MULTIPLE_MATCHING_EDGES = "MULTIPLE_MATCHING_EDGES"
 
 
 class FlowRun(BaseModel):
@@ -29,11 +35,16 @@ class FlowRun(BaseModel):
     error: dict[str, object]
     failure_reason: FlowFailureReason | None = None
     trace_id: UUID | None = None
+    root_observation_id: str | None = None
     flow_graph_snapshot_id: UUID | None = None
     execution_plan_hash: str | None = None
     runtime_policy_hash: str | None = None
     tool_catalog_hash: str | None = None
     llm_provider_config_hash: str | None = None
+
+
+class FlowRunInput(BaseModel):
+    user_input: str | None = None
 
 
 class FlowRunCreate(BaseModel):
@@ -42,7 +53,8 @@ class FlowRunCreate(BaseModel):
     session_id: UUID
     origin_flow_run_id: UUID | None = None
     correlation_id: UUID | None = None
-    input: dict[str, object] = {}
+    input: FlowRunInput | None = None
+    metadata: dict[str, object] = {}
 
     @model_validator(mode="after")
     def _validate_selector(self) -> "FlowRunCreate":
@@ -91,6 +103,7 @@ class AgentRun(BaseModel):
     input: dict[str, object]
     output: dict[str, object]
     error: dict[str, object]
+    system_prompt_hash: str | None = None
 
 
 class AgentRunCreate(BaseModel):

@@ -3,14 +3,25 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Set
 
-from domain.execution.services.graph_runtime.execution_plan import CompiledEdge, ExecutionPlan
+
+from domain.execution.services.graph_runtime.execution_plan import (
+    AvailableTool,
+    CompiledEdge,
+    ExecutionPlan,
+)
+from domain.flows.schemas.graph import EdgeKind
 from exceptions.service_exceptions import DomainValidationException
 
 
 class GraphCompiler:
     """Pure compiler: flow_graph_snapshot -> ExecutionPlan."""
 
-    def compile(self, snapshot: Dict[str, Any], structural_hash: str) -> ExecutionPlan:
+    def compile(
+        self,
+        snapshot: Dict[str, Any],
+        structural_hash: str,
+        available_tools: list[AvailableTool] | None = None,
+    ) -> ExecutionPlan:
         start_node = snapshot.get("start_node")
         nodes = snapshot.get("nodes", {})
         edges = snapshot.get("edges", [])
@@ -22,16 +33,34 @@ class GraphCompiler:
         adjacency: dict[str, list[CompiledEdge]] = defaultdict(list)
         ordered_nodes: List[str] = list(nodes.keys())
         terminal_nodes: Set[str] = set(
-            [node_id for node_id, spec in nodes.items() if spec.get("type") in {"ResponseNode", "FallbackNode"}]
+            [
+                node_id
+                for node_id, spec in nodes.items()
+                if spec.get("type") in {"ResponseNode", "FallbackNode"}  # Todo: Usar StrEnum's aqui
+            ]
         )
         if not terminal_nodes:
             raise DomainValidationException(message="no_terminal_nodes")
 
-        for order, edge in enumerate(sorted(edges, key=lambda e: (e.get("from_node"), e.get("to_node"), e.get("condition", "")))):
+        for order, edge in enumerate(
+            sorted(
+                edges,
+                key=lambda e: (
+                    e.get("from_node"),
+                    e.get("to_node"),
+                    e.get("condition", ""),
+                ),
+            )
+        ):
             compiled = edge.get("compiled_condition")
             if compiled is None:
                 raise DomainValidationException(message="compiled_condition_missing")
-            edge_kind = edge.get("edge_kind", "NORMAL")
+            edge_kind_str = edge.get("edge_kind", EdgeKind.NORMAL.value)
+            edge_kind = (
+                EdgeKind(edge_kind_str)
+                if isinstance(edge_kind_str, str)
+                else edge_kind_str
+            )
             ce = CompiledEdge(
                 from_node=edge.get("from_node"),
                 to_node=edge.get("to_node"),
@@ -51,9 +80,12 @@ class GraphCompiler:
             terminal_nodes=terminal_nodes,
             structural_hash=structural_hash,
             nodes=nodes,
+            available_tools=available_tools or [],
         )
 
-    def _validate_reachability(self, start_node: str, adjacency: dict[str, list[CompiledEdge]], node_ids: Any) -> None:
+    def _validate_reachability(
+        self, start_node: str, adjacency: dict[str, list[CompiledEdge]], node_ids: Any
+    ) -> None:
         visited: Set[str] = set()
 
         def dfs(node_id: str) -> None:
@@ -76,7 +108,7 @@ class GraphCompiler:
                 return
             visiting.add(node_id)
             for edge in adjacency.get(node_id, []):
-                if edge.to_node in visiting and edge.edge_kind != "LOOP":
+                if edge.to_node in visiting and edge.edge_kind != EdgeKind.LOOP:
                     raise DomainValidationException(message="cycle_not_marked_loop")
                 if edge.to_node not in visited:
                     dfs(edge.to_node)

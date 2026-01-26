@@ -1,5 +1,5 @@
 from sqlalchemy import Column, ForeignKey, Index, Integer, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
 
@@ -23,6 +23,7 @@ class RagConfig(ORMBaseModel):
     version_minor = Column(Integer, nullable=False, server_default="0")
     version_patch = Column(Integer, nullable=False, server_default="0")
     config_hash = Column(String(length=128), nullable=True)
+    options = Column(JSONB, nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

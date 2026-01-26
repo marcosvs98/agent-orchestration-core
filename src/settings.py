@@ -2,7 +2,12 @@
 from decouple import config
 
 ENVIRONMENT: str = config("ENVIRONMENT", default="development", cast=str)
-APPLICATION_NAME: str = config("APPLICATION_NAME", default="agent-orchestration-core", cast=str)
+APPLICATION_NAME: str = config(
+    "APPLICATION_NAME", default="agent-orchestration-core", cast=str
+)
+APPLICATION_DESCRIPTION: str = config(
+    "APPLICATION_DESCRIPTION", default="Agent Orchestration Core API"
+)
 APPLICATION_VERSION: str = config("APPLICATION_VERSION", default="1.0.0", cast=str)
 HOST: str = config("HOST", default="0.0.0.0", cast=str)
 PORT: int = config("PORT", default=8010, cast=int)

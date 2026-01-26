@@ -48,17 +48,43 @@ class FlowsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def validate_flow_version(self, *, tenant_id, flow_id: str, flow_version_id: str):
+    async def validate_flow_version(
+        self, *, tenant_id, flow_id: str, flow_version_id: str
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def publish_flow_version(self, *, tenant_id, flow_id: str, flow_version_id: str, principal_id: str, change_request):
+    async def publish_flow_version(
+        self,
+        *,
+        tenant_id,
+        flow_id: str,
+        flow_version_id: str,
+        principal_id: str,
+        change_request,
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def activate_flow_version(self, *, tenant_id, flow_id: str, flow_version_id: str, principal_id: str, change_request):
+    async def activate_flow_version(
+        self,
+        *,
+        tenant_id,
+        flow_id: str,
+        flow_version_id: str,
+        principal_id: str,
+        change_request,
+    ):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def rollback_flow_version(self, *, tenant_id, flow_id: str, flow_version_id: str, principal_id: str, change_request):
+    async def rollback_flow_version(
+        self,
+        *,
+        tenant_id,
+        flow_id: str,
+        flow_version_id: str,
+        principal_id: str,
+        change_request,
+    ):
         raise NotImplementedServiceException()

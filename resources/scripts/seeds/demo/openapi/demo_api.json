@@ -1,0 +1,94 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Expense Management API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/createExpense": {
+      "post": {
+        "summary": "Cria uma despesa",
+        "operationId": "createExpense",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount": {
+                    "type": "number",
+                    "example": 16099.51
+                  },
+                  "currency": {
+                    "type": "string",
+                    "example": "BRL"
+                  },
+                  "bank_name": {
+                    "type": "string",
+                    "example": "Itaú Unibanco"
+                  },
+                  "account_alias": {
+                    "type": "string",
+                    "example": "PF"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Fatura Cartão Itaú"
+                  },
+                  "category": {
+                    "type": "string",
+                    "example": "Pagamento de Fatura"
+                  },
+                  "payment_method": {
+                    "type": "string",
+                    "example": "Débito Automático"
+                  },
+                  "date": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2025-12-05T10:15:22Z"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "example": "Pagamento Fatura"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "example": ["Pagamento de Fatura"]
+                  }
+                },
+                "required": ["amount", "currency", "bank_name", "account_alias", "description", "category", "payment_method", "date"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Despesa criada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "expense_id": {
+                      "type": "string",
+                      "example": "exp_123456"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "created"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

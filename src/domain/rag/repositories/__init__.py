@@ -1,1 +1,3 @@
-# Repositories for RAG domain
+from domain.rag.repositories.rag_repository import RagRepository
+
+__all__ = ["RagRepository"]

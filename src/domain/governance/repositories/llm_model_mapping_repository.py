@@ -6,7 +6,9 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from infra.database import DatabaseConnection
-from infra.database.models.governance.llm_model_mapping import LLMModelMapping as LLMModelMappingModel
+from infra.database.models.governance.llm_model_mapping import (
+    LLMModelMapping as LLMModelMappingModel,
+)
 
 
 class LLMModelMappingRepository:
@@ -52,7 +54,10 @@ class LLMModelMappingRepository:
             if instance:
                 await session.execute(
                     update(LLMModelMappingModel)
-                    .where(LLMModelMappingModel.llm_model_mapping_id == instance.llm_model_mapping_id)
+                    .where(
+                        LLMModelMappingModel.llm_model_mapping_id
+                        == instance.llm_model_mapping_id
+                    )
                     .values(provider_model=provider_model, created_by=created_by)
                 )
                 await session.commit()

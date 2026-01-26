@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from typing import Dict, List, Set
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from domain.tools.schemas.tools import AvailableTool
+from domain.flows.schemas.graph import EdgeKind
+
 
 
 class CompiledEdge(BaseModel):
     from_node: str
     to_node: str
-    edge_kind: str
+    edge_kind: EdgeKind
     compiled_condition: dict
     order: int
 
@@ -22,5 +26,6 @@ class ExecutionPlan(BaseModel):
     terminal_nodes: Set[str]
     structural_hash: str
     nodes: Dict[str, Dict]
+    available_tools: List[AvailableTool] = Field(default_factory=list)
 
     model_config = {"frozen": True}

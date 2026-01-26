@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from uuid import UUID
 
 from domain.execution.schemas.execution import (
@@ -14,7 +14,6 @@ from domain.execution.schemas.execution import (
 from services.execution_boundary import ExecutionBoundary
 from domain.common.schemas.error import ErrorResponse
 from exceptions.service_exceptions import (
-    MethodNotAllowedPlaceholderException,
     RouterValidationException,
 )
 from utils.auth import AuthContext, get_auth_context
@@ -62,28 +61,24 @@ class ExecutionPlaneController:
             self.get_flow_run,
             methods=["GET"],
             response_model=FlowRun,
-            responses=self._resp405(),
         )
         r(
             "/flow-runs/{flow_run_id}/graph-state",
             self.get_graph_state,
             methods=["GET"],
             response_model=GraphState,
-            responses=self._resp405(),
         )
         r(
             "/node-runs",
             self.list_node_runs,
             methods=["GET"],
             response_model=list[NodeRun],
-            responses=self._resp405(),
         )
         r(
             "/agent-runs",
             self.list_agent_runs,
             methods=["GET"],
             response_model=list[AgentRun],
-            responses=self._resp405(),
         )
         r(
             "/execution-events",
@@ -99,7 +94,7 @@ class ExecutionPlaneController:
     async def create_flow_run(
         self,
         request: Request,
-        payload: FlowRunCreate,
+        flow_run: FlowRunCreate,
         auth: AuthContext = Depends(get_auth_context),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> FlowRun:
@@ -109,7 +104,7 @@ class ExecutionPlaneController:
             auth=auth,
             endpoint=request.url.path,
             idempotency_key=idempotency_key,
-            payload=payload,
+            flow_run=flow_run,
             channel="http",
             headers=dict(request.headers),
             external_message_id=request.headers.get("X-External-Message-Id"),
@@ -141,20 +136,34 @@ class ExecutionPlaneController:
         )
 
     async def get_flow_run(
-        self, flow_run_id: str, _: AuthContext = Depends(get_auth_context)
+        self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> FlowRun:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.boundary.get_flow_run(auth=auth, flow_run_id=flow_run_id)
 
     async def get_graph_state(
-        self, flow_run_id: str, _: AuthContext = Depends(get_auth_context)
+        self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> GraphState:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.boundary.get_graph_state(auth=auth, flow_run_id=flow_run_id)
 
-    async def list_node_runs(self, _: AuthContext = Depends(get_auth_context)) -> list[NodeRun]:
-        raise MethodNotAllowedPlaceholderException()
+    async def list_node_runs(
+        self,
+        flow_run_id: str | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[NodeRun]:
+        return await self.boundary.list_node_runs(
+            auth=auth, flow_run_id=flow_run_id, limit=limit
+        )
 
-    async def list_agent_runs(self, _: AuthContext = Depends(get_auth_context)) -> list[AgentRun]:
-        raise MethodNotAllowedPlaceholderException()
+    async def list_agent_runs(
+        self,
+        flow_run_id: str | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[AgentRun]:
+        return await self.boundary.list_agent_runs(
+            auth=auth, flow_run_id=flow_run_id, limit=limit
+        )
 
     async def list_execution_events(
         self,

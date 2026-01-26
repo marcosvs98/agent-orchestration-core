@@ -26,7 +26,11 @@ class ConditionCompiler(ast.NodeVisitor):
             if type(node.op) not in self.ALLOWED_BINOPS:
                 raise DomainValidationException(message="edge_condition_not_supported")
             op = "AND" if isinstance(node.op, ast.And) else "OR"
-            return {"type": "bool_op", "op": op, "values": [self.visit(v) for v in node.values]}
+            return {
+                "type": "bool_op",
+                "op": op,
+                "values": [self.visit(v) for v in node.values],
+            }
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             return {"type": "not", "value": self.visit(node.operand)}
         if isinstance(node, ast.Compare):
@@ -42,6 +46,10 @@ class ConditionCompiler(ast.NodeVisitor):
                 "right": self.visit(node.comparators[0]),
             }
         if isinstance(node, ast.Name):
+            if node.id == "true":
+                return {"type": "constant", "value": True}
+            if node.id == "false":
+                return {"type": "constant", "value": False}
             return {"type": "identifier", "value": node.id}
         if isinstance(node, ast.Constant):
             return {"type": "constant", "value": node.value}
@@ -60,8 +68,11 @@ class FlowGraphCompiler:
             "edges": edges,
             "schema_version": 1,
         }
-        hash_input = json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()
+        hash_input = json.dumps(
+            snapshot, sort_keys=True, separators=(",", ":")
+        ).encode()
         graph_hash = hashlib.sha256(hash_input).hexdigest()
+
         return snapshot, graph_hash
 
     def _compile_edges(self, edges: List[FlowGraphEdge]) -> List[Dict[str, Any]]:
@@ -73,7 +84,9 @@ class FlowGraphCompiler:
                     "to_node": edge.to_node,
                     "edge_kind": edge.edge_kind,
                     "condition": edge.condition,
-                    "compiled_condition": self.condition_compiler.compile(edge.condition),
+                    "compiled_condition": self.condition_compiler.compile(
+                        edge.condition
+                    ),
                 }
             )
         return compiled

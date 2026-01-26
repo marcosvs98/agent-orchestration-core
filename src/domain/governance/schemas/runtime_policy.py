@@ -32,4 +32,3 @@ class ResolvedRuntimePolicy(BaseModel):
     definition: RuntimePolicyDefinition
     scope: RuntimePolicyScope
     flow_id: Optional[UUID] = None
-

@@ -15,6 +15,9 @@ class NodeAIExecutionPolicyBinding(ORMBaseModel):
     )
     ai_execution_policy_version_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey("ai_execution_policy_version.ai_execution_policy_version_id", ondelete="RESTRICT"),
+        ForeignKey(
+            "ai_execution_policy_version.ai_execution_policy_version_id",
+            ondelete="RESTRICT",
+        ),
         nullable=False,
     )

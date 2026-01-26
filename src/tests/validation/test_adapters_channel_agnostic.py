@@ -33,6 +33,7 @@ async def test_core_ignores_channel_variation(mocker):
         lifecycle=RunLifecycleStateMachine(),
         limits=mocker.MagicMock(),
     )
+    service.llm_executor = mocker.MagicMock()
 
     payload = FlowRunCreate(flow_version_id=flow_version_id, session_id=session_id)
 

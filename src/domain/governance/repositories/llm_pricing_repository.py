@@ -12,7 +12,9 @@ class LLMPricingRepository:
     def __init__(self, database_connection: DatabaseConnection) -> None:
         self.db = database_connection
 
-    async def get_active_pricing(self, *, provider: str, provider_model: str) -> Optional[LLMPricingModel]:
+    async def get_active_pricing(
+        self, *, provider: str, provider_model: str
+    ) -> Optional[LLMPricingModel]:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(LLMPricingModel).where(

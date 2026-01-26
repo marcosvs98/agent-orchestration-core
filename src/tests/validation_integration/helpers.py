@@ -53,7 +53,7 @@ async def append_execution_event(
 ) -> UUID:
     """Append an execution event with the next sequence number."""
     event_id = uuid4()
-    
+
     if event_sequence is None:
         await session.flush()
         result = await session.execute(
@@ -64,7 +64,7 @@ async def append_execution_event(
         next_sequence = int(result.scalar_one()) + 1
     else:
         next_sequence = event_sequence
-    
+
     session.add(
         ExecutionEvent(
             execution_event_id=event_id,

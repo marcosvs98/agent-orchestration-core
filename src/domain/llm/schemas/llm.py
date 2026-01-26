@@ -1,19 +1,24 @@
 from enum import StrEnum
 from typing import Any, Dict
-
+from uuid import UUID
 from pydantic import BaseModel, Field
-
+from domain.execution.services.graph_runtime.execution_plan import AvailableTool
 
 class LLMTaskType(StrEnum):
     INTENT_SELECTION = "INTENT_SELECTION"
     PARAM_EXTRACTION = "PARAM_EXTRACTION"
+    SLOT_FILLING = "SLOT_FILLING"
     CLARIFICATION = "CLARIFICATION"
     RESPONSE_RENDER = "RESPONSE_RENDER"
 
 
+class LLMProviderType(StrEnum):
+    OPENAI = "OPENAI"
+
+
 class LLMRequest(BaseModel):
-    task_type: LLMTaskType
-    input_payload: Dict[str, Any] = Field(default_factory=dict)
+    prompt: str
+    system_prompt: str | None = None
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     model_alias: str
@@ -22,6 +27,14 @@ class LLMRequest(BaseModel):
     max_cost_usd: float | None = None
     retry_limit: int | None = None
     fallback_model_alias: str | None = None
+    available_tools: list[AvailableTool] = []
+
+    prompt_version: int | None = None
+    prompt_frozen_hash: str | None = None
+    task_type: LLMTaskType | None = None
+
+    conversation_key: str | None = None
+    stateless: bool | None = None
 
     model_config = {"frozen": True}
 

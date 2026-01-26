@@ -1,4 +1,12 @@
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk

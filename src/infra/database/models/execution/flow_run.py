@@ -1,6 +1,5 @@
 from sqlalchemy import Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
-from sqlalchemy.sql import func
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
 
@@ -30,7 +29,9 @@ class FlowRun(ORMBaseModel):
         nullable=True,
     )
     status = Column(String(length=32), nullable=False, server_default="CREATED")
-    canonical_status = Column(String(length=32), nullable=False, server_default="CREATED")
+    canonical_status = Column(
+        String(length=32), nullable=False, server_default="CREATED"
+    )
     correlation_id = Column(PG_UUID(as_uuid=True), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)

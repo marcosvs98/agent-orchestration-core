@@ -1,9 +1,9 @@
 import sys
 from fastapi import FastAPI
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager  
+from contextlib import asynccontextmanager
 
-from settings import APPLICATION_NAME, APPLICATION_VERSION, CACHE_SILENT_MODE
+from settings import APPLICATION_NAME, APPLICATION_VERSION, APPLICATION_DESCRIPTION
 from adapters.observability.logging import get_logger, configure_logger
 from rest import init_middlewares, init_routes
 from containers import ApplicationContainer
@@ -30,18 +30,25 @@ def create_app() -> FastAPI:
     container.init_resources()
     container.wire(modules=[__name__])
 
-
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Service started")
         yield
         logger.info("Agent Router shutdown")
+        try:
+            tracer = container.adapters.tracer()
+            if tracer:
+                tracer.shutdown()
+        except Exception as e:
+            logger.error(
+                "Failed to shutdown tracer", error=str(e), error_type=type(e).__name__
+            )
         container.shutdown_resources()
         logger.debug("Service resources cleaned")
 
     app = FastAPI(
         title=APPLICATION_NAME,
-        description="...",
+        description=APPLICATION_DESCRIPTION,
         version=APPLICATION_VERSION,
         lifespan=lifespan,
     )
@@ -51,7 +58,7 @@ def create_app() -> FastAPI:
 
     init_routes(
         app,
-[
+        [
             container.tenants.tenants_controller(),
             container.flows.flows_controller(),
             container.agents.agents_controller(),
@@ -61,8 +68,10 @@ def create_app() -> FastAPI:
             container.execution.execution_controller(),
             container.execution.execution_plane_controller(),
             container.onboarding.onboarding_controller(),
-        ]
+            container.prompts.prompt_controller(),
+        ],
     )
     return app
 
-# app = create_app()
+
+app = create_app()  # Todo: Remove here after use

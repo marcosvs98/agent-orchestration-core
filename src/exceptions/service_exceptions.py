@@ -1,13 +1,11 @@
 from collections.abc import Sequence
 from typing import Any
 
-from decouple import config
 from fastapi import HTTPException, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.utils import is_body_allowed_for_status_code
-
-APPLICATION_NAME: str = config("APPLICATION_NAME", default="<description>", cast=str)
+from settings import APPLICATION_NAME
 
 
 class BaseServiceException(HTTPException):

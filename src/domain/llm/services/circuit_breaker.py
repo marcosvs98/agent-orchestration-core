@@ -25,6 +25,7 @@ class CircuitBreaker:
         if self.silent_mode:
             try:
                 data = await self.redis.get(self._key(scope))
+
                 if data and data.get("state") == "open":
                     raise DomainValidationException(message="llm_circuit_breaker_open")
             except Exception:
@@ -36,16 +37,20 @@ class CircuitBreaker:
 
     async def record_failure(self, scope: str) -> None:
         try:
-            count = await self.redis.incr_with_ttl(self._key(scope), self.window_seconds)
+            count = await self.redis.incr_with_ttl(
+                self._key(scope), self.window_seconds
+            )
             if count >= self.failure_threshold:
-                await self.redis.set(self._key(scope), {"state": "open"}, ttl=self.window_seconds)
-        except Exception:
+                await self.redis.set(
+                    self._key(scope), {"state": "open"}, ttl=self.window_seconds
+                )
+        except Exception as exc:
             if not self.silent_mode:
-                raise
+                raise exc from exc
 
     async def record_success(self, scope: str) -> None:
         try:
             await self.redis.delete(self._key(scope))
-        except Exception:
+        except Exception as exc:
             if not self.silent_mode:
-                raise
+                raise exc from exc

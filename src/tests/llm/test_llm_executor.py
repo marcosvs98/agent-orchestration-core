@@ -35,7 +35,7 @@ class _Repo:
 async def test_llm_executor_happy_path_emits_events():
     repo = _Repo()
     provider = FakeLLMProvider(canned_output={"result": "ok"}, token_usage={"prompt_tokens": 5})
-    executor = LLMExecutor(provider, repo)
+    executor = LLMExecutor(repo, provider)
     request = LLMRequest(
         task_type=LLMTaskType.INTENT_SELECTION,
         input_payload={"anything": "goes"},
@@ -75,8 +75,8 @@ async def test_llm_executor_fails_on_output_schema_violation():
         return provider
 
     executor = LLMExecutor(
-        provider,
         repo,
+        provider,
         provider_selector=None,
         provider_factory=provider_factory,
     )

@@ -125,7 +125,7 @@ Eles usam **model_id lógico**:
 resolve_model(
   model_id="text-medium",
   provider="openai",
-  tenant="zapay"
+  tenant="your_pypy"
 ) -> provider_model="gpt-4o-mini"
 ```
 
@@ -235,7 +235,7 @@ Nenhum provider entra “ligado”.
 Controles:
 
 * enable_llm_provider_openai = false
-* enable_llm_for_tenant_zapay = false
+* enable_llm_for_tenant_your_pypy = false
 * rollout por percentual
 * kill switch global
 

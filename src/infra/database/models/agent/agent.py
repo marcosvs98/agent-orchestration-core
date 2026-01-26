@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -13,3 +13,4 @@ class Agent(ORMBaseModel):
         ForeignKey("tenant.tenant_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    name = Column(String(length=255), nullable=True)

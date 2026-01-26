@@ -13,7 +13,8 @@ from domain.tools.ports.tool_executor import ToolExecutorPort
 from domain.tools.ports.secret_resolver import SecretResolverPort
 from domain.execution.schemas.events import ExecutionEventType
 from domain.tools.schemas.http_result import HttpToolResult
-from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.tools.repositories.tools_repository import ToolsRepository
 from exceptions.service_exceptions import DomainValidationException
 
 
@@ -23,12 +24,14 @@ class ToolOrchestrator:
         repository: ExecutionRepository,
         executor: ToolExecutorPort,
         secret_resolver: SecretResolverPort,
-        tracer: LangfuseRuntimeTracer | None = None,
+        tracer: RuntimeTracerPort | None = None,
+        tools_repository: ToolsRepository | None = None,
     ) -> None:
         self.repository = repository
         self.executor = executor
         self.secret_resolver = secret_resolver
         self.tracer = tracer
+        self.tools_repository = tools_repository
 
     async def _resolve_headers(
         self, *, headers_config: dict
@@ -56,6 +59,15 @@ class ToolOrchestrator:
         tool_config = await self.repository.get_tool_config(tool_run.tool_config_id)
         if tool_config is None:
             raise DomainValidationException(message="tool_config_not_found")
+
+        tool_name = None
+        if self.tools_repository and tool_config.tool_id:
+            try:
+                tool = await self.tools_repository.get_tool(tool_config.tool_id)
+                if tool and tool.name:
+                    tool_name = f"services.{tool.name}"
+            except Exception:
+                pass
 
         config: dict = tool_config.config or {}
         url = config.get("url")
@@ -85,14 +97,20 @@ class ToolOrchestrator:
         try:
             span_cm = (
                 self.tracer.start_tool_span(
-                    tool_id=str(tool_run.tool_config_id), input={"headers": list(headers.keys())}
+                    tool_id=str(tool_run.tool_config_id),
+                    input={"headers": list(headers.keys())},
+                    name=tool_name,
                 )
                 if self.tracer
                 else contextlib.nullcontext()
             )
             if secret_refs:
-                flow_run_id = await self.repository.get_flow_run_id_for_tool_run(tool_run.tool_run_id)
-                session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
+                flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
+                    tool_run.tool_run_id
+                )
+                session_id, tenant_id = await self.repository.get_flow_context(
+                    flow_run_id
+                )
                 await self.repository.append_execution_event(
                     tenant_id=tenant_id,
                     session_id=session_id,
@@ -132,7 +150,9 @@ class ToolOrchestrator:
         except Exception as exc:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             retries = max(attempt - 1, 0)
-            flow_run_id = await self.repository.get_flow_run_id_for_tool_run(tool_run.tool_run_id)
+            flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
+                tool_run.tool_run_id
+            )
             session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
             if isinstance(exc, DomainValidationException):
                 await self.repository.append_execution_event(
@@ -190,8 +210,14 @@ class ToolOrchestrator:
             raise DomainValidationException(message="tool_executor_empty_result")
         latency_ms = int((time.monotonic() - started_at) * 1000)
         retries = max(attempt - 1, 0)
-        response_size = len(result.get("text", "").encode("utf-8")) if isinstance(result, dict) else 0
-        flow_run_id = await self.repository.get_flow_run_id_for_tool_run(tool_run.tool_run_id)
+        response_size = (
+            len(result.get("text", "").encode("utf-8"))
+            if isinstance(result, dict)
+            else 0
+        )
+        flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
+            tool_run.tool_run_id
+        )
         session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
         await self.repository.update_tool_run_result(
             tool_run_id=tool_run.tool_run_id,
@@ -220,7 +246,11 @@ class ToolOrchestrator:
         )
         await self.repository.create_response_artifact_for_tool_run(
             tool_run_id=tool_run.tool_run_id,
-            payload={"type": "tool_result", "tool_run_id": str(tool_run.tool_run_id), "result": result},
+            payload={
+                "type": "tool_result",
+                "tool_run_id": str(tool_run.tool_run_id),
+                "result": result,
+            },
         )
 
         return result

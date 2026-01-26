@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
+from domain.common.schemas.change import ChangeRequest
 from domain.rag.schemas.rag import RagConfig, RagConfigCreate, VectorStore
 from domain.rag.services.rag_service import RagService
-from domain.common.schemas.error import ErrorResponse
-from exceptions.service_exceptions import MethodNotAllowedPlaceholderException
 from utils.auth import AuthContext, get_auth_context
 
 
@@ -21,34 +20,105 @@ class RagController:
 
     def _bind_routes(self) -> None:
         r = self.router.add_api_route
-        r("/rag-configs", self.list_rag_configs, methods=["GET"], response_model=list[RagConfig], responses=self._resp405())
-        r("/rag-configs", self.create_rag_config, methods=["POST"], response_model=RagConfig, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/rag-configs/{rag_config_id}:publish", self.publish_rag_config, methods=["POST"], response_model=RagConfig, responses=self._resp405())
-        r("/rag-configs/{rag_config_id}:deprecate", self.deprecate_rag_config, methods=["POST"], response_model=RagConfig, responses=self._resp405())
-        r("/rag-configs/{rag_config_id}:disable", self.disable_rag_config, methods=["POST"], response_model=RagConfig, responses=self._resp405())
-        r("/vector-stores", self.list_vector_stores, methods=["GET"], response_model=list[VectorStore], responses=self._resp405())
-
-    def _resp405(self) -> dict[int, dict[str, object]]:
-        return {status.HTTP_405_METHOD_NOT_ALLOWED: {"model": ErrorResponse}}
+        r(
+            "/rag-configs",
+            self.list_rag_configs,
+            methods=["GET"],
+            response_model=list[RagConfig],
+        )
+        r(
+            "/rag-configs",
+            self.create_rag_config,
+            methods=["POST"],
+            response_model=RagConfig,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/rag-configs/{rag_config_id}:publish",
+            self.publish_rag_config,
+            methods=["POST"],
+            response_model=RagConfig,
+        )
+        r(
+            "/rag-configs/{rag_config_id}:deprecate",
+            self.deprecate_rag_config,
+            methods=["POST"],
+            response_model=RagConfig,
+        )
+        r(
+            "/rag-configs/{rag_config_id}:disable",
+            self.disable_rag_config,
+            methods=["POST"],
+            response_model=RagConfig,
+        )
+        r(
+            "/vector-stores",
+            self.list_vector_stores,
+            methods=["GET"],
+            response_model=list[VectorStore],
+        )
 
     async def list_rag_configs(
         self,
-        status_filter: list[str] | None = None,
-        _: AuthContext = Depends(get_auth_context),
+        status_filter: list[str] | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
     ) -> list[RagConfig]:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.list_rag_configs(
+            tenant_id=auth.tenant_id, status_filter=status_filter, limit=limit
+        )
 
-    async def create_rag_config(self, __: RagConfigCreate, _: AuthContext = Depends(get_auth_context)) -> RagConfig:
-        raise MethodNotAllowedPlaceholderException()
+    async def create_rag_config(
+        self,
+        rag_config_create: RagConfigCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagConfig:
+        return await self.service.create_rag_config(
+            tenant_id=auth.tenant_id,
+            rag_config_create=rag_config_create,
+            principal_id=auth.principal_id,
+        )
 
-    async def publish_rag_config(self, rag_config_id: str, _: AuthContext = Depends(get_auth_context)) -> RagConfig:
-        raise MethodNotAllowedPlaceholderException()
+    async def publish_rag_config(
+        self,
+        rag_config_id: str,
+        change: ChangeRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagConfig:
+        return await self.service.publish_rag_config(
+            tenant_id=auth.tenant_id,
+            rag_config_id=rag_config_id,
+            principal_id=auth.principal_id,
+            change_request=change,
+        )
 
-    async def deprecate_rag_config(self, rag_config_id: str, _: AuthContext = Depends(get_auth_context)) -> RagConfig:
-        raise MethodNotAllowedPlaceholderException()
+    async def deprecate_rag_config(
+        self,
+        rag_config_id: str,
+        change: ChangeRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagConfig:
+        return await self.service.deprecate_rag_config(
+            tenant_id=auth.tenant_id,
+            rag_config_id=rag_config_id,
+            principal_id=auth.principal_id,
+            change_request=change,
+        )
 
-    async def disable_rag_config(self, rag_config_id: str, _: AuthContext = Depends(get_auth_context)) -> RagConfig:
-        raise MethodNotAllowedPlaceholderException()
+    async def disable_rag_config(
+        self,
+        rag_config_id: str,
+        change: ChangeRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagConfig:
+        return await self.service.disable_rag_config(
+            tenant_id=auth.tenant_id,
+            rag_config_id=rag_config_id,
+            principal_id=auth.principal_id,
+            change_request=change,
+        )
 
-    async def list_vector_stores(self, _: AuthContext = Depends(get_auth_context)) -> list[VectorStore]:
-        raise MethodNotAllowedPlaceholderException()
+    async def list_vector_stores(
+        self, auth: AuthContext = Depends(get_auth_context)
+    ) -> list[VectorStore]:
+        return await self.service.list_vector_stores()

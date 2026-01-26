@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from uuid import UUID
 
 from domain.common.schemas.change import ChangeRequest
@@ -24,7 +24,10 @@ from domain.flows.schemas.graph import (
 )
 from domain.flows.services.flows_service import FlowsService
 from domain.common.schemas.error import ErrorResponse
-from exceptions.service_exceptions import MethodNotAllowedPlaceholderException, RouterValidationException
+from exceptions.service_exceptions import (
+    MethodNotAllowedPlaceholderException,
+    RouterValidationException,
+)
 from utils.auth import AuthContext, get_auth_context
 
 
@@ -42,55 +45,199 @@ class FlowsController:
 
     def _bind_routes(self) -> None:
         r = self.router.add_api_route
-        r("/flows", self.list_flows, methods=["GET"], response_model=list[Flow], responses=self._resp405())
-        r("/flows", self.create_flow, methods=["POST"], response_model=Flow, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/flows/{flow_id}", self.get_flow, methods=["GET"], response_model=Flow, responses=self._resp405())
-        r("/flows/{flow_id}/versions", self.list_flow_versions, methods=["GET"], response_model=list[FlowVersion], responses=self._resp405())
-        r("/flows/{flow_id}/versions", self.create_flow_version, methods=["POST"], response_model=FlowVersion, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}:validate", self.validate_flow_version, methods=["POST"], response_model=FlowVersion, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}:publish", self.publish_flow_version, methods=["POST"], response_model=FlowVersion, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}:activate", self.activate_flow_version, methods=["POST"], response_model=FlowVersion, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}:rollback", self.rollback_flow_version, methods=["POST"], response_model=FlowVersion, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}:deprecate", self.deprecate_flow_version, methods=["POST"], response_model=FlowVersion, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}:disable", self.disable_flow_version, methods=["POST"], response_model=FlowVersion, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}/nodes", self.list_nodes, methods=["GET"], response_model=list[Node], responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}/graph", self.create_flow_graph, methods=["POST"], response_model=None, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}/graph:draft", self.upsert_flow_graph_draft, methods=["POST"], response_model=None, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}/graph:validate", self.validate_flow_graph_draft, methods=["POST"], response_model=None, status_code=status.HTTP_200_OK, responses=self._resp405())
-        r("/flows/{flow_id}/versions/{flow_version_id}/graph:compile", self.compile_flow_graph, methods=["POST"], response_model=None, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/nodes", self.create_node, methods=["POST"], response_model=Node, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/routers", self.list_routers, methods=["GET"], response_model=list[Router], responses=self._resp405())
-        r("/routers", self.create_router, methods=["POST"], response_model=Router, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/routing-rules", self.create_routing_rule, methods=["POST"], response_model=RoutingRule, status_code=status.HTTP_201_CREATED, responses=self._resp405())
-        r("/condition-expressions", self.create_condition_expression, methods=["POST"], response_model=ConditionExpression, status_code=status.HTTP_201_CREATED, responses=self._resp405())
+        r(
+            "/flows",
+            self.list_flows,
+            methods=["GET"],
+            response_model=list[Flow],
+        )
+        r(
+            "/flows",
+            self.create_flow,
+            methods=["POST"],
+            response_model=Flow,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/{flow_id}",
+            self.get_flow,
+            methods=["GET"],
+            response_model=Flow,
+        )
+        r(
+            "/flows/{flow_id}/versions",
+            self.list_flow_versions,
+            methods=["GET"],
+            response_model=list[FlowVersion],
+        )
+        r(
+            "/flows/{flow_id}/versions",
+            self.create_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}:validate",
+            self.validate_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}:publish",
+            self.publish_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}:activate",
+            self.activate_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}:rollback",
+            self.rollback_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}:deprecate",
+            self.deprecate_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}:disable",
+            self.disable_flow_version,
+            methods=["POST"],
+            response_model=FlowVersion,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/nodes",
+            self.list_nodes,
+            methods=["GET"],
+            response_model=list[Node],
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/graph",
+            self.create_flow_graph,
+            methods=["POST"],
+            response_model=None,
+            status_code=status.HTTP_201_CREATED,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/graph:draft",
+            self.upsert_flow_graph_draft,
+            methods=["POST"],
+            response_model=None,
+            status_code=status.HTTP_201_CREATED,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/graph:validate",
+            self.validate_flow_graph_draft,
+            methods=["POST"],
+            response_model=None,
+            status_code=status.HTTP_200_OK,
+            responses=self._resp405(),
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/graph:compile",
+            self.compile_flow_graph,
+            methods=["POST"],
+            response_model=None,
+            status_code=status.HTTP_201_CREATED,
+            responses=self._resp405(),
+        )
+        r(
+            "/nodes",
+            self.create_node,
+            methods=["POST"],
+            response_model=Node,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/routers",
+            self.list_routers,
+            methods=["GET"],
+            response_model=list[Router],
+        )
+        r(
+            "/routers",
+            self.create_router,
+            methods=["POST"],
+            response_model=Router,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/routing-rules",
+            self.create_routing_rule,
+            methods=["POST"],
+            response_model=RoutingRule,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/condition-expressions",
+            self.create_condition_expression,
+            methods=["POST"],
+            response_model=ConditionExpression,
+            status_code=status.HTTP_201_CREATED,
+        )
 
     def _resp405(self) -> dict[int, dict[str, object]]:
         return {status.HTTP_405_METHOD_NOT_ALLOWED: {"model": ErrorResponse}}
 
-    async def list_flows(self, _: AuthContext = Depends(get_auth_context)) -> list[Flow]:
-        raise MethodNotAllowedPlaceholderException()
+    async def list_flows(
+        self,
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[Flow]:
+        return await self.service.list_flows(tenant_id=auth.tenant_id, limit=limit)
 
-    async def create_flow(self, __: FlowCreate, _: AuthContext = Depends(get_auth_context)) -> Flow:
-        raise MethodNotAllowedPlaceholderException()
+    async def create_flow(
+        self, flow_create: FlowCreate, auth: AuthContext = Depends(get_auth_context)
+    ) -> Flow:
+        return await self.service.create_flow(
+            tenant_id=auth.tenant_id,
+            flow_create=flow_create,
+            principal_id=auth.principal_id,
+        )
 
-    async def get_flow(self, flow_id: str, _: AuthContext = Depends(get_auth_context)) -> Flow:
-        raise MethodNotAllowedPlaceholderException()
+    async def get_flow(
+        self, flow_id: str, auth: AuthContext = Depends(get_auth_context)
+    ) -> Flow:
+        return await self.service.get_flow(tenant_id=auth.tenant_id, flow_id=flow_id)
 
     async def list_flow_versions(
         self,
         flow_id: str,
-        status_filter: list[str] | None = None,
-        _: AuthContext = Depends(get_auth_context),
+        status_filter: list[str] | None = Query(default=None),
+        auth: AuthContext = Depends(get_auth_context),
     ) -> list[FlowVersion]:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.list_flow_versions(
+            tenant_id=auth.tenant_id, flow_id=flow_id, status_filter=status_filter
+        )
 
     async def create_flow_version(
         self,
         flow_id: str,
-        __: FlowVersionCreate,
-        _: AuthContext = Depends(get_auth_context),
+        flow_version_create: FlowVersionCreate,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> FlowVersion:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.create_flow_version(
+            tenant_id=auth.tenant_id,
+            flow_id=flow_id,
+            flow_version_create=flow_version_create,
+            principal_id=auth.principal_id,
+        )
 
     async def validate_flow_version(
         self,
@@ -218,7 +365,9 @@ class FlowsController:
         payload: FlowGraphCreate,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         await self.service.create_flow_graph(
             tenant_id=auth.tenant_id,
@@ -235,9 +384,13 @@ class FlowsController:
         payload: FlowGraphDraftCreate,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
-        await self.service.upsert_flow_graph_draft(tenant_id=auth.tenant_id, payload=payload)
+        await self.service.upsert_flow_graph_draft(
+            tenant_id=auth.tenant_id, payload=payload
+        )
 
     async def validate_flow_graph_draft(
         self,
@@ -246,9 +399,13 @@ class FlowsController:
         payload: FlowGraphCompileRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
-        await self.service.validate_flow_graph_draft(tenant_id=auth.tenant_id, payload=payload)
+        await self.service.validate_flow_graph_draft(
+            tenant_id=auth.tenant_id, payload=payload
+        )
 
     async def compile_flow_graph(
         self,
@@ -257,7 +414,9 @@ class FlowsController:
         payload: FlowGraphCompileRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         await self.service.compile_flow_graph(tenant_id=auth.tenant_id, payload=payload)
 
@@ -265,29 +424,57 @@ class FlowsController:
         self,
         flow_id: str,
         flow_version_id: str,
-        _: AuthContext = Depends(get_auth_context),
+        auth: AuthContext = Depends(get_auth_context),
     ) -> list[Node]:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.list_nodes(
+            tenant_id=auth.tenant_id,
+            flow_id=flow_id,
+            flow_version_id=flow_version_id,
+        )
 
-    async def create_node(self, __: NodeCreate, _: AuthContext = Depends(get_auth_context)) -> Node:
-        raise MethodNotAllowedPlaceholderException()
+    async def create_node(
+        self, node_create: NodeCreate, auth: AuthContext = Depends(get_auth_context)
+    ) -> Node:
+        return await self.service.create_node(
+            tenant_id=auth.tenant_id,
+            node_create=node_create,
+            principal_id=auth.principal_id,
+        )
 
-    async def list_routers(self, _: AuthContext = Depends(get_auth_context)) -> list[Router]:
-        raise MethodNotAllowedPlaceholderException()
+    async def list_routers(
+        self,
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[Router]:
+        return await self.service.list_routers(tenant_id=auth.tenant_id, limit=limit)
 
-    async def create_router(self, __: RouterCreate, _: AuthContext = Depends(get_auth_context)) -> Router:
-        raise MethodNotAllowedPlaceholderException()
+    async def create_router(
+        self, router_create: RouterCreate, auth: AuthContext = Depends(get_auth_context)
+    ) -> Router:
+        return await self.service.create_router(
+            tenant_id=auth.tenant_id,
+            router_create=router_create,
+            principal_id=auth.principal_id,
+        )
 
     async def create_routing_rule(
         self,
-        __: RoutingRuleCreate,
-        _: AuthContext = Depends(get_auth_context),
+        routing_rule_create: RoutingRuleCreate,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> RoutingRule:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.create_routing_rule(
+            tenant_id=auth.tenant_id,
+            routing_rule_create=routing_rule_create,
+            principal_id=auth.principal_id,
+        )
 
     async def create_condition_expression(
         self,
-        __: ConditionExpressionCreate,
-        _: AuthContext = Depends(get_auth_context),
+        condition_expression_create: ConditionExpressionCreate,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> ConditionExpression:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.create_condition_expression(
+            tenant_id=auth.tenant_id,
+            condition_expression_create=condition_expression_create,
+            principal_id=auth.principal_id,
+        )

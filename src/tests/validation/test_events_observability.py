@@ -33,6 +33,7 @@ async def test_execution_event_contains_correlation_and_channel(mocker):
         lifecycle=RunLifecycleStateMachine(),
         limits=mocker.MagicMock(),
     )
+    service.llm_executor = mocker.MagicMock()
 
     payload = FlowRunCreate(
         flow_version_id=flow_version_id,

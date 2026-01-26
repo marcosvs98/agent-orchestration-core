@@ -26,7 +26,9 @@ class FlowGraphDraftValidator:
                 expr = edge.condition.replace("&&", " and ").replace("||", " or ")
                 ast.parse(expr, mode="eval")
             except SyntaxError as exc:
-                raise DomainValidationException(message="edge_condition_invalid") from exc
+                raise DomainValidationException(
+                    message="edge_condition_invalid"
+                ) from exc
 
     @staticmethod
     def _validate_mutual_exclusion(edges: List[FlowGraphEdge]) -> None:
@@ -43,7 +45,9 @@ class FlowGraphDraftValidator:
                     raise DomainValidationException(message="edge_condition_duplicate")
                 seen.add(edge.condition)
             if FlowGraphDraftValidator._has_always_true(edge_list):
-                raise DomainValidationException(message="edge_condition_not_mutually_exclusive")
+                raise DomainValidationException(
+                    message="edge_condition_not_mutually_exclusive"
+                )
 
     @staticmethod
     def _has_always_true(edge_list: List[FlowGraphEdge]) -> bool:
@@ -65,16 +69,22 @@ class FlowGraphDraftValidator:
             return FlowGraphDraftValidator._is_constant_true(node.operand) is False
         if isinstance(node, ast.BoolOp):
             if isinstance(node.op, ast.And):
-                return all(FlowGraphDraftValidator._is_constant_true(v) for v in node.values)
+                return all(
+                    FlowGraphDraftValidator._is_constant_true(v) for v in node.values
+                )
             if isinstance(node.op, ast.Or):
-                return any(FlowGraphDraftValidator._is_constant_true(v) for v in node.values)
+                return any(
+                    FlowGraphDraftValidator._is_constant_true(v) for v in node.values
+                )
         if isinstance(node, ast.Compare):
             # evaluate only when both sides are constants
             if len(node.ops) == 1 and len(node.comparators) == 1:
                 left = node.left
                 right = node.comparators[0]
                 if isinstance(left, ast.Constant) and isinstance(right, ast.Constant):
-                    return eval(compile(ast.Expression(node), "<ast>", "eval")) is True  # safe because constants only
+                    return (
+                        eval(compile(ast.Expression(node), "<ast>", "eval")) is True
+                    )  # safe because constants only
         return False
 
     @staticmethod

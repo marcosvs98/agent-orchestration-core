@@ -1,4 +1,4 @@
-FROM python:3.14
+FROM python:3.13
 
 #LABEL maintainer="Assistente Bolso Team"
 #LABEL description="Agente Roteador para assistente financeiro conversacional"

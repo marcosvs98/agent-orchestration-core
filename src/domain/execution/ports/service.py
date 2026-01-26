@@ -20,7 +20,7 @@ class ExecutionServicePort(ABC):
         tenant_id: UUID,
         endpoint: str,
         idempotency_key: str,
-        payload: FlowRunCreate,
+        flow_run: FlowRunCreate,
         channel: str = "http",
         headers: dict[str, str] | None = None,
         external_message_id: str | None = None,

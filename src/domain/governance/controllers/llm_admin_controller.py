@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends
 
 from domain.governance.services.llm_admin_service import LLMAdminService
 from domain.governance.repositories.llm_provider_repository import LLMProviderRepository
-from domain.governance.repositories.llm_model_mapping_repository import LLMModelMappingRepository
+from domain.governance.repositories.llm_model_mapping_repository import (
+    LLMModelMappingRepository,
+)
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from infra.database import get_db
 

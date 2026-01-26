@@ -44,3 +44,7 @@ class ORMBaseModel(DeclarativeBase):
     @classmethod
     def from_dict(cls, data: dict) -> "ORMBaseModel":
         return cls(**data)
+
+    def __repr__(self):
+        attrs = ", ".join(f"{k}={v!r}" for k, v in self.to_dict().items())
+        return f"<{self.__class__.__name__}({attrs})>"

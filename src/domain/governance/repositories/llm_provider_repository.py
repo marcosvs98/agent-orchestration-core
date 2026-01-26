@@ -6,14 +6,18 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from infra.database import DatabaseConnection
-from infra.database.models.governance.llm_provider_config import LLMProviderConfig as LLMProviderConfigModel
+from infra.database.models.governance.llm_provider_config import (
+    LLMProviderConfig as LLMProviderConfigModel,
+)
 
 
 class LLMProviderRepository:
     def __init__(self, database_connection: DatabaseConnection) -> None:
         self.db = database_connection
 
-    async def get_active_config(self, *, tenant_id: UUID, provider: str) -> Optional[LLMProviderConfigModel]:
+    async def get_active_config(
+        self, *, tenant_id: UUID, provider: str
+    ) -> Optional[LLMProviderConfigModel]:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(LLMProviderConfigModel).where(
@@ -48,7 +52,10 @@ class LLMProviderRepository:
             if instance:
                 await session.execute(
                     update(LLMProviderConfigModel)
-                    .where(LLMProviderConfigModel.llm_provider_config_id == instance.llm_provider_config_id)
+                    .where(
+                        LLMProviderConfigModel.llm_provider_config_id
+                        == instance.llm_provider_config_id
+                    )
                     .values(
                         base_url=base_url,
                         credential_secret_ref=credential_secret_ref,

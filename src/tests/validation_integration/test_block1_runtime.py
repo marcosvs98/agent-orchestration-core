@@ -17,7 +17,7 @@ pytestmark = [pytest.mark.validation_integration, pytest.mark.asyncio]
 async def test_replay_produces_same_event_topology(db_session) -> None:
     correlation_id = uuid4()
     payload = {"input": {"text": "hello"}}
-    
+
     run_one = await create_flow_run(
         db_session,
         session_id=SESSION_ID,
@@ -26,7 +26,7 @@ async def test_replay_produces_same_event_topology(db_session) -> None:
         payload=payload,
     )
     await db_session.flush()
-    
+
     run_two = await create_flow_run(
         db_session,
         session_id=SESSION_ID,
@@ -35,7 +35,7 @@ async def test_replay_produces_same_event_topology(db_session) -> None:
         payload=payload,
     )
     await db_session.flush()
-    
+
     for flow_run_id in (run_one, run_two):
         await append_execution_event(
             db_session,
@@ -47,7 +47,7 @@ async def test_replay_produces_same_event_topology(db_session) -> None:
             payload={"payload": payload["input"]},
             event_sequence=1,
         )
-        
+
         await append_execution_event(
             db_session,
             tenant_id=TENANT_ID,
@@ -80,7 +80,7 @@ async def test_replay_produces_same_event_topology(db_session) -> None:
         }
         for row in rows_one
     ]
-    
+
     result_two = await db_session.execute(
         sa.select(
             ExecutionEvent.type,
@@ -101,7 +101,7 @@ async def test_replay_produces_same_event_topology(db_session) -> None:
         }
         for row in rows_two
     ]
-    
+
     assert events_one == events_two
 
     summary = text_block(

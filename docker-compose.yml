@@ -36,28 +36,54 @@ services:
       timeout: 3s
       retries: 5
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  #app:
+  #  build:
+  #    context: .
+  #    dockerfile: Dockerfile
+  #  restart: unless-stopped
+  #  env_file:
+  #    - .env
+  #  environment:
+  #    DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
+  #    REDIS_URL: redis://redis:6379/3
+  #    REDIS_HOST: redis
+  #    REDIS_PORT: 6379
+  #    ENVIRONMENT: development
+  #    JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
+  #    JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
+  #    JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
+  #    JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  #    LANGFUSE_BASE_URL: http://langfuse-proxy:3000
+  #    LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+  #    LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+  #  ports:
+  #    - "8000:8000"
+  #  networks:
+  #    - network-dev
+  #  depends_on:
+  #    postgres:
+  #      condition: service_healthy
+  #    redis:
+  #      condition: service_healthy
+  #  volumes:
+  #    - ./src:/app/src
+  #    - ./resources:/app/resources
+
+  langfuse-proxy:
+    image: python:3.12-slim
+    container_name: router-langfuse-proxy-dev
     restart: unless-stopped
-    env_file:
-      - .env
+    working_dir: /app
+    command: sh -c "pip install fastapi uvicorn httpx opentelemetry-proto protobuf && python3 /app/resources/langfuse_proxy.py"
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
-      REDIS_URL: redis://redis:6379/3
-      ENVIRONMENT: development
+      LANGFUSE_PROXY_PORT: 3000
+      LANGFUSE_TARGET_URL: https://us.cloud.langfuse.com
     ports:
-      - "8000:8000"
+      - "3000:3000"
     networks:
       - network-dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
-      - ./src:/app/src
+      - ./resources:/app/resources
 
 networks:
   network-dev:

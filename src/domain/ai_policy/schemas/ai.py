@@ -42,6 +42,7 @@ class AIExecutionPolicyVersionCreate(BaseModel):
     ai_execution_policy_id: UUID
     model_id: UUID
     notes: str | None = None
+    source_version_id: UUID | None = None
     version_major: int | None = None
     version_minor: int | None = None
     version_patch: int | None = None

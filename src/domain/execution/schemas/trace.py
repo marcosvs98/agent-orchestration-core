@@ -8,3 +8,4 @@ class TraceContext(BaseModel):
     flow_run_id: UUID
     tenant_id: UUID
     root_observation_id: str | None = None
+    flow_name: str | None = None
