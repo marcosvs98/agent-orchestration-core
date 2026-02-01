@@ -1,8 +1,8 @@
 from enum import StrEnum
 from typing import Any, Dict
-from uuid import UUID
 from pydantic import BaseModel, Field
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
+
 
 class LLMTaskType(StrEnum):
     INTENT_SELECTION = "INTENT_SELECTION"
@@ -45,6 +45,7 @@ class LLMResult(BaseModel):
     cost_usd: float | None = None
     latency_ms: int | None = None
     model_alias: str | None = None
+    raw_output: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"frozen": True}
 

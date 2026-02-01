@@ -24,8 +24,7 @@ run-seed:
 	@PYTHONPATH=src python3 resources/scripts/seeds/seed_main.py
 
 seed-demo:
-	docker compose run --rm --entrypoint "" app bash -c "python scripts/wait_for_db.py && PYTHONPATH=/app/src:/app/scripts python /app/resources/scripts/seeds/demo/run.py"
-	#@PYTHONPATH=src python resources/scripts/seeds/demo/run.py
+	@PYTHONPATH=src python resources/scripts/seeds/demo/run.py
 
 test-flow-demo:
 	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo.py

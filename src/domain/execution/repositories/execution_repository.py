@@ -5,7 +5,6 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.orm import aliased
 
-from adapters.cache.redis_adapter import RedisAdapter
 from domain.execution.schemas.execution import FlowRunInput
 from infra.database.models.conversation.session import Session as SessionModel
 from exceptions.service_exceptions import (
@@ -60,6 +59,7 @@ from infra.database.models.governance.billing_policy_version import (
 )
 from infra.database.models.execution.graph_state import GraphState as GraphStateModel
 
+
 class ExecutionRepository:
     def __init__(
         self,
@@ -95,7 +95,7 @@ class ExecutionRepository:
                     flow_version_id=flow_version_id,
                     correlation_id=correlation_id,
                     origin_flow_run_id=origin_flow_run_id,
-                    input=input_payload.model_dump(mode='json'),
+                    input=input_payload.model_dump(mode="json"),
                     interaction_id=interaction_id,
                     flow_graph_snapshot_id=flow_graph_snapshot_id,
                     execution_plan_hash=execution_plan_hash,
@@ -125,6 +125,50 @@ class ExecutionRepository:
                 sa.update(FlowRunModel)
                 .where(FlowRunModel.flow_run_id == flow_run_id)
                 .values(root_observation_id=root_observation_id)
+            )
+            await session.commit()
+
+    async def complete_flow_run(
+        self,
+        *,
+        flow_run_id: UUID,
+        status: str,
+        output: dict,
+    ) -> None:
+        from datetime import datetime, timezone
+
+        async with self.db.get_session() as session:
+            await session.execute(
+                sa.update(FlowRunModel)
+                .where(FlowRunModel.flow_run_id == flow_run_id)
+                .values(
+                    status=status,
+                    canonical_status=status,
+                    output=output,
+                    finished_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+    async def fail_flow_run(
+        self,
+        *,
+        flow_run_id: UUID,
+        failure_reason: str,
+        error: dict | None = None,
+    ) -> None:
+        from datetime import datetime, timezone
+
+        async with self.db.get_session() as session:
+            await session.execute(
+                sa.update(FlowRunModel)
+                .where(FlowRunModel.flow_run_id == flow_run_id)
+                .values(
+                    status="FAILED",
+                    canonical_status="FAILED",
+                    error=error or {"reason": failure_reason},
+                    finished_at=datetime.now(timezone.utc),
+                )
             )
             await session.commit()
 
@@ -561,6 +605,27 @@ class ExecutionRepository:
             await session.commit()
         return node_run_id
 
+    async def update_node_run_result(
+        self,
+        *,
+        node_run_id: UUID,
+        output_payload: dict,
+        status: str,
+        canonical_status: str,
+    ) -> None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(NodeRunModel).where(NodeRunModel.node_run_id == node_run_id)
+            )
+            instance = result.scalar_one_or_none()
+            if instance is None:
+                raise NotFoundServiceException(message="node_run_not_found")
+            instance.output = output_payload
+            instance.status = status
+            instance.canonical_status = canonical_status
+            instance.finished_at = sa.func.now()
+            await session.commit()
+
     async def get_graph_state(self, flow_run_id: UUID) -> GraphStateModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
@@ -711,7 +776,9 @@ class ExecutionRepository:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(AgentRunModel)
-                .join(NodeRunModel, AgentRunModel.node_run_id == NodeRunModel.node_run_id)
+                .join(
+                    NodeRunModel, AgentRunModel.node_run_id == NodeRunModel.node_run_id
+                )
                 .where(
                     AgentRunModel.agent_version_id == agent_version_id,
                     NodeRunModel.flow_run_id == flow_run_id,

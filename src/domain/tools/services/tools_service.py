@@ -1,4 +1,3 @@
-from typing import Any
 from uuid import UUID
 
 from domain.agents.repositories.agents_repository import AgentsRepository

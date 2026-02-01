@@ -20,8 +20,7 @@ class LLMGenerationHandle(Protocol):
         input_data: dict | None = None,
         model_parameters: dict | None = None,
         completion_start_time: datetime | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def update_failure(
         self,
@@ -30,8 +29,7 @@ class LLMGenerationHandle(Protocol):
         error_message: str,
         input_data: dict | None = None,
         traceback_str: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 class GuardrailSpanHandle(Protocol):
@@ -42,8 +40,7 @@ class GuardrailSpanHandle(Protocol):
         reason_code: str,
         applied_limits: dict,
         overrides: dict | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 class RetrieverSpanHandle(Protocol):
@@ -53,8 +50,7 @@ class RetrieverSpanHandle(Protocol):
         input: Dict[str, Any] | None = None,
         output: Dict[str, Any] | None = None,
         usage_details: Dict[str, Any] | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def update_results(
         self,
@@ -63,15 +59,17 @@ class RetrieverSpanHandle(Protocol):
         top_k: int,
         similarity_scores: list[float],
         usage_details: Dict[str, Any] | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 class EvaluatorSpanHandle(Protocol):
     def update_result(
-        self, *, passed: bool, errors: list[str] | None = None, score: float | None = None
-    ) -> None:
-        ...
+        self,
+        *,
+        passed: bool,
+        errors: list[str] | None = None,
+        score: float | None = None,
+    ) -> None: ...
 
 
 class EmbeddingSpanHandle(Protocol):
@@ -82,11 +80,9 @@ class EmbeddingSpanHandle(Protocol):
         dimension: int,
         latency_ms: int,
         usage_details: Dict[str, Any] | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    def update_failure(self, *, error_type: str, error_message: str) -> None:
-        ...
+    def update_failure(self, *, error_type: str, error_message: str) -> None: ...
 
 
 class RuntimeTracerPort(Protocol):
@@ -101,27 +97,30 @@ class RuntimeTracerPort(Protocol):
         user_id: UUID | None,
         external_request_id: str | None = None,
         trace_id: UUID | None = None,
-    ) -> TraceContext:
-        ...
+    ) -> TraceContext: ...
 
-    def end_flow_trace(self, *, output: dict | None = None) -> None:
-        ...
+    def end_flow_trace(self, *, output: dict | None = None) -> None: ...
 
-    def start_flow_span(self, *, trace: TraceContext, name: str | None = None) -> Iterator[None]:
-        ...
+    def start_flow_span(
+        self, *, trace: TraceContext, name: str | None = None
+    ) -> Iterator[None]: ...
 
     def start_node_span(
-        self, *, node_id: str, node_type: str, input: Dict[str, Any], name: str | None = None
-    ) -> Iterator[None]:
-        ...
+        self,
+        *,
+        node_id: str,
+        node_type: str,
+        input: Dict[str, Any],
+        name: str | None = None,
+    ) -> Iterator[None]: ...
 
     def start_guardrail_span(
         self, *, guardrail_type: str, input: Dict[str, Any], name: str | None = None
-    ) -> Iterator[GuardrailSpanHandle]:
-        ...
+    ) -> Iterator[GuardrailSpanHandle]: ...
 
-    def start_tool_span(self, *, tool_id: str, input: Dict[str, Any], name: str | None = None) -> Iterator[None]:
-        ...
+    def start_tool_span(
+        self, *, tool_id: str, input: Dict[str, Any], name: str | None = None
+    ) -> Iterator[None]: ...
 
     def start_llm_generation(
         self,
@@ -136,13 +135,11 @@ class RuntimeTracerPort(Protocol):
         session_id: UUID | None = None,
         tenant_id: UUID | None = None,
         name: str | None = None,
-    ) -> Iterator[LLMGenerationHandle]:
-        ...
+    ) -> Iterator[LLMGenerationHandle]: ...
 
     def start_chain_span(
         self, *, chain_name: str, input: Dict[str, Any], name: str | None = None
-    ) -> Iterator[None]:
-        ...
+    ) -> Iterator[None]: ...
 
     def start_retriever_span(
         self,
@@ -151,31 +148,24 @@ class RuntimeTracerPort(Protocol):
         query: str | None = None,
         input: Dict[str, Any] | None = None,
         name: str | None = None,
-    ) -> Iterator[RetrieverSpanHandle]:
-        ...
+    ) -> Iterator[RetrieverSpanHandle]: ...
 
     def start_evaluator_span(
         self, *, evaluator_name: str, input: Dict[str, Any], name: str | None = None
-    ) -> Iterator[EvaluatorSpanHandle]:
-        ...
+    ) -> Iterator[EvaluatorSpanHandle]: ...
 
     def start_embedding_span(
         self, *, model_id: str, input_text: str, name: str | None = None
-    ) -> Iterator[EmbeddingSpanHandle]:
-        ...
+    ) -> Iterator[EmbeddingSpanHandle]: ...
 
     def start_agent_span(
         self, *, agent_name: str, input: Dict[str, Any], name: str | None = None
-    ) -> Iterator[None]:
-        ...
+    ) -> Iterator[None]: ...
 
     def create_event(
         self, *, event_type: ExecutionEventType, input: Dict[str, Any] | None = None
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    def flush(self) -> None:
-        ...
+    def flush(self) -> None: ...
 
-    def shutdown(self) -> None:
-        ...
+    def shutdown(self) -> None: ...

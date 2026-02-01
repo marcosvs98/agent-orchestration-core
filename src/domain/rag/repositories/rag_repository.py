@@ -48,10 +48,7 @@ class RagRepository:
         limit: int,
     ) -> list[RagConfigModel]:
         async with self.db.get_session() as session:
-            stmt = (
-                select(RagConfigModel)
-                .where(RagConfigModel.tenant_id == tenant_id)
-            )
+            stmt = select(RagConfigModel).where(RagConfigModel.tenant_id == tenant_id)
             if status_filter is not None:
                 stmt = stmt.where(RagConfigModel.status.in_(status_filter))
             stmt = stmt.order_by(
@@ -98,7 +95,11 @@ class RagRepository:
                 if options is None:
                     options = source.options
             else:
-                if version_major is None or version_minor is None or version_patch is None:
+                if (
+                    version_major is None
+                    or version_minor is None
+                    or version_patch is None
+                ):
                     last_version = await session.execute(
                         select(RagConfigModel)
                         .where(RagConfigModel.tenant_id == tenant_id)
@@ -125,7 +126,7 @@ class RagRepository:
             instance = RagConfigModel(
                 tenant_id=tenant_id,
                 vector_store_id=vector_store_id,
-                status="DRAFT", # Todo: Deve ser StrEnum
+                status="DRAFT",  # Todo: Deve ser StrEnum
                 version_major=version_major,
                 version_minor=version_minor,
                 version_patch=version_patch,

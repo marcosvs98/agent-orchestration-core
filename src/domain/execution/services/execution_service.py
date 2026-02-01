@@ -69,8 +69,7 @@ from adapters.cache.redis_adapter import RedisAdapter
 from domain.prompts.services.prompt_service import PromptService
 from domain.prompts.repositories.prompt_repository import PromptRepository
 from domain.agents.repositories.agents_repository import AgentsRepository
-from domain.agents.schemas.agents import AgentVersion, PersonaConfig
-from domain.prompts.schemas.system_prompt_template import SystemPromptTemplate
+from domain.agents.schemas.agents import PersonaConfig
 from application.prompts.prompt_resolver import PromptResolver
 from application.prompts.system_prompt_compiler import SystemPromptCompiler
 from domain.llm.services.context_builder import ContextBuilder
@@ -80,6 +79,8 @@ from domain.governance.repositories.authoring_event_repository import (
 from domain.tools.ports.service import ToolsServicePort
 from domain.tools.repositories.tools_repository import ToolsRepository
 from domain.tools.services.tools_service import ToolsService
+from domain.tools.services.tool_orchestrator import ToolOrchestrator
+from infra.http_tool_executor import HttpToolExecutor
 
 TOOL_CATALOG_HASH_PLACEHOLDER = "tool_catalog_placeholder_v1"
 
@@ -109,7 +110,9 @@ class ExecutionService(ExecutionServicePort):
             provider_repo, mapping_repo, pricing_repo
         )
         provider_factory = LLMProviderFactory(
-            http_client=http_client, secret_resolver=secret_resolver, cache_adapter=self.cache_adapter
+            http_client=http_client,
+            secret_resolver=secret_resolver,
+            cache_adapter=self.cache_adapter,
         )
         cost_engine = CostEngine(pricing_repo)
         guardrail_engine = GuardrailEngine(self.cache_adapter, cost_engine)
@@ -150,11 +153,21 @@ class ExecutionService(ExecutionServicePort):
         self.prompt_repository = prompt_repository
         self.system_prompt_compiler = system_prompt_compiler
         self.hook = DbExecutionEventHook(repository, tracer=self.tracer)
+        tool_executor = HttpToolExecutor()
+        tool_orchestrator = ToolOrchestrator(
+            repository=repository,
+            executor=tool_executor,
+            secret_resolver=secret_resolver,
+            tracer=self.tracer,
+            tools_repository=self.tools_repository,
+        )
         self.runtime = RuntimeExecutor(
             repository,
             registry=NodeRegistry(
                 llm_executor=self.llm_executor,
                 prompt_resolver=prompt_resolver,
+                tool_orchestrator=tool_orchestrator,
+                execution_repository=repository,
             ),
             tracer=self.tracer,
             hook=self.hook,
@@ -217,7 +230,7 @@ class ExecutionService(ExecutionServicePort):
         endpoint: str,
         idempotency_key: str,
         flow_run: FlowRunCreate,
-        channel: str = "http", # Todo: Definir StrEnum
+        channel: str = "http",  # Todo: Definir StrEnum
         headers: dict[str, str] | None = None,
         external_message_id: str | None = None,
         request_id: str | None = None,
@@ -274,7 +287,9 @@ class ExecutionService(ExecutionServicePort):
             except (ValueError, TypeError) as exc:
                 raise DomainValidationException(message="invalid_trace_id") from exc
 
-        existing_session: SessionModel = await self.repository.get_session(flow_run.session_id)
+        existing_session: SessionModel = await self.repository.get_session(
+            flow_run.session_id
+        )
         if existing_session is None:
             await self.repository.create_session(
                 session_id=flow_run.session_id, tenant_id=tenant_id
@@ -304,7 +319,9 @@ class ExecutionService(ExecutionServicePort):
         runtime_policy_hash = self._hash_dict(runtime_policy.definition.model_dump())
         execution_plan_hash = graph_snapshot.graph_hash
 
-        tool_catalog_hash = TOOL_CATALOG_HASH_PLACEHOLDER # Todo: Isso me parece ser mock/hardcoded
+        tool_catalog_hash = (
+            TOOL_CATALOG_HASH_PLACEHOLDER  # Todo: Isso me parece ser mock/hardcoded
+        )
         llm_provider_config_hash = None
 
         flow_run_id: UUID = await self.repository.create_flow_run(
@@ -379,7 +396,9 @@ class ExecutionService(ExecutionServicePort):
             schema_version=1,
         )
 
-        available_tools: list[AvailableTool] = await self.tools_service.list_available_tools_for_execution(
+        available_tools: list[
+            AvailableTool
+        ] = await self.tools_service.list_available_tools_for_execution(
             tenant_id=tenant_id
         )
 
@@ -391,7 +410,9 @@ class ExecutionService(ExecutionServicePort):
                 graph_snapshot.graph_hash,
                 available_tools=available_tools,
             )
-            await self.cache_adapter.set(graph_snapshot.graph_hash, plan.model_dump(mode="json"))
+            await self.cache_adapter.set(
+                graph_snapshot.graph_hash, plan.model_dump(mode="json")
+            )
 
         await self.runtime.run(
             tenant_id=tenant_id,
@@ -414,6 +435,20 @@ class ExecutionService(ExecutionServicePort):
         flow_run_result = await self.repository.get_flow_run(flow_run_id)
         output = flow_run_result.output if flow_run_result else None
         self.tracer.end_flow_trace(output=output)
+
+        if flow_run_result:
+            response = response.model_copy(
+                update={
+                    "status": RunStatus(flow_run_result.status),
+                    "canonical_status": FlowRunStatus(flow_run_result.canonical_status),
+                    "started_at": flow_run_result.started_at,
+                    "finished_at": flow_run_result.finished_at,
+                    "output": flow_run_result.output or {},
+                    "error": flow_run_result.error or {},
+                    "root_observation_id": flow_run_result.root_observation_id,
+                }
+            )
+
         await self.idempotency.set_result(
             key,
             {"flow_run_id": str(flow_run_id), "response": response.model_dump()},
@@ -513,7 +548,9 @@ class ExecutionService(ExecutionServicePort):
                 agent_version.system_prompt_template_id
             )
             if template is None:
-                raise NotFoundServiceException(message="system_prompt_template_not_found")
+                raise NotFoundServiceException(
+                    message="system_prompt_template_not_found"
+                )
 
             persona = (
                 PersonaConfig.model_validate(agent_version.persona_config)
@@ -522,9 +559,7 @@ class ExecutionService(ExecutionServicePort):
             )
 
             system_prompt = self.system_prompt_compiler.render(template, persona)
-            system_prompt_hash = self.system_prompt_compiler.compute_hash(
-                system_prompt
-            )
+            system_prompt_hash = self.system_prompt_compiler.compute_hash(system_prompt)
 
         key = self.idempotency.build_key(
             tenant_id=tenant_id, endpoint=endpoint, idempotency_key=idempotency_key
@@ -797,7 +832,9 @@ class ExecutionService(ExecutionServicePort):
                 )
                 raise
 
-        tool_config = await self.repository.get_tool_config(payloadtool_run.tool_config_id)
+        tool_config = await self.repository.get_tool_config(
+            payloadtool_run.tool_config_id
+        )
         if tool_config is None:
             raise NotFoundServiceException(message="tool_config_not_found")
         if tool_config.status != VersionStatus.PUBLISHED:
@@ -919,7 +956,7 @@ class ExecutionService(ExecutionServicePort):
                         pass
                 break
 
-        return FlowRun.model_validate( # Todo: Isso esta bem zoado
+        return FlowRun.model_validate(  # Todo: Isso esta bem zoado
             {
                 "id": result.flow_run_id,
                 "origin_flow_run_id": result.origin_flow_run_id,

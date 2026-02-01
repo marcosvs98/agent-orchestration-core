@@ -82,8 +82,8 @@ class RagService(RagServicePort):
             resource_type="rag_config",
             resource_id=config_model.rag_config_id,
             version_id=None,
-            event_type="RAG_CONFIG_CREATED", # Todo: Deve ser StrEnum
-            change_type="CREATE", # Todo: Deve ser StrEnum
+            event_type="RAG_CONFIG_CREATED",  # Todo: Deve ser StrEnum
+            change_type="CREATE",  # Todo: Deve ser StrEnum
             principal_id=principal_id,
             justification="create rag config",
             schema_version=1,
@@ -120,10 +120,10 @@ class RagService(RagServicePort):
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
-            resource_type="rag_config", # Todo: Deve ser StrEnum
+            resource_type="rag_config",  # Todo: Deve ser StrEnum
             resource_id=config_uuid,
             version_id=None,
-            event_type="RAG_CONFIG_PUBLISHED", # Todo: Deve ser StrEnum
+            event_type="RAG_CONFIG_PUBLISHED",  # Todo: Deve ser StrEnum
             change_type=change_request.change_type,
             principal_id=principal_id,
             justification=change_request.justification,
@@ -164,10 +164,10 @@ class RagService(RagServicePort):
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
-            resource_type="rag_config", # Todo: Deve ser StrEnum
+            resource_type="rag_config",  # Todo: Deve ser StrEnum
             resource_id=config_uuid,
             version_id=None,
-            event_type="RAG_CONFIG_DEPRECATED", # Todo: Deve ser StrEnum
+            event_type="RAG_CONFIG_DEPRECATED",  # Todo: Deve ser StrEnum
             change_type=change_request.change_type,
             principal_id=principal_id,
             justification=change_request.justification,
@@ -210,10 +210,10 @@ class RagService(RagServicePort):
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
-            resource_type="rag_config", # Todo: Deve ser StrEnum
+            resource_type="rag_config",  # Todo: Deve ser StrEnum
             resource_id=config_uuid,
             version_id=None,
-            event_type="RAG_CONFIG_DISABLED", # Todo: Deve ser StrEnum
+            event_type="RAG_CONFIG_DISABLED",  # Todo: Deve ser StrEnum
             change_type=change_request.change_type,
             principal_id=principal_id,
             justification=change_request.justification,

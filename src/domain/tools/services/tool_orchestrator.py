@@ -1,11 +1,9 @@
 from uuid import UUID
-import contextlib
 
 import json
 import time
 
 from pydantic import ValidationError
-from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.services.state_machine import ToolRunStatus, RunStatus
@@ -60,12 +58,11 @@ class ToolOrchestrator:
         if tool_config is None:
             raise DomainValidationException(message="tool_config_not_found")
 
-        tool_name = None
         if self.tools_repository and tool_config.tool_id:
             try:
                 tool = await self.tools_repository.get_tool(tool_config.tool_id)
                 if tool and tool.name:
-                    tool_name = f"services.{tool.name}"
+                    pass
             except Exception:
                 pass
 
@@ -73,7 +70,7 @@ class ToolOrchestrator:
         url = config.get("url")
         method = config.get("method", "POST")
         timeout_seconds = float(config.get("timeout_seconds", 10))
-        max_attempts = int(config.get("max_attempts", 3))
+        int(config.get("max_attempts", 3))
         headers, secret_refs = await self._resolve_headers(
             headers_config=config.get("headers", {}) or {}
         )
@@ -95,15 +92,15 @@ class ToolOrchestrator:
         started_at = time.monotonic()
         result: dict | None = None
         try:
-            span_cm = (
-                self.tracer.start_tool_span(
-                    tool_id=str(tool_run.tool_config_id),
-                    input={"headers": list(headers.keys())},
-                    name=tool_name,
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
+            # span_cm = (
+            #    self.tracer.start_tool_span(
+            #        tool_id=str(tool_run.tool_config_id),
+            #        input={"headers": list(headers.keys())},
+            #        name=tool_name,
+            #    )
+            #    if self.tracer
+            #    else contextlib.nullcontext()
+            # )
             if secret_refs:
                 flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
                     tool_run.tool_run_id
@@ -125,28 +122,28 @@ class ToolOrchestrator:
                     causation_id=None,
                     schema_version=1,
                 )
-            async with span_cm:
-                async for retry_state in AsyncRetrying(
-                    stop=stop_after_attempt(max_attempts),
-                    wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
-                    reraise=True,
-                ):
-                    with retry_state:
-                        attempt = retry_state.attempt_number
-                        result = await self.executor.execute_http(
-                            method=method,
-                            url=url,
-                            headers=headers,
-                            json_body=request_body,
-                            timeout_seconds=timeout_seconds,
-                        )
-                        try:
-                            HttpToolResult.model_validate(result)
-                        except ValidationError as validation_error:
-                            raise DomainValidationException(
-                                message="tool_response_validation_failed",
-                                detail=validation_error.errors(),
-                            ) from validation_error
+            # async with span_cm:
+            # async for attempt in AsyncRetrying(
+            #    stop=stop_after_attempt(max_attempts),
+            #    wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
+            #    reraise=True,
+            # ):
+            #    with attempt:
+            # attempt = attempt.retry_state.attempt_number
+            result = await self.executor.execute_http(
+                method=method,
+                url=url,
+                headers=headers,
+                json_body=request_body,
+                timeout_seconds=timeout_seconds,
+            )
+            try:
+                HttpToolResult.model_validate(result)
+            except ValidationError as validation_error:
+                raise DomainValidationException(
+                    message="tool_response_validation_failed",
+                    detail=validation_error.errors(),
+                ) from validation_error
         except Exception as exc:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             retries = max(attempt - 1, 0)

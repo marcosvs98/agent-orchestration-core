@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from typing import Dict, List, Set
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 from domain.tools.schemas.tools import AvailableTool
 from domain.flows.schemas.graph import EdgeKind
-
 
 
 class CompiledEdge(BaseModel):

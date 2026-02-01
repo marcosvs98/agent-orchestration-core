@@ -19,8 +19,9 @@ from seeds.demo.ids import (
     AI_TASK_SLOT_FILLING_ID,
     FLOW_VERSION_V1_ID,
     NODE_INTENT_ID,
-    NODE_RESPONSE_ID,
     NODE_SLOT_ID,
+    NODE_TOOL_EXEC_ID,
+    NODE_RESPONSE_ID,
 )
 
 
@@ -29,6 +30,7 @@ async def seed_nodes() -> None:
         nodes = [
             (NODE_INTENT_ID, AI_TASK_INTENT_DETECTION_ID, "IntentDetection"),
             (NODE_SLOT_ID, AI_TASK_SLOT_FILLING_ID, "SlotFilling"),
+            (NODE_TOOL_EXEC_ID, None, "ToolExecution"),
             (NODE_RESPONSE_ID, AI_TASK_RESPONSE_FORMATTING_ID, "ResponseFormatting"),
         ]
 

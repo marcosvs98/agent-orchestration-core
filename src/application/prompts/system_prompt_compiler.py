@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
 
 from domain.agents.schemas.agents import PersonaConfig
 from domain.prompts.schemas.system_prompt_template import SystemPromptTemplate
@@ -31,7 +30,9 @@ class SystemPromptCompiler:
         for placeholder, value in persona_dict.items():
             if placeholder in placeholders:
                 if isinstance(value, list):
-                    formatted_value = "\n".join(f"- {item}" for item in value) if value else ""
+                    formatted_value = (
+                        "\n".join(f"- {item}" for item in value) if value else ""
+                    )
                 else:
                     formatted_value = str(value) if value is not None else ""
                 rendered = rendered.replace(f"{{{{ {placeholder} }}}}", formatted_value)

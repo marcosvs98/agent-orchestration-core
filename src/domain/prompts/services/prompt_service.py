@@ -72,7 +72,9 @@ class PromptService:
         if prompt.input_schema_id:
             try:
                 schema_data = self._load_schema(prompt.input_schema_id)
-                if schema_data and not self._validate_schema(prompt.input_schema_id, schema_data):
+                if schema_data and not self._validate_schema(
+                    prompt.input_schema_id, schema_data
+                ):
                     return False
             except Exception as exc:
                 logger.warning(
@@ -84,7 +86,9 @@ class PromptService:
         if prompt.output_schema_id:
             try:
                 schema_data = self._load_schema(prompt.output_schema_id)
-                if schema_data and not self._validate_schema(prompt.output_schema_id, schema_data):
+                if schema_data and not self._validate_schema(
+                    prompt.output_schema_id, schema_data
+                ):
                     return False
             except Exception as exc:
                 logger.warning(
@@ -103,7 +107,7 @@ class PromptService:
         if entry and not entry.is_expired():
             return entry.prompt
 
-        prompt = await self.repository.get_active_prompt(node_type)
+        prompt: NodePrompt = await self.repository.get_active_prompt(node_type)
         if prompt:
             self._cache[node_type] = PromptCacheEntry(
                 prompt, time.time(), self.cache_ttl

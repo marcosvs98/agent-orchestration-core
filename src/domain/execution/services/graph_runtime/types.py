@@ -5,8 +5,9 @@ from typing import Any, Dict, List, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from domain.prompts.schemas.prompt import NodeType # Todo: Isso não esta coeso
+from domain.prompts.schemas.prompt import NodeType  # Todo: Isso não esta coeso
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
+
 
 class NodeExecutionStatus(StrEnum):
     SUCCESS = "SUCCESS"
@@ -26,7 +27,8 @@ class ExecutionContext(BaseModel):
     correlation_id: UUID
     trace_id: UUID | None = None
     current_node_id: str
-    available_tools: List[AvailableTool]
+    current_node_run_id: UUID | None = None
+    available_tools: List[AvailableTool] = Field(default_factory=list)
     state: Dict[str, Any] = Field(default_factory=dict)
     memory: List[Dict[str, Any]] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)

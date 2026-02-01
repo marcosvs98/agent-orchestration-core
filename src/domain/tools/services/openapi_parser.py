@@ -11,7 +11,6 @@ from domain.tools.schemas.openapi_types import OpenAPIOperation, OpenAPISpec
 from exceptions.service_exceptions import DomainValidationException
 
 
-
 class OpenAPIParser:
     async def parse_openapi_spec(self, openapi_url: str) -> OpenAPISpec:
         try:
@@ -41,7 +40,7 @@ class OpenAPIParser:
                 json.dump(spec_dict, tmp_file)
                 tmp_path = tmp_file.name
             try:
-                parsed = parse(tmp_path)
+                parse(tmp_path)
             finally:
                 os.unlink(tmp_path)
         except Exception as e:
@@ -103,7 +102,9 @@ class OpenAPIParser:
         if not content:
             return {}
 
-        json_content = content.get("application/json") or content.get("application/json; charset=utf-8")
+        json_content = content.get("application/json") or content.get(
+            "application/json; charset=utf-8"
+        )
         if not json_content:
             return {}
 
@@ -114,7 +115,7 @@ class OpenAPIParser:
         if "$ref" in schema_ref:
             ref_path = schema_ref["$ref"].replace("#/components/schemas/", "")
             return schemas.get(ref_path, {})
-        
+
         return schema_ref
 
     def _extract_response_schema(
@@ -129,7 +130,9 @@ class OpenAPIParser:
         if not content:
             return {}
 
-        json_content = content.get("application/json") or content.get("application/json; charset=utf-8")
+        json_content = content.get("application/json") or content.get(
+            "application/json; charset=utf-8"
+        )
         if not json_content:
             return {}
 
@@ -140,5 +143,5 @@ class OpenAPIParser:
         if "$ref" in schema_ref:
             ref_path = schema_ref["$ref"].replace("#/components/schemas/", "")
             return schemas.get(ref_path, {})
-        
+
         return schema_ref

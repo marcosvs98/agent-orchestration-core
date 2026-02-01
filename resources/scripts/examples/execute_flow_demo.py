@@ -98,7 +98,7 @@ def execute_flow_demo() -> None:
             "flow_version_id": str(FLOW_VERSION_V1_ID),
             "origin_flow_run_id": None,
             "correlation_id": correlation_id,
-            "input": {"user_input": "Gastei 1000 reais no mercado com o cartão XP"},
+            "input": {"user_input": "Gastei 1000 reais no mercado na categoria compras para casa, pago com cartão, usando a conta PF do banco XP, no cartão XP, no dia 01/01/2026"},
         }
     )
 

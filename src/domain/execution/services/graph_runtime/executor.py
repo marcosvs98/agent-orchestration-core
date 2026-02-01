@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 from typing import Dict, List
 from uuid import UUID
 from domain.execution.services.graph_runtime.types import NodeExecutor
@@ -67,7 +66,9 @@ class RuntimeExecutor:
         )
         metadata = {}
         if runtime_policy:
-            metadata["runtime_policy"] = runtime_policy.definition.model_dump(mode="json")
+            metadata["runtime_policy"] = runtime_policy.definition.model_dump(
+                mode="json"
+            )
 
         context = ExecutionContext(
             tenant_id=tenant_id,
@@ -117,6 +118,23 @@ class RuntimeExecutor:
 
             node: NodeExecutor = node_cls()
 
+            node_run_id = await self.repository.create_node_run(
+                flow_run_id=flow_run_id,
+                node_id=UUID(context.current_node_id),
+                correlation_id=correlation_id,
+                input_payload={
+                    "input_payload": input_payload.model_dump(mode="json"),
+                    "state": context.state,
+                    "memory": context.memory,
+                    "metadata": context.metadata,
+                },
+                output_payload={},
+                status=NodeRunStatus.RUNNING,
+                canonical_status=NodeRunStatus.RUNNING,
+            )
+
+            context = context.model_copy(update={"current_node_run_id": node_run_id})
+
             if self.hook:
                 await self.hook.on_node_start(
                     tenant_id=tenant_id,
@@ -146,19 +164,12 @@ class RuntimeExecutor:
             node_result: NodeResult = await node.execute(context, config)
             context.node_output = node_result.payload
 
-            node_run_id = await self.repository.create_node_run(
-                flow_run_id=flow_run_id,
-                node_id=UUID(context.current_node_id),
-                correlation_id=correlation_id,
-                input_payload={
-                    "input_payload": input_payload.model_dump(mode='json'),
-                    "state": context.state,
-                    "memory": context.memory,
-                    "metadata": context.metadata,
-                },
+            status = self._map_status(node_result.status)
+            await self.repository.update_node_run_result(
+                node_run_id=node_run_id,
                 output_payload=node_result.model_dump(),
-                status=self._map_status(node_result.status),
-                canonical_status=self._map_status(node_result.status),
+                status=status,
+                canonical_status=status,
             )
 
             new_state = node_result.next_state or context.state
@@ -213,6 +224,11 @@ class RuntimeExecutor:
             )
 
             if node_type in TERMINAL_NODE_TYPES:
+                await self.repository.complete_flow_run(
+                    flow_run_id=flow_run_id,
+                    status="COMPLETED",
+                    output=node_result.payload,
+                )
                 if self.hook:
                     await self.hook.on_flow_complete(
                         tenant_id=tenant_id,
@@ -282,20 +298,13 @@ class RuntimeExecutor:
                 )
                 return
 
-            context = ExecutionContext(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                flow_id=flow_id,
-                flow_version_id=flow_version_id,
-                flow_run_id=flow_run_id,
-                correlation_id=correlation_id,
-                trace_id=trace_id,
-                current_node_id=matching[0],
-                state=new_state,
-                memory=new_memory,
-                metadata=context.metadata,
-                node_output={},
-                iteration_counters=context.iteration_counters,
+            context = context.model_copy(
+                update={
+                    "current_node_id": matching[0],
+                    "state": new_state,
+                    "memory": new_memory,
+                    "node_output": node_result.payload,
+                }
             )
 
         await self._fail_flow(
@@ -410,12 +419,17 @@ class RuntimeExecutor:
         correlation_id: UUID,
         reason: FlowFailureReason,
     ) -> None:
+        reason_str = reason.value if hasattr(reason, "value") else str(reason)
+
+        await self.repository.fail_flow_run(
+            flow_run_id=flow_run_id,
+            failure_reason=reason_str,
+        )
+
         if self.tracer:
             self.tracer.create_event(
                 event_type=ExecutionEventType.FlowFailed,
-                input={
-                    "reason": reason.value if hasattr(reason, "value") else str(reason)
-                },
+                input={"reason": reason_str},
             )
         if self.hook:
             await self.hook.on_flow_failed(
@@ -423,9 +437,7 @@ class RuntimeExecutor:
                 session_id=session_id,
                 flow_run_id=flow_run_id,
                 correlation_id=correlation_id,
-                payload={
-                    "reason": reason.value if hasattr(reason, "value") else str(reason)
-                },
+                payload={"reason": reason_str},
                 causation_id=None,
                 schema_version=1,
             )
@@ -435,9 +447,7 @@ class RuntimeExecutor:
                 session_id=session_id,
                 flow_run_id=flow_run_id,
                 event_type=ExecutionEventType.FlowFailed,
-                payload={
-                    "reason": reason.value if hasattr(reason, "value") else str(reason)
-                },
+                payload={"reason": reason_str},
                 correlation_id=correlation_id,
                 causation_id=None,
                 schema_version=1,

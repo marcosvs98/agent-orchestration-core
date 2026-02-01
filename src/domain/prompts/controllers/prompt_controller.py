@@ -74,7 +74,9 @@ class PromptController:
                 detail="node_type in path must match node_type in body",
             )
         create.created_by = auth.principal_id
-        return await self.service.create_or_update_prompt(create, tenant_id=auth.tenant_id)
+        return await self.service.create_or_update_prompt(
+            create, tenant_id=auth.tenant_id
+        )
 
     async def delete_prompt(
         self,

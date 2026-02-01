@@ -34,14 +34,11 @@ DEDUP_TTL: int = config("DEDUP_TTL", default=86400, cast=int)
 
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="", cast=str)
 
-# OBSERVABILITY (Langfuse)
 LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)
 LANGFUSE_SECRET_KEY: str | None = config("LANGFUSE_SECRET_KEY", default=None)
 LANGFUSE_HOST: str = config(
     "LANGFUSE_HOST", default="https://cloud.langfuse.com", cast=str
 )
-
-# TRACING (OpenTelemetry)
 OTEL_SERVICE_NAME: str = config(
     "OTEL_SERVICE_NAME", default="agent-orchestration-core", cast=str
 )

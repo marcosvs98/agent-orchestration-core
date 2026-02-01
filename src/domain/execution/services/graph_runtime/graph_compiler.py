@@ -36,7 +36,8 @@ class GraphCompiler:
             [
                 node_id
                 for node_id, spec in nodes.items()
-                if spec.get("type") in {"ResponseNode", "FallbackNode"}  # Todo: Usar StrEnum's aqui
+                if spec.get("type")
+                in {"ResponseNode", "FallbackNode"}  # Todo: Usar StrEnum's aqui
             ]
         )
         if not terminal_nodes:

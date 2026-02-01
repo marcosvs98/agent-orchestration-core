@@ -1,4 +1,4 @@
-import json
+import orjson
 from typing import Any, Dict, Optional, NewType
 
 from adapters.http.hardened_http_client import HardenedHttpClient
@@ -100,6 +100,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
         body: Dict[str, Any] = {
             "model": request.model_alias,
             "input": request.prompt,
+            "text": {"format": {"type": "json_object"}},
         }
 
         if request.system_prompt:
@@ -142,9 +143,9 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 detail=f"status={response.status_code}",
             )
 
-        data = response.json()
+        raw_output = response.json()
 
-        response_id = data.get("id")
+        response_id = raw_output.get("id")
         if conversation_key and response_id:
             await self._set_previous_response_id(
                 conversation_key,
@@ -152,19 +153,20 @@ class OpenAIProviderAdapter(LLMProviderPort):
             )
 
         output_text = ""
-        output_blocks = data.get("output") or []
+        output_blocks = raw_output.get("output") or []
         if output_blocks:
             content = output_blocks[0].get("content") or []
             if content:
-                output_text = content[0].get("text", "")
+                output_text = content[0].get("text", "") or "{}"
 
-        usage_raw = data.get("usage") or {}
+        usage_raw = raw_output.get("usage") or {}
         token_usage = {
             "input_tokens": usage_raw.get("input_tokens", 0),
             "output_tokens": usage_raw.get("output_tokens", 0),
             "cached_input_tokens": (
                 usage_raw.get("input_tokens_details", {}).get("cached_tokens", 0)
             ),
+            "total_tokens": usage_raw.get("total_tokens", 0),
         }
 
         return LLMResult(
@@ -173,6 +175,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             cost_usd=None,
             latency_ms=None,
             model_alias=request.model_alias,
+            raw_output=raw_output,
         )
 
     async def classify(
@@ -209,18 +212,18 @@ class OpenAIProviderAdapter(LLMProviderPort):
         if response.status_code >= 400:
             raise DomainValidationException("llm_classification_failed")
 
-        data = response.json()
-        choices = data.get("choices") or []
+        raw_output = response.json()
+        choices = raw_output.get("choices") or []
 
         output: Dict[str, Any] = {}
         if choices:
             message = choices[0].get("message") or {}
             try:
-                output = json.loads(message.get("content") or "{}")
+                output = orjson.loads(message.get("content") or "{}")
             except Exception:
                 output = {}
 
-        usage_raw = data.get("usage") or {}
+        usage_raw = raw_output.get("usage") or {}
         token_usage = {
             "input_tokens": usage_raw.get("prompt_tokens", 0),
             "output_tokens": usage_raw.get("completion_tokens", 0),
@@ -234,4 +237,5 @@ class OpenAIProviderAdapter(LLMProviderPort):
             cost_usd=None,
             latency_ms=None,
             model_alias=model,
+            raw_output=raw_output,
         )

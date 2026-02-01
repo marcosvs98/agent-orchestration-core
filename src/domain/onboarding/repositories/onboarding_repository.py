@@ -47,7 +47,9 @@ class OnboardingRepository:
         self, *, tenant_id: UUID, name: str | None, created_by: str
     ) -> OnboardingModel:
         async with self.db.get_session() as session:
-            instance = OnboardingModel(tenant_id=tenant_id, name=name, created_by=created_by)
+            instance = OnboardingModel(
+                tenant_id=tenant_id, name=name, created_by=created_by
+            )
             session.add(instance)
             await session.commit()
             await session.refresh(instance)
@@ -59,7 +61,8 @@ class OnboardingRepository:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(OnboardingVersionModel).where(
-                    OnboardingVersionModel.onboarding_version_id == onboarding_version_id
+                    OnboardingVersionModel.onboarding_version_id
+                    == onboarding_version_id
                 )
             )
             return result.scalar_one_or_none()
@@ -94,7 +97,8 @@ class OnboardingRepository:
             if source_version_id is not None:
                 source_version = await session.execute(
                     select(OnboardingVersionModel).where(
-                        OnboardingVersionModel.onboarding_version_id == source_version_id
+                        OnboardingVersionModel.onboarding_version_id
+                        == source_version_id
                     )
                 )
                 source = source_version.scalar_one_or_none()
@@ -107,7 +111,11 @@ class OnboardingRepository:
                 if version_patch is None:
                     version_patch = source.version_patch + 1
             else:
-                if version_major is None or version_minor is None or version_patch is None:
+                if (
+                    version_major is None
+                    or version_minor is None
+                    or version_patch is None
+                ):
                     last_version = await session.execute(
                         select(OnboardingVersionModel)
                         .where(OnboardingVersionModel.onboarding_id == onboarding_id)
@@ -160,14 +168,13 @@ class OnboardingRepository:
         async with self.db.get_session() as session:
             version = await session.execute(
                 select(OnboardingVersionModel).where(
-                    OnboardingVersionModel.onboarding_version_id == onboarding_version_id
+                    OnboardingVersionModel.onboarding_version_id
+                    == onboarding_version_id
                 )
             )
             if version.scalar_one_or_none() is None:
                 raise NotFoundServiceException(message="onboarding_version_not_found")
-            instance = OnboardingRunModel(
-                onboarding_version_id=onboarding_version_id
-            )
+            instance = OnboardingRunModel(onboarding_version_id=onboarding_version_id)
             session.add(instance)
             await session.commit()
             await session.refresh(instance)

@@ -81,7 +81,8 @@ class AIRepository:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(AIExecutionPolicyModel).where(
-                    AIExecutionPolicyModel.ai_execution_policy_id == ai_execution_policy_id
+                    AIExecutionPolicyModel.ai_execution_policy_id
+                    == ai_execution_policy_id
                 )
             )
             return result.scalar_one_or_none()
@@ -190,7 +191,11 @@ class AIRepository:
                 if config_hash is None:
                     config_hash = source.config_hash
             else:
-                if version_major is None or version_minor is None or version_patch is None:
+                if (
+                    version_major is None
+                    or version_minor is None
+                    or version_patch is None
+                ):
                     last_version = await session.execute(
                         select(AIExecutionPolicyVersionModel)
                         .where(

@@ -12,6 +12,7 @@ from domain.prompts.schemas.prompt import (
     PromptIntent,
     ResolvedPrompt,
 )
+from domain.llm.schemas.contexts import IntentDetectionContext
 from domain.prompts.services.prompt_service import PromptService
 from exceptions.service_exceptions import DomainValidationException
 from pydantic import BaseModel
@@ -30,7 +31,6 @@ class PromptResolver:
 
         self._INTENT_TO_NODE_TYPE: dict[PromptIntent, NodeType] = {
             PromptIntent.INTENT_TOOL_SELECTION: NodeType.IntentToolSelectionNode,
-            PromptIntent.PARAM_EXTRACTION: NodeType.ParamExtractionNode,
             PromptIntent.SLOT_FILLING: NodeType.ParamExtractionNode,
             PromptIntent.CLARIFICATION: NodeType.ClarificationNode,
             PromptIntent.RESPONSE_RENDER: NodeType.ResponseNode,
@@ -38,7 +38,6 @@ class PromptResolver:
 
         self._INTENT_TO_TASK_TYPE: dict[PromptIntent, LLMTaskType] = {
             PromptIntent.INTENT_TOOL_SELECTION: LLMTaskType.INTENT_SELECTION,
-            PromptIntent.PARAM_EXTRACTION: LLMTaskType.PARAM_EXTRACTION,
             PromptIntent.SLOT_FILLING: LLMTaskType.SLOT_FILLING,
             PromptIntent.CLARIFICATION: LLMTaskType.CLARIFICATION,
             PromptIntent.RESPONSE_RENDER: LLMTaskType.RESPONSE_RENDER,
@@ -52,9 +51,9 @@ class PromptResolver:
         )
 
     def _render_simple(self, template: str, context: BaseModel) -> str:
-        ctx_dict = context.model_dump(mode='json')
+        ctx: dict = context.model_dump(mode="json")
         try:
-            return template.format(ctx=ctx_dict)
+            return template.format(ctx=ctx)
         except (KeyError, ValueError):
             return template
 
@@ -75,16 +74,20 @@ class PromptResolver:
             return template
 
         if intent == PromptIntent.INTENT_TOOL_SELECTION:
-            context = await self.context_builder.build_intent_context(
-                agent_version_id=agent_version_id,
-                user_input=input_payload.get("user_input", ""),
-                context=context,
+            context: IntentDetectionContext = (
+                await self.context_builder.build_intent_context(
+                    agent_version_id=agent_version_id,
+                    user_input=input_payload.get("user_input", ""),
+                    context=context,
+                )
             )
             return self._render_simple(template, context)
 
-        elif intent in (PromptIntent.PARAM_EXTRACTION, PromptIntent.SLOT_FILLING):
-            intent_str = input_payload.get("intent", "")
-            tool_config_id_str = input_payload.get("tool_config_id")
+        elif intent == PromptIntent.SLOT_FILLING:
+            intent_output = (context.state or {}).get("intent_output", {})
+            intent_str = intent_output.get("intent", "")
+            tool_config_id_str = intent_output.get("tool_config_id")
+            user_input = input_payload.get("user_input", "")
             if tool_config_id_str:
                 try:
                     tool_config_id = (
@@ -96,10 +99,30 @@ class PromptResolver:
                         agent_version_id=agent_version_id,
                         intent=intent_str,
                         tool_config_id=tool_config_id,
+                        user_input=user_input,
                     )
                     return self._render_simple(template, context)
                 except (ValueError, TypeError):
                     pass
+
+        elif intent == PromptIntent.CLARIFICATION:
+            missing_fields = (
+                (context.state or {}).get("missing_fields", []) if context else []
+            )
+            if isinstance(missing_fields, str):
+                missing_fields = [missing_fields]
+            if not isinstance(missing_fields, list):
+                missing_fields = []
+            intent_value = ""
+            intent_output = (context.state or {}).get("intent_output", {})
+            if isinstance(intent_output, dict):
+                intent_value = intent_output.get("intent", "") or ""
+            context = await self.context_builder.build_clarification_context(
+                agent_version_id=agent_version_id,
+                intent=intent_value,
+                missing_fields=missing_fields,
+            )
+            return self._render_simple(template, context)
 
         elif intent == PromptIntent.RESPONSE_RENDER:
             context = await self.context_builder.build_response_formatting_context(
@@ -124,7 +147,8 @@ class PromptResolver:
         node_type_enum = self._INTENT_TO_NODE_TYPE.get(intent)
         if not node_type_enum:
             raise DomainValidationException(
-                message="prompt_intent_not_supported", detail=f"Intent {intent} não mapeado"
+                message="prompt_intent_not_supported",
+                detail=f"Intent {intent} não mapeado",
             )
 
         node_type = node_type_enum.value
@@ -133,19 +157,36 @@ class PromptResolver:
         if not prompt:
             raise DomainValidationException(
                 message="prompt_not_found",
-                detail=f"Prompt não encontrado para node_type={node_type}",
+                detail=f"Prompt não encontrado para node_type={node_type}",  # Todo:
             )
 
         agent_version_id = await self._get_agent_version_id(node_id)
 
         input_payload = context.input_payload or {}
-        if not input_payload and context.state:
+        if context.state:
             intent_output = context.state.get("intent_output", {})
             if isinstance(intent_output, dict):
+                user_input = (context.input_payload or {}).get("user_input", "")
                 input_payload = {
                     "intent": intent_output.get("intent", ""),
                     "tool_config_id": intent_output.get("tool_config_id"),
+                    "user_input": user_input,
                 }
+
+        if intent == PromptIntent.RESPONSE_RENDER:
+            intent_output = (context.state or {}).get("intent_output", {})
+            original_intent = (
+                intent_output.get("intent", "")
+                if isinstance(intent_output, dict)
+                else ""
+            )
+            tool_response = (
+                context.node_output.get("output", {}) if context.node_output else {}
+            )
+            input_payload = {
+                "tool_response": tool_response,
+                "original_intent": original_intent,
+            }
 
         rendered_prompt = prompt.template_text
         if prompt.template_text and agent_version_id:
@@ -155,7 +196,7 @@ class PromptResolver:
                 node_id,
                 intent,
                 input_payload,
-                context
+                context,
             )
 
         input_schema = None

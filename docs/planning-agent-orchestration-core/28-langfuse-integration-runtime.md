@@ -155,9 +155,9 @@ Available Types
 start_as_current_observation() is the primary way to create observations while ensuring the active OpenTelemetry context is updated. Any child observations created inside the with block inherit the parent automatically.
 Observations can have different types by setting the as_type parameter.
 from langfuse import get_client, propagate_attributes
- 
+
 langfuse = get_client()
- 
+
 with langfuse.start_as_current_observation(
     as_type="span",
     name="user-request-pipeline",
@@ -170,25 +170,25 @@ with langfuse.start_as_current_observation(
             model="gpt-4o",
         ) as generation:
             generation.update(output="Why did the span cross the road?")
- 
+
     root_span.update(output={"final_joke": "..."})
 
 ---
 from langfuse import get_client
- 
+
 langfuse = get_client()
- 
+
 # This outer span establishes an active context.
 with langfuse.start_as_current_observation(as_type="span", name="main-operation") as main_operation_span:
     # 'main_operation_span' is the current active context.
- 
+
     # 1. Create a "manual" span using langfuse.start_observation().
     #    - It becomes a child of 'main_operation_span'.
     #    - Crucially, 'main_operation_span' REMAINS the active context.
     #    - 'manual_side_task' does NOT become the active context.
     manual_side_task = langfuse.start_observation(name="manual-side-task")
     manual_side_task.update(input="Data for side task")
- 
+
     # 2. Start another operation that DOES become the active context.
     #    This will be a child of 'main_operation_span', NOT 'manual_side_task',
     #    because 'manual_side_task' did not alter the active context.
@@ -199,15 +199,15 @@ with langfuse.start_as_current_observation(as_type="span", name="main-operation"
         # ... perform core step logic ...
         core_step_span.update(output="Core step finished")
     # 'core_step_span' ends. 'main_operation_span' is the active context again.
- 
+
     # 3. Complete and end the manual side task.
     # This could happen at any point after its creation, even after 'core_step_span'.
     manual_side_task.update(output="Side task completed")
     manual_side_task.end() # Manual end is crucial for 'manual_side_task'
- 
+
     main_operation_span.update(output="Main operation finished")
 # 'main_operation_span' ends automatically here.
- 
+
 # Expected trace structure in Langfuse:
 # - main-operation
 #   |- manual-side-task
@@ -217,9 +217,9 @@ with langfuse.start_as_current_observation(as_type="span", name="main-operation"
 
 
 from langfuse import get_client, propagate_attributes
- 
+
 langfuse = get_client()
- 
+
 with langfuse.start_as_current_observation(as_type="span", name="user-workflow"):
     with propagate_attributes(
         user_id="user_123",
@@ -235,9 +235,9 @@ with langfuse.start_as_current_observation(as_type="span", name="user-workflow")
 
 from langfuse import get_client, propagate_attributes
 import requests
- 
+
 langfuse = get_client()
- 
+
 with langfuse.start_as_current_observation(as_type="span", name="api-request"):
     with propagate_attributes(
         user_id="user_123",
@@ -249,16 +249,16 @@ with langfuse.start_as_current_observation(as_type="span", name="api-request"):
 ---
 
 from langfuse import get_client
- 
+
 langfuse = get_client()
- 
+
 # Using the context manager
 with langfuse.start_as_current_observation(
     as_type="span",
     name="user-request",
     input={"query": "What is the capital of France?"}  # This becomes the trace input
 ) as root_span:
- 
+
     with langfuse.start_as_current_observation(
         as_type="generation",
         name="llm-call",
@@ -268,21 +268,21 @@ with langfuse.start_as_current_observation(
         response = "Paris is the capital of France."
         gen.update(output=response)
         # LLM generation input/output are separate from trace input/output
- 
+
     root_span.update(output={"answer": "Paris"})  # This becomes the trace output
 
 ---
 
 from langfuse import get_client, Langfuse
 langfuse = get_client()
- 
+
 external_request_id = "req_12345"
 deterministic_trace_id = langfuse.create_trace_id(seed=external_request_id)
 
 ---
 from langfuse import get_client, Langfuse
 langfuse = get_client()
- 
+
 with langfuse.start_as_current_observation(as_type="span", name="my-op") as current_op:
     trace_id = langfuse.get_current_trace_id()
     observation_id = langfuse.get_current_observation_id()
@@ -291,12 +291,12 @@ with langfuse.start_as_current_observation(as_type="span", name="my-op") as curr
 ---
 
 from langfuse import get_client
- 
+
 langfuse = get_client()
- 
+
 existing_trace_id = "abcdef1234567890abcdef1234567890"
 existing_parent_span_id = "fedcba0987654321"
- 
+
 with langfuse.start_as_current_observation(
     as_type="span",
     name="process-downstream-task",
@@ -309,7 +309,7 @@ with langfuse.start_as_current_observation(
 
 ---
 from langfuse import get_client
- 
+
 langfuse = get_client()
 # ... create traces and observations ...
 langfuse.flush() # Ensures all pending data is sent
@@ -317,10 +317,10 @@ langfuse.flush() # Ensures all pending data is sent
 ---
 
 from langfuse import get_client
- 
+
 langfuse = get_client()
 # ... application logic ...
- 
+
 # Before exiting:
 langfuse.shutdown()
 

@@ -21,10 +21,12 @@ class PromptRepository:
     async def get_active_prompt(self, node_type: str) -> Optional[NodePrompt]:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(NodePromptModel).where(
+                select(NodePromptModel)
+                .where(
                     NodePromptModel.node_type == node_type,
                     NodePromptModel.is_active.is_(True),
-                ).order_by(NodePromptModel.version.desc())
+                )
+                .order_by(NodePromptModel.version.desc())
             )
             model = result.scalar_one_or_none()
             if model:
@@ -34,16 +36,16 @@ class PromptRepository:
     async def get_prompt_by_id(self, prompt_id: UUID) -> Optional[NodePrompt]:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(NodePromptModel).where(
-                    NodePromptModel.prompt_id == prompt_id
-                )
+                select(NodePromptModel).where(NodePromptModel.prompt_id == prompt_id)
             )
             model = result.scalar_one_or_none()
             if model:
                 return NodePrompt.model_validate(model.to_dict())
             return None
 
-    async def create_prompt(self, prompt: NodePromptCreate, frozen_hash: str) -> NodePrompt:
+    async def create_prompt(
+        self, prompt: NodePromptCreate, frozen_hash: str
+    ) -> NodePrompt:
         async with self.db.get_session() as session:
             existing = await session.execute(
                 select(NodePromptModel).where(
@@ -79,9 +81,9 @@ class PromptRepository:
     ) -> NodePrompt:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(NodePromptModel).where(
-                    NodePromptModel.prompt_id == prompt_id
-                ).with_for_update()
+                select(NodePromptModel)
+                .where(NodePromptModel.prompt_id == prompt_id)
+                .with_for_update()
             )
             model = result.scalar_one_or_none()
             if not model:
@@ -126,9 +128,9 @@ class PromptRepository:
     async def get_prompt_history(self, node_type: str) -> list[NodePrompt]:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(NodePromptModel).where(
-                    NodePromptModel.node_type == node_type
-                ).order_by(NodePromptModel.version.desc())
+                select(NodePromptModel)
+                .where(NodePromptModel.node_type == node_type)
+                .order_by(NodePromptModel.version.desc())
             )
             models = result.scalars().all()
             return [NodePrompt.model_validate(model.to_dict()) for model in models]

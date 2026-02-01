@@ -60,9 +60,7 @@ class NodePromptCreate(BaseModel):
             NodeType.ResponseNode.value,
         }
         if v not in valid_types:
-            raise ValueError(
-                f"node_type must be one of {', '.join(valid_types)}"
-            )
+            raise ValueError(f"node_type must be one of {', '.join(valid_types)}")
         return v
 
 

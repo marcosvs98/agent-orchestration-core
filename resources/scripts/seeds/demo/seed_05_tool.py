@@ -78,10 +78,12 @@ async def seed_tool() -> None:
         if existing_by_version:
             return
 
-        base_url = ""
+        base_url = "http://localhost:3001"
         servers = parsed_spec.servers if hasattr(parsed_spec, "servers") else []
         if servers and isinstance(servers, list) and len(servers) > 0:
-            base_url = servers[0].get("url", "")
+            server_url = servers[0].get("url", "")
+            if server_url:
+                base_url = server_url
 
         op = operations[0]
         path = op.get("path", "")
@@ -123,7 +125,7 @@ async def _create_basic_tool() -> None:
         tool_config = result.scalar_one_or_none()
         if tool_config is None:
             tool_config_dict = ToolConfigConfig(
-                url="/createExpense",
+                url="http://localhost:3000/createExpense",
                 method="POST",
                 request_schema={
                     "type": "object",

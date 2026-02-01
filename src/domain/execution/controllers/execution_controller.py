@@ -25,8 +25,8 @@ class ExecutionController:
     def __init__(self, boundary: ExecutionBoundary) -> None:
         self.boundary = boundary
         self.router = APIRouter(
-            prefix="/core/v1", # Todo: Prefixos de API podem ser StrEnums
-            tags=["execution"], # Todo: Tasgs de API podem ser StrEnum's
+            prefix="/core/v1",  # Todo: Prefixos de API podem ser StrEnums
+            tags=["execution"],  # Todo: Tasgs de API podem ser StrEnum's
             dependencies=[Depends(get_auth_context)],
         )
         self._bind_routes()
@@ -109,7 +109,7 @@ class ExecutionController:
             endpoint=request.url.path,
             idempotency_key=idempotency_key,
             flow_run=flow_run,
-            channel="http", # Todo: Channel pode ser StrEnum e Deveria vir na requisição
+            channel="http",  # Todo: Channel pode ser StrEnum e Deveria vir na requisição
             headers=dict(request.headers),
             external_message_id=request.headers.get("X-External-Message-Id"),
             request_id=request.headers.get("X-Request-Id"),

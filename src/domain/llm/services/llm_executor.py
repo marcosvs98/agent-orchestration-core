@@ -32,8 +32,10 @@ from domain.llm.services.provider_selector import (
 from domain.execution.services.guardrails.guardrail_engine import GuardrailEngine
 from domain.execution.schemas.guardrails import GuardrailDecisionType
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from domain.llm.schemas.llm import LLMTaskType
-import json
+import orjson
+from domain.execution.services.observability.event_payloads import (
+    NodePromptExecutedPayload,
+)
 
 
 class LLMExecutor(LLMExecutorPort):
@@ -342,107 +344,97 @@ class LLMExecutor(LLMExecutorPort):
             node_id=node_id,
             edge_id=None,
         )
-        sanitized_input = {"prompt": request.prompt}
 
-        generation_name = None
-        if request.task_type:
-            generation_name = f"adapters.llm.{request.task_type.value}"
+        # generation_name = None
+        # if request.task_type:
+        #    generation_name = f"adapters.llm.{request.task_type.value}"
 
-        generation_cm = (
-            self.tracer.start_llm_generation(
-                model_id=provider_model,
-                task_type=task_type_value,
-                input=sanitized_input,
-                prompt_version=prompt_version,
-                prompt_frozen_hash=prompt_frozen_hash,
-                node_type=None,
-                user_id=None,
-                session_id=session_id,
-                tenant_id=tenant_id,
-                name=generation_name,
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
+        # generation_cm = (
+        #    self.tracer.start_llm_generation(
+        #        model_id=provider_model,
+        #        task_type=task_type_value,
+        #        input=sanitized_input,
+        #        prompt_version=prompt_version,
+        #        prompt_frozen_hash=prompt_frozen_hash,
+        #        node_type=None,
+        #        user_id=None,
+        #        session_id=session_id,
+        #        tenant_id=tenant_id,
+        #        name=generation_name,
+        #    )
+        #    if self.tracer
+        #    else contextlib.nullcontext()
+        # )
         try:
             self._validate_schema(
                 {"prompt": request.prompt},
                 request.input_schema,
                 error_code="llm_input_invalid",
             )
-            with generation_cm as generation_handle:
-                provider_result = await provider_instance.infer(request)
-                result = provider_result
-                if result.latency_ms is None:
-                    result = result.model_copy(
-                        update={
-                            "latency_ms": int(
-                                (time.monotonic() - start_monotonic) * 1000
-                            )
-                        }
-                    )
-                if self.cost_engine:
-                    cost = await self.cost_engine.compute_cost(
-                        provider=provider,
-                        provider_model=provider_model,
-                        token_usage=result.token_usage,
-                    )
-                    result = result.model_copy(update={"cost_usd": cost})
+            # with generation_cm as generation_handle:
+            provider_result = await provider_instance.infer(request)
+            result = provider_result
+            if result.latency_ms is None:
+                result = result.model_copy(
+                    update={
+                        "latency_ms": int((time.monotonic() - start_monotonic) * 1000)
+                    }
+                )
+            if self.cost_engine:
+                cost = await self.cost_engine.compute_cost(
+                    provider=provider,
+                    provider_model=provider_model,
+                    token_usage=result.token_usage,
+                )
+                result = result.model_copy(update={"cost_usd": cost})
 
-
-                output_to_validate = result.output
-                if isinstance(result.output, dict) and "content" in result.output:
-                    content_str = result.output.get("content")
-                    if isinstance(content_str, str):
-                        try:
-                            parsed_content = json.loads(content_str)
-                            output_to_validate = parsed_content
-                            result = result.model_copy(
-                                update={"output": parsed_content}
-                            )
-                        except json.JSONDecodeError as json_exc:
-                            raise DomainValidationException(
-                                message="llm_output_json_parse_error",
-                                detail=f"Failed to parse JSON content: {str(json_exc)}",
-                            ) from json_exc
-
+            output_to_validate = result.output
+            if isinstance(result.output, dict) and "content" in result.output:
+                content_str = result.output.get("content")
                 try:
-                    self._validate_schema(
-                        output_to_validate,
-                        request.output_schema,
-                        error_code="llm_output_invalid",
-                    )
-                except Exception as schema_exc:
-                    raise schema_exc from schema_exc
-                self._enforce_policy(request, result)
+                    parsed_content = orjson.loads(content_str)
+                    output_to_validate = parsed_content
+                    result = result.model_copy(update={"output": parsed_content})
+                except orjson.JSONDecodeError as json_exc:
+                    raise DomainValidationException(
+                        message="llm_output_json_parse_error",
+                        detail=f"Failed to parse JSON content: {str(json_exc)}",
+                    ) from json_exc
 
-                if generation_handle:
-                    model_parameters = {}
-                    if request.max_tokens:
-                        model_parameters["max_tokens"] = request.max_tokens
-                    if policy_llm:
-                        if policy_llm.get("temperature") is not None:
-                            model_parameters["temperature"] = policy_llm.get(
-                                "temperature"
-                            )
-                        if policy_llm.get("top_p") is not None:
-                            model_parameters["top_p"] = policy_llm.get("top_p")
+            try:
+                self._validate_schema(
+                    output_to_validate,
+                    request.output_schema,
+                    error_code="llm_output_invalid",
+                )
+            except Exception as schema_exc:
+                raise schema_exc from schema_exc
+            self._enforce_policy(request, result)
 
-                    try:
-                        generation_handle.update_success(
-                            output=result.output,
-                            token_usage=result.token_usage,
-                            cost=result.cost_usd or 0.0,
-                            latency_ms=result.latency_ms or 0,
-                            model_version=provider_model,
-                            input_data=sanitized_input,
-                            model_parameters=model_parameters
-                            if model_parameters
-                            else None,
-                        )
+            model_parameters = {}
+            if request.max_tokens:
+                model_parameters["max_tokens"] = request.max_tokens
+            if policy_llm:
+                if policy_llm.get("temperature") is not None:
+                    model_parameters["temperature"] = policy_llm.get("temperature")
+                if policy_llm.get("top_p") is not None:
+                    model_parameters["top_p"] = policy_llm.get("top_p")
 
-                    except Exception:
-                        pass
+                # try:
+                #    generation_handle.update_success(
+                #        output=result.output,
+                #        token_usage=result.token_usage,
+                #        cost=result.cost_usd or 0.0,
+                #        latency_ms=result.latency_ms or 0,
+                #        model_version=provider_model,
+                #        input_data=sanitized_input,
+                #        model_parameters=model_parameters
+                #        if model_parameters
+                #        else None,
+                #    )
+                # except Exception:
+                #    pass
+
             sanitized_usage: Dict[str, int | float | None] = {}
             for key, value in (result.token_usage or {}).items():
                 if isinstance(value, (int, float)) or value is None:
@@ -472,10 +464,6 @@ class LLMExecutor(LLMExecutorPort):
                 edge_id=None,
             )
             if prompt_version and prompt_frozen_hash:
-                from domain.execution.services.observability.event_payloads import (
-                    NodePromptExecutedPayload,
-                )
-
                 payload: NodePromptExecutedPayload = NodePromptExecutedPayload(
                     node_type=None,
                     prompt_version=prompt_version,
@@ -509,21 +497,21 @@ class LLMExecutor(LLMExecutorPort):
         except Exception as exc:  # noqa: BLE001
             if self.circuit_breaker:
                 await self.circuit_breaker.record_failure(scope)
-            if self.tracer and "generation_handle" in locals():
-                try:
-                    import traceback as tb
-
-                    tb_str = tb.format_exc()
-                    generation_handle.update_failure(
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                        input_data=sanitized_input
-                        if "sanitized_input" in locals()
-                        else None,
-                        traceback_str=tb_str,
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
+            # if self.tracer and "generation_handle" in locals():
+            #    try:
+            #        import traceback as tb
+            #
+            #        tb_str = tb.format_exc()
+            #        generation_handle.update_failure(
+            #            error_type=type(exc).__name__,
+            #            error_message=str(exc),
+            #            input_data=sanitized_input
+            #            if "sanitized_input" in locals()
+            #            else None,
+            #            traceback_str=tb_str,
+            #        )
+            #    except Exception:  # noqa: BLE001
+            #        pass
             payload: LLMCallFailedPayload = LLMCallFailedPayload(
                 task_type=task_type_value,
                 model_alias=request.model_alias,

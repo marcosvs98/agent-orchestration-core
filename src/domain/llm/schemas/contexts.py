@@ -15,6 +15,7 @@ class IntentDetectionContext(BaseModel):
 class SlotFillingContext(BaseModel):
     persona: PersonaConfig
     intent: str
+    user_input: str
     tool_config_id: UUID
     request_schema: dict
 
@@ -23,3 +24,9 @@ class ResponseFormattingContext(BaseModel):
     persona: PersonaConfig
     tool_response: dict
     original_intent: str
+
+
+class ClarificationContext(BaseModel):
+    persona: PersonaConfig
+    intent: str
+    missing_fields: list[str]

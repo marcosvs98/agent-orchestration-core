@@ -53,9 +53,7 @@ class ToolsRepository:
         async with self.db.get_session() as session:
             stmt = (
                 select(ToolModel)
-                .join(
-                    ToolConfigModel, ToolModel.tool_id == ToolConfigModel.tool_id
-                )
+                .join(ToolConfigModel, ToolModel.tool_id == ToolConfigModel.tool_id)
                 .where(ToolConfigModel.tenant_id == tenant_id)
             )
             if status_filter:
@@ -64,9 +62,7 @@ class ToolsRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def get_tool_config(
-        self, tool_config_id: UUID
-    ) -> ToolConfigModel | None:
+    async def get_tool_config(self, tool_config_id: UUID) -> ToolConfigModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(ToolConfigModel).where(

@@ -86,11 +86,16 @@ async def seed_graph() -> None:
                                 "input_schema": {},
                                 "output_schema": {
                                     "type": "object",
+                                    "required": ["payload", "missing_fields"],
                                     "properties": {
-                                        "extracted_params": {"type": "object"},
-                                        "validation_status": {"type": "string"},
-                                    },
-                                    "required": ["extracted_params", "validation_status"],
+                                        "payload": {
+                                        "type": "object"
+                                        },
+                                        "missing_fields": {
+                                        "type": "array",
+                                        "items": { "type": "string" }
+                                        }
+                                    }
                                 },
                             }
                         },
@@ -99,7 +104,23 @@ async def seed_graph() -> None:
                     type="ToolExecutionNode", config={}
                 ),
                 str(NODE_RESPONSE_ID): FlowGraphNodeSpec(
-                    type="ResponseNode", config={}
+                    type="ResponseNode",
+                    config={
+                        "llm": {
+                            "task_type": "GENERATION",
+                            "provider": "OPENAI",
+                            "model_alias": "fake-model",
+                            "input": {},
+                            "input_schema": {},
+                            "output_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "system_output": {"type": "string"},
+                                },
+                                "required": ["system_output"],
+                            },
+                        },
+                    },
                 ),
             },
             edges=[

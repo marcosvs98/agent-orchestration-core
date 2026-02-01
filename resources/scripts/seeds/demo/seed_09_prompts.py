@@ -17,6 +17,7 @@ from infra.database.models.prompts.node_prompt import NodePrompt
 
 from seeds.demo.ids import (
     PRINCIPAL_SYSTEM,
+    PROMPT_CLARIFICATION_ID,
     PROMPT_INTENT_ID,
     PROMPT_RESPONSE_ID,
     PROMPT_SLOT_ID,
@@ -29,47 +30,111 @@ def _calculate_frozen_hash(template_text: str) -> str:
 
 async def seed_prompts() -> None:
     async with get_db() as session:
-        intent_template = """Analyze the user input and select the appropriate tool.
+        intent_template = """# Task
+Select exactly one tool that best matches the user input.
 
-Context:
-- Persona: {ctx[persona]}
-- User Input: {ctx[user_input]}
+# Input
+User message: {ctx[user_input]}
 
-Available tools will be provided separately.
+Available tools:
+{ctx[context][available_tools]}
 
-Return JSON with:
-- intent: string describing the user's intent
-- tool_config_id: UUID of the selected tool
+# Output Format
+Return a JSON object:
+{{
+  "intent": "tool_name_or_null",
+  "tool_config_id": "uuid_or_null",
+  "clarification": true_or_false
+}}
 
-Do not invent information. If uncertain, indicate that clarification is needed."""
+# Constraints
+- Do not invent tools.
+- intent MUST be the exact tool name from available_tools.
+- If unsure, return intent=null and clarification=true.
+"""
 
-        slot_template = """Extract parameters from user input to fill the tool request schema.
+        slot_template = """# Task
+Extract parameters from user input to fill the request schema.
 
-Context:
-- Persona: {ctx[persona]}
-- Intent: {ctx[intent]}
-- Request Schema: {ctx[request_schema]}
+# Intent
+{ctx[intent]}
 
-Fill the request schema with values extracted from the user input.
+# Request Schema
+{ctx[request_schema]}
 
-Return JSON with:
-- payload: object matching the request_schema
+# User Input
+{ctx[user_input]}
 
-Ensure all required fields are present. If information is missing, indicate which fields need clarification."""
+# Output Format
+JSON object:
+{{
+  "payload": {{ ... }},
+  "missing_fields": [ ... ]
+}}
 
-        response_template = """Format the tool response into a natural language message for the user.
+# Constraints
+- Do not invent values.
+- List missing required fields in "missing_fields".
+- Optional missing fields can be null or omitted.
+"""
 
-Context:
-- Persona: {ctx[persona]}
-- Tool Response: {ctx[tool_response]}
-- Original Intent: {ctx[original_intent]}
+        clarification_template = """# Task
+Ask the user for missing required information.
 
-Create a clear, concise response in the persona's style and language.
+# Intent
+{ctx[intent]}
 
-Return JSON with:
-- message: string with the formatted response
+# Missing Fields
+{ctx[missing_fields]}
 
-Keep the response within the persona's max_response_length limit."""
+# Persona
+{ctx[persona]}
+
+# Output Format
+JSON object:
+{{
+  "message": "Please provide ..."
+}}
+
+# Constraints
+- Be concise and polite.
+- Ask only for missing fields.
+- Do not reference schemas or system internals.
+"""
+
+        response_template = """# Task
+Format the tool response as a natural language message for the user.
+
+# Intent
+{ctx[original_intent]}
+
+# Tool Response
+{ctx[tool_response]}
+
+# Persona
+{ctx[persona]}
+
+# Output Guidelines
+- Generate only one concise sentence.
+- Use product-oriented, user-facing language.
+- Do not list fields, do not use bullets.
+- Do not explain technical details or backend behavior.
+- Do not mention status codes, endpoints, requests, or payloads.
+- Use only relevant data from received_body.
+- If success is true, confirm that the expense was registered.
+- Focus on: action performed + main context.
+
+# Output Format
+JSON object:
+{{
+  "system_output": "..."
+}}
+
+# Constraints
+- Respect persona language, tone, style.
+- Do not add information not present in tool_response.
+- Be concise, clear and helpful.
+"""
 
         prompts = [
             (
@@ -79,10 +144,14 @@ Keep the response within the persona's max_response_length limit."""
                 {
                     "type": "object",
                     "properties": {
-                        "intent": {"type": "string"},
-                        "tool_config_id": {"type": "string", "format": "uuid"},
+                        "intent": {"type": ["string", "null"]},
+                        "tool_config_id": {
+                            "type": ["string", "null"],
+                            "format": "uuid",
+                        },
+                        "clarification": {"type": "boolean"},
                     },
-                    "required": ["intent", "tool_config_id"],
+                    "required": ["intent", "tool_config_id", "clarification"],
                 },
             ),
             (
@@ -91,8 +160,24 @@ Keep the response within the persona's max_response_length limit."""
                 slot_template,
                 {
                     "type": "object",
-                    "properties": {"payload": {"type": "object"}},
-                    "required": ["payload"],
+                    "properties": {
+                        "payload": {"type": "object"},
+                        "missing_fields": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["payload", "missing_fields"],
+                },
+            ),
+            (
+                PROMPT_CLARIFICATION_ID,
+                "ClarificationNode",
+                clarification_template,
+                {
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
                 },
             ),
             (
@@ -101,8 +186,8 @@ Keep the response within the persona's max_response_length limit."""
                 response_template,
                 {
                     "type": "object",
-                    "properties": {"message": {"type": "string"}},
-                    "required": ["message"],
+                    "properties": {"system_output": {"type": "string"}},
+                    "required": ["system_output"],
                 },
             ),
         ]

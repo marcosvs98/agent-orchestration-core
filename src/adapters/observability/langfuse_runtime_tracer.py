@@ -21,8 +21,6 @@ from settings import (
 
 logger = get_logger(__name__)
 
-DEBUG_LOG_PATH = "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.cursor/debug.log"
-
 
 def _get_contextvars_metadata() -> Dict[str, Any]:
     """Capture structlog contextvars automatically for metadata enrichment."""
@@ -76,8 +74,8 @@ class GuardrailSpanHandle:
                     "reason_code": reason_code,
                 },
             }
-            if decision == "BLOCK":
-                update_data["level"] = "ERROR"
+            if decision == "BLOCK":  # Todo: To use StrEnum
+                update_data["level"] = "ERROR"  # Todo: To use StrEnum
                 update_data["status_message"] = f"Guardrail blocked: {reason_code}"
             contextvars_metadata = _get_contextvars_metadata()
             if contextvars_metadata:

@@ -14,6 +14,7 @@ from infra.database.models.governance.llm_model_mapping import (
 )
 from infra.database.models.governance.llm_pricing import LLMPricing as LLMPricingModel
 
+
 class LLMProviderSelector:
     def __init__(
         self,
@@ -35,8 +36,10 @@ class LLMProviderSelector:
         if config is None:
             raise DomainValidationException(message="llm_provider_not_active")
 
-        mapping: LLMModelMappingModel = await self.model_mapping_repository.get_active_mapping(
-            tenant_id=tenant_id, provider=provider, model_alias=model_alias
+        mapping: LLMModelMappingModel = (
+            await self.model_mapping_repository.get_active_mapping(
+                tenant_id=tenant_id, provider=provider, model_alias=model_alias
+            )
         )
         if mapping is None:
             raise DomainValidationException(message="llm_model_mapping_not_found")

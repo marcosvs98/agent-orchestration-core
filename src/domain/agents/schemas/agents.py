@@ -14,7 +14,7 @@ class AgentCreate(BaseModel):
 
 
 class PersonaConfig(BaseModel):
-    language: str = "pt-BR"
+    language: str = "pt_BR"
     tone: Literal["professional", "friendly", "neutral"] = "professional"
     style: Literal["concise", "detailed"] = "concise"
     rules: list[str] = Field(default_factory=list)

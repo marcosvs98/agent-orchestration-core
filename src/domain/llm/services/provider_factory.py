@@ -11,8 +11,9 @@ from adapters.cache.redis_adapter import RedisAdapter
 
 class LLMProviderFactory:
     def __init__(
-        self, *, 
-        http_client: HardenedHttpClient, 
+        self,
+        *,
+        http_client: HardenedHttpClient,
         secret_resolver: SecretResolverPort,
         cache_adapter: RedisAdapter,
     ) -> None:

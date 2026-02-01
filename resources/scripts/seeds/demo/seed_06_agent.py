@@ -49,7 +49,7 @@ async def seed_agent() -> None:
         agent_version = result.scalar_one_or_none()
 
         persona_config = {
-            "language": "pt-BR",
+            "language": "pt_BR",
             "tone": "professional",
             "style": "concise",
             "rules": [
