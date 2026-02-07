@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from domain.agents.repositories.agents_repository import AgentsRepository
 from domain.agents.schemas.agents import PersonaConfig
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.execution.services.graph_runtime.types import ExecutionContext
 from domain.llm.schemas.contexts import (
     ClarificationContext,
     IntentDetectionContext,
     ResponseFormattingContext,
     SlotFillingContext,
 )
-from domain.execution.services.graph_runtime.types import ExecutionContext
 from domain.tools.repositories.tools_repository import ToolsRepository
 
 
@@ -17,9 +20,11 @@ class ContextBuilder:
         self,
         agents_repository: AgentsRepository,
         tools_repository: ToolsRepository,
+        tracer: RuntimeTracerPort,
     ):
         self.agents_repository = agents_repository
         self.tools_repository = tools_repository
+        self.tracer = tracer
 
     async def build_intent_context(
         self,
@@ -27,7 +32,14 @@ class ContextBuilder:
         user_input: str,
         context: ExecutionContext,
     ) -> IntentDetectionContext:
-        agent_version = await self.agents_repository.get_agent_version(agent_version_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.llm.context_builder.get_agent_version_intent",
+            input={"agent_version_id": str(agent_version_id)},
+        ):
+            agent_version = await self.agents_repository.get_agent_version(
+                agent_version_id
+            )
         if agent_version is None:
             persona = PersonaConfig()
         else:
@@ -47,7 +59,14 @@ class ContextBuilder:
         tool_config_id: UUID,
         user_input: str,
     ) -> SlotFillingContext:
-        agent_version = await self.agents_repository.get_agent_version(agent_version_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.llm.context_builder.get_agent_version_slot",
+            input={"agent_version_id": str(agent_version_id)},
+        ):
+            agent_version = await self.agents_repository.get_agent_version(
+                agent_version_id
+            )
         if agent_version is None:
             persona = PersonaConfig()
         else:
@@ -57,7 +76,12 @@ class ContextBuilder:
                 else PersonaConfig()
             )
 
-        tool_config = await self.tools_repository.get_tool_config(tool_config_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.llm.context_builder.get_tool_config_slot",
+            input={"tool_config_id": str(tool_config_id)},
+        ):
+            tool_config = await self.tools_repository.get_tool_config(tool_config_id)
         if tool_config is None:
             request_schema = {}
         else:
@@ -77,7 +101,14 @@ class ContextBuilder:
         tool_response: dict,
         original_intent: str,
     ) -> ResponseFormattingContext:
-        agent_version = await self.agents_repository.get_agent_version(agent_version_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.llm.context_builder.get_agent_version_response",
+            input={"agent_version_id": str(agent_version_id)},
+        ):
+            agent_version = await self.agents_repository.get_agent_version(
+                agent_version_id
+            )
         if agent_version is None:
             persona = PersonaConfig()
         else:
@@ -98,7 +129,14 @@ class ContextBuilder:
         intent: str,
         missing_fields: list[str],
     ) -> ClarificationContext:
-        agent_version = await self.agents_repository.get_agent_version(agent_version_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.llm.context_builder.get_agent_version_clarification",
+            input={"agent_version_id": str(agent_version_id)},
+        ):
+            agent_version = await self.agents_repository.get_agent_version(
+                agent_version_id
+            )
         if agent_version is None:
             persona = PersonaConfig()
         else:

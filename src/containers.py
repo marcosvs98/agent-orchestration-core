@@ -123,14 +123,17 @@ class FlowsContainer(containers.DeclarativeContainer):
 
 class AgentsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
 
     agents_repository = providers.Factory(
         AgentsRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     agents_service = providers.Factory(
         AgentsService,
@@ -142,24 +145,29 @@ class AgentsContainer(containers.DeclarativeContainer):
 
 class ToolsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
 
     tools_repository = providers.Factory(
         ToolsRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     agents_repository = providers.Factory(
         AgentsRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     tools_service = providers.Factory(
         ToolsService,
         repository=tools_repository,
         agents_repository=agents_repository,
         authoring_events=authoring_event_repository,
+        tracer=adapters.tracer,
     )
     tools_controller = providers.Factory(ToolsController, service=tools_service)
 
@@ -212,19 +220,23 @@ class ExecutionContainer(containers.DeclarativeContainer):
     access_policy_repository = providers.Factory(
         AccessPolicyRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     access_policy_service = providers.Factory(
         AccessPolicyService,
         repository=access_policy_repository,
+        tracer=adapters.tracer,
     )
     rate_limit_policy_repository = providers.Factory(
         RateLimitPolicyRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     rate_limit_service = providers.Factory(
         RateLimitService,
         repository=rate_limit_policy_repository,
         redis_adapter=adapters.redis_adapter,
+        tracer=adapters.tracer,
     )
     execution_limit_policy_repository = providers.Factory(
         ExecutionLimitPolicyRepository,
@@ -238,8 +250,12 @@ class ExecutionContainer(containers.DeclarativeContainer):
     idempotency_service = providers.Factory(
         IdempotencyService,
         redis_adapter=adapters.redis_adapter,
+        tracer=adapters.tracer,
     )
-    lifecycle = providers.Singleton(RunLifecycleStateMachine)
+    lifecycle = providers.Singleton(
+        RunLifecycleStateMachine,
+        tracer=adapters.tracer,
+    )
     execution_limit_service = providers.Factory(
         ExecutionLimitService,
         policy_repository=execution_limit_policy_repository,
@@ -254,7 +270,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         tools_service=tools.tools_service,
     )
-    tool_executor = providers.Singleton(HttpToolExecutor)
+    tool_executor = providers.Singleton(HttpToolExecutor, tracer=adapters.tracer)
     tool_orchestrator = providers.Factory(
         ToolOrchestrator,
         repository=execution_repository,
@@ -271,10 +287,14 @@ class ExecutionContainer(containers.DeclarativeContainer):
         rate_limit_service=rate_limit_service,
     )
     execution_controller = providers.Factory(
-        ExecutionController, boundary=execution_boundary
+        ExecutionController,
+        boundary=execution_boundary,
+        tracer=adapters.tracer,
     )
     execution_plane_controller = providers.Factory(
-        ExecutionPlaneController, boundary=execution_boundary
+        ExecutionPlaneController,
+        boundary=execution_boundary,
+        tracer=adapters.tracer,
     )
 
 
@@ -301,16 +321,19 @@ class OnboardingContainer(containers.DeclarativeContainer):
 
 class PromptsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
     execution = providers.DependenciesContainer()
 
     prompt_repository = providers.Factory(
         PromptRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     prompt_service = providers.Factory(
         PromptService,
         repository=prompt_repository,
         execution_repository=execution.execution_repository,
+        tracer=adapters.tracer,
     )
     prompt_controller = providers.Factory(PromptController, service=prompt_service)
 
@@ -326,12 +349,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     tenants = providers.Container(TenantsContainer, core=core)
     flows = providers.Container(FlowsContainer, core=core)
-    agents = providers.Container(AgentsContainer, core=core)
-    tools = providers.Container(ToolsContainer, core=core)
+    agents = providers.Container(AgentsContainer, core=core, adapters=adapters)
+    tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
     ai_policy = providers.Container(AIPolicyContainer, core=core, adapters=adapters)
     rag = providers.Container(RAGContainer, core=core)
     execution = providers.Container(
         ExecutionContainer, core=core, adapters=adapters, tools=tools
     )
     onboarding = providers.Container(OnboardingContainer, core=core)
-    prompts = providers.Container(PromptsContainer, core=core, execution=execution)
+    prompts = providers.Container(
+        PromptsContainer, core=core, adapters=adapters, execution=execution
+    )

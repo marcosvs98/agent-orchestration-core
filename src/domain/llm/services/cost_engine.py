@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from exceptions.service_exceptions import DomainValidationException
 
 
 class CostEngine:
-    def __init__(self, pricing_repository: LLMPricingRepository) -> None:
+    def __init__(
+        self, pricing_repository: LLMPricingRepository, tracer: RuntimeTracerPort
+    ) -> None:
         self.pricing_repository = pricing_repository
+        self.tracer = tracer
 
     @staticmethod
     def _tokens(value: Mapping[str, int] | None, key: str) -> int:
@@ -29,9 +33,14 @@ class CostEngine:
         provider_model: str,
         token_usage: Mapping[str, int] | None,
     ) -> float:
-        pricing = await self.pricing_repository.get_active_pricing(
-            provider=provider, provider_model=provider_model
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.llm.cost_engine.get_active_pricing",
+            input={"provider": provider, "provider_model": provider_model},
+        ):
+            pricing = await self.pricing_repository.get_active_pricing(
+                provider=provider, provider_model=provider_model
+            )
         if pricing is None:
             raise DomainValidationException(message="llm_pricing_not_found")
 

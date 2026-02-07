@@ -1,7 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from enum import StrEnum
 from pydantic import BaseModel, model_validator
+
+if TYPE_CHECKING:
+    from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
 
 
 class FlowFailureReason(StrEnum):
@@ -15,6 +21,13 @@ class FlowFailureReason(StrEnum):
     UNKNOWN_NODE_TYPE = "UNKNOWN_NODE_TYPE"
     NO_MATCHING_EDGE = "NO_MATCHING_EDGE"
     MULTIPLE_MATCHING_EDGES = "MULTIPLE_MATCHING_EDGES"
+
+
+class Channel(StrEnum):
+    HTTP = "http"
+    WEBSOCKET = "websocket"
+    AMQP = "amqp"
+    GRPC = "grpc"
 
 
 class FlowRun(BaseModel):
@@ -41,6 +54,38 @@ class FlowRun(BaseModel):
     runtime_policy_hash: str | None = None
     tool_catalog_hash: str | None = None
     llm_provider_config_hash: str | None = None
+
+    @classmethod
+    def from_model(
+        cls, model: FlowRunModel, failure_reason: FlowFailureReason | None = None
+    ) -> FlowRun:
+        return cls(
+            id=model.flow_run_id,
+            origin_flow_run_id=model.origin_flow_run_id,
+            flow_version_id=model.flow_version_id,
+            session_id=model.session_id,
+            interaction_id=model.interaction_id,
+            status=model.status,
+            canonical_status=model.canonical_status,
+            correlation_id=model.correlation_id,
+            started_at=model.started_at.isoformat() if model.started_at else None,
+            finished_at=model.finished_at.isoformat() if model.finished_at else None,
+            waiting_reason=model.waiting_reason,
+            waiting_deadline_at=model.waiting_deadline_at.isoformat()
+            if model.waiting_deadline_at
+            else None,
+            input=model.input or {},
+            output=model.output or {},
+            error=model.error or {},
+            failure_reason=failure_reason,
+            trace_id=model.trace_id,
+            root_observation_id=model.root_observation_id,
+            flow_graph_snapshot_id=model.flow_graph_snapshot_id,
+            execution_plan_hash=model.execution_plan_hash,
+            runtime_policy_hash=model.runtime_policy_hash,
+            tool_catalog_hash=model.tool_catalog_hash,
+            llm_provider_config_hash=model.llm_provider_config_hash,
+        )
 
 
 class FlowRunInput(BaseModel):

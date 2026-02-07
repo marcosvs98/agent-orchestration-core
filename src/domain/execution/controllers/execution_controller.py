@@ -1,8 +1,12 @@
+import contextlib
+
 from fastapi import APIRouter, Depends, Header, Request, status
 from uuid import UUID
 
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.execution import (
     AgentRun,
+    Channel,
     FlowRun,
     FlowRunCreate,
     GraphState,
@@ -22,11 +26,12 @@ from utils.auth import AuthContext, get_auth_context
 class ExecutionController:
     """HTTP controller for runtime execution."""
 
-    def __init__(self, boundary: ExecutionBoundary) -> None:
+    def __init__(self, boundary: ExecutionBoundary, tracer: RuntimeTracerPort) -> None:
         self.boundary = boundary
+        self.tracer = tracer
         self.router = APIRouter(
-            prefix="/core/v1",  # Todo: Prefixos de API podem ser StrEnums
-            tags=["execution"],  # Todo: Tasgs de API podem ser StrEnum's
+            prefix="/core/v1",
+            tags=["execution"],
             dependencies=[Depends(get_auth_context)],
         )
         self._bind_routes()
@@ -104,17 +109,27 @@ class ExecutionController:
     ) -> FlowRun:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
-        return await self.boundary.ingest_interaction_and_create_flow_run(
-            auth=auth,
-            endpoint=request.url.path,
-            idempotency_key=idempotency_key,
-            flow_run=flow_run,
-            channel="http",  # Todo: Channel pode ser StrEnum e Deveria vir na requisição
-            headers=dict(request.headers),
-            external_message_id=request.headers.get("X-External-Message-Id"),
-            request_id=request.headers.get("X-Request-Id"),
-            trace_id=request.headers.get("X-Trace-Id"),
+        cm = (
+            self.tracer.observe(
+                as_type="span",
+                name="domain.execution.controller.create_flow_run",
+                input={"endpoint": request.url.path},
+            )
+            if self.tracer
+            else contextlib.nullcontext()
         )
+        with cm:
+            return await self.boundary.ingest_interaction_and_create_flow_run(
+                auth=auth,
+                endpoint=request.url.path,
+                idempotency_key=idempotency_key,
+                flow_run=flow_run,
+                channel=Channel.HTTP,
+                headers=dict(request.headers),
+                external_message_id=request.headers.get("X-External-Message-Id"),
+                request_id=request.headers.get("X-Request-Id"),
+                trace_id=request.headers.get("X-Trace-Id"),
+            )
 
     async def create_tool_run(
         self,
@@ -125,19 +140,39 @@ class ExecutionController:
     ) -> ToolRun:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
-        return await self.boundary.create_tool_run(
-            auth=auth,
-            endpoint=request.url.path,
-            idempotency_key=idempotency_key,
-            tool_run=tool_run,
+        cm = (
+            self.tracer.observe(
+                as_type="span",
+                name="domain.execution.controller.create_tool_run",
+                input={"endpoint": request.url.path},
+            )
+            if self.tracer
+            else contextlib.nullcontext()
         )
+        with cm:
+            return await self.boundary.create_tool_run(
+                auth=auth,
+                endpoint=request.url.path,
+                idempotency_key=idempotency_key,
+                tool_run=tool_run,
+            )
 
     async def execute_tool_run(
         self, tool_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> dict:
-        return await self.boundary.execute_tool_run(
-            auth=auth, tool_run_id=UUID(tool_run_id)
+        cm = (
+            self.tracer.observe(
+                as_type="span",
+                name="domain.execution.controller.execute_tool_run",
+                input={"tool_run_id": tool_run_id},
+            )
+            if self.tracer
+            else contextlib.nullcontext()
         )
+        with cm:
+            return await self.boundary.execute_tool_run(
+                auth=auth, tool_run_id=UUID(tool_run_id)
+            )
 
     async def get_flow_run(
         self, flow_run_id: str, _: AuthContext = Depends(get_auth_context)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import contextlib
+from datetime import datetime
 
 from typing import Any, Dict, Callable
 from uuid import UUID
@@ -50,7 +51,7 @@ class LLMExecutor(LLMExecutorPort):
         provider_factory: Callable[[LLMProviderSelection], LLMProviderPort]
         | None = None,
         guardrail_engine: GuardrailEngine | None = None,
-        tracer: RuntimeTracerPort | None = None,
+        tracer: RuntimeTracerPort,
     ) -> None:
         self.provider = provider
         self.repository = repository
@@ -76,10 +77,14 @@ class LLMExecutor(LLMExecutorPort):
                 ) from exc
             return
 
-        span_cm = self.tracer.start_evaluator_span(
-            evaluator_name="schema_validation",
-            input={"output": payload, "schema": schema},
+        span_cm = self.tracer.observe(
+            as_type="evaluator",
             name="evaluator.schema_validation",
+            input={
+                "payload_keys": list(payload.keys()),
+                "schema_keys": list(schema.keys()),
+            },
+            metadata={"evaluator_name": "schema_validation"},
         )
         evaluator_handle = None
         validation_exc = None
@@ -88,29 +93,24 @@ class LLMExecutor(LLMExecutorPort):
                 try:
                     validate(instance=payload, schema=schema)
                     if evaluator_handle:
-                        try:
-                            evaluator_handle.update_result(passed=True, errors=None)
-                        except Exception:
-                            pass
+                        evaluator_handle.success(output={"passed": True, "errors": []})
                 except JsonSchemaValidationError as exc:
                     validation_exc = exc
                     error_message = str(exc)
                     if evaluator_handle:
-                        try:
-                            evaluator_handle.update_result(
-                                passed=False, errors=[error_message]
-                            )
-                        except Exception:
-                            pass
+                        evaluator_handle.error(
+                            error_type=type(exc).__name__,
+                            error_message=error_message,
+                            output={"passed": False, "errors": [error_message]},
+                        )
                 except Exception as exc:
                     validation_exc = exc
                     if evaluator_handle:
-                        try:
-                            evaluator_handle.update_result(
-                                passed=False, errors=[str(exc)]
-                            )
-                        except Exception:
-                            pass
+                        evaluator_handle.error(
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                            output={"passed": False, "errors": [str(exc)]},
+                        )
         except Exception as cm_exc:
             if validation_exc:
                 if isinstance(validation_exc, JsonSchemaValidationError):
@@ -122,10 +122,11 @@ class LLMExecutor(LLMExecutorPort):
                     detail=str(validation_exc),
                 ) from validation_exc
             if evaluator_handle:
-                try:
-                    evaluator_handle.update_result(passed=False, errors=[str(cm_exc)])
-                except Exception:
-                    pass
+                evaluator_handle.error(
+                    error_type=type(cm_exc).__name__,
+                    error_message=str(cm_exc),
+                    output={"passed": False, "errors": [str(cm_exc)]},
+                )
             raise DomainValidationException(
                 message="internal_schema_validation_error", detail=str(cm_exc)
             ) from cm_exc
@@ -172,12 +173,35 @@ class LLMExecutor(LLMExecutorPort):
         provider_model = request.model_alias
         provider_instance = self.provider
         if self.provider_selector and self.provider_factory:
-            selection: LLMProviderSelection = await self.provider_selector.select(
-                tenant_id=tenant_id, provider=provider, model_alias=request.model_alias
-            )
-            provider_model = selection.provider_model
-            provider_instance = self.provider_factory(selection)
-            request = request.model_copy(update={"model_alias": provider_model})
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="agent",
+                    name="domain.llm.llm_executor.select_provider",
+                    input={
+                        "tenant_id": str(tenant_id),
+                        "provider": provider,
+                        "model_alias": request.model_alias,
+                    },
+                ):
+                    selection: LLMProviderSelection = (
+                        await self.provider_selector.select(
+                            tenant_id=tenant_id,
+                            provider=provider,
+                            model_alias=request.model_alias,
+                        )
+                    )
+                    provider_model = selection.provider_model
+                    provider_instance = self.provider_factory(selection)
+                    request = request.model_copy(update={"model_alias": provider_model})
+            else:
+                selection: LLMProviderSelection = await self.provider_selector.select(
+                    tenant_id=tenant_id,
+                    provider=provider,
+                    model_alias=request.model_alias,
+                )
+                provider_model = selection.provider_model
+                provider_instance = self.provider_factory(selection)
+                request = request.model_copy(update={"model_alias": provider_model})
 
         if provider_instance is None:
             raise DomainValidationException(
@@ -185,144 +209,21 @@ class LLMExecutor(LLMExecutorPort):
                 detail="No LLM provider available. Either provide a default provider or configure provider_selector and provider_factory.",
             )
         if self.circuit_breaker:
-            await self.circuit_breaker.ensure_closed(scope)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="guardrail",
+                    name="domain.llm.llm_executor.circuit_breaker_check",
+                    input={"scope": scope},
+                ):
+                    await self.circuit_breaker.ensure_closed(scope)
+            else:
+                await self.circuit_breaker.ensure_closed(scope)
 
         guardrail_decision = None
-        if self.guardrail_engine and policy_llm is not None:
-            if self.tracer:
-                guardrail_span_cm = self.tracer.start_guardrail_span(
-                    guardrail_type="LLM",
-                    input={
-                        "estimated_cost": None,
-                        "provider": provider,
-                        "provider_model": provider_model,
-                    },
-                )
-            else:
-                guardrail_span_cm = contextlib.nullcontext()
-            with guardrail_span_cm as guardrail_handle:
-                guardrail_decision = await self.guardrail_engine.check_and_reserve(
-                    tenant_id=tenant_id,
-                    flow_run_id=flow_run_id,
-                    request=request,
-                    policy_llm=policy_llm,
-                    provider=provider,
-                    provider_model=provider_model,
-                )
-                if guardrail_handle:
-                    guardrail_handle.update_decision(
-                        decision=guardrail_decision.decision.value,
-                        reason_code=guardrail_decision.reason_code,
-                        applied_limits=guardrail_decision.applied_limits or {},
-                        overrides=guardrail_decision.overrides,
-                    )
-            applied_limits = guardrail_decision.applied_limits or {}
-            limit_label = ",".join(applied_limits.keys()) if applied_limits else "none"
-            current_value = (
-                applied_limits.get("projected_cost")
-                or applied_limits.get("current_calls")
-                or applied_limits.get("max_latency_ms_hard")
-            )
-            payload: GuardrailCheckedPayload = GuardrailCheckedPayload(
-                guardrail_type="LLM",
-                decision=guardrail_decision.decision.value,
-                limit=limit_label,
-                current_value=current_value,
-                estimated_cost_usd=applied_limits.get("projected_cost"),
-                provider=provider,
-                model_alias=request.model_alias,
-                provider_model=provider_model,
-                trace_id=str(trace.trace_id),
-            )
-            await self.repository.append_execution_event(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                flow_run_id=flow_run_id,
-                event_type=ExecutionEventType.GuardrailChecked,
-                payload=payload,
-                correlation_id=correlation_id,
-                causation_id=None,
-                schema_version=1,
-                node_id=node_id,
-                edge_id=None,
-            )
-            if guardrail_decision.decision is GuardrailDecisionType.BLOCK:
-                payload: GuardrailBlockedPayload = GuardrailBlockedPayload(
-                    guardrail_type="LLM",
-                    limit=limit_label,
-                    current_value=current_value,
-                    reason_code=guardrail_decision.reason_code,
-                    provider=provider,
-                    model_alias=request.model_alias,
-                    provider_model=provider_model,
-                    trace_id=str(trace.trace_id),
-                )
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.GuardrailBlocked,
-                    payload=payload,
-                    correlation_id=correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                    node_id=node_id,
-                    edge_id=None,
-                )
-                raise DomainValidationException(message="guardrail_blocked")
-            if guardrail_decision.decision is GuardrailDecisionType.DEGRADE:
-                overrides = guardrail_decision.overrides or {}
-                model_alias_override = overrides.get("model_alias")
-                if (
-                    model_alias_override
-                    and self.provider_selector
-                    and self.provider_factory
-                ):
-                    selection = await self.provider_selector.select(
-                        tenant_id=tenant_id,
-                        provider=provider,
-                        model_alias=model_alias_override,
-                    )
-                    provider_model = selection.provider_model
-                    provider_instance = self.provider_factory(selection)
-                    request = request.model_copy(update={"model_alias": provider_model})
-                sanitized_overrides: Dict[str, Any] = {}
-                for key, value in overrides.items():
-                    if isinstance(value, (str, int, float, bool)) or value is None:
-                        sanitized_overrides[key] = value
-                    else:
-                        sanitized_overrides[key] = str(value)
-                payload: GuardrailDegradedPayload = GuardrailDegradedPayload(
-                    guardrail_type="LLM",
-                    limit=limit_label,
-                    current_value=current_value,
-                    reason_code=guardrail_decision.reason_code,
-                    overrides=sanitized_overrides,
-                    provider=provider,
-                    model_alias=request.model_alias,
-                    provider_model=provider_model,
-                    trace_id=str(trace.trace_id),
-                )
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.GuardrailDegraded,
-                    payload=payload,
-                    correlation_id=correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                    node_id=node_id,
-                    edge_id=None,
-                )
-                max_latency_override = overrides.get("max_latency_ms")
-                if max_latency_override:
-                    request = request.model_copy(
-                        update={"max_latency_ms": max_latency_override}
-                    )
 
         prompt_version = request.prompt_version
         prompt_frozen_hash = request.prompt_frozen_hash
+        prompt_id = request.prompt_id
         task_type_value = request.task_type.value if request.task_type else None
 
         payload: LLMCallStartedPayload = LLMCallStartedPayload(
@@ -345,35 +246,210 @@ class LLMExecutor(LLMExecutorPort):
             edge_id=None,
         )
 
-        # generation_name = None
-        # if request.task_type:
-        #    generation_name = f"adapters.llm.{request.task_type.value}"
+        model_parameters = {}
+        if request.max_tokens:
+            model_parameters["max_tokens"] = request.max_tokens
+        if policy_llm:
+            if policy_llm.get("temperature") is not None:
+                model_parameters["temperature"] = policy_llm.get("temperature")
+            if policy_llm.get("top_p") is not None:
+                model_parameters["top_p"] = policy_llm.get("top_p")
 
-        # generation_cm = (
-        #    self.tracer.start_llm_generation(
-        #        model_id=provider_model,
-        #        task_type=task_type_value,
-        #        input=sanitized_input,
-        #        prompt_version=prompt_version,
-        #        prompt_frozen_hash=prompt_frozen_hash,
-        #        node_type=None,
-        #        user_id=None,
-        #        session_id=session_id,
-        #        tenant_id=tenant_id,
-        #        name=generation_name,
-        #    )
-        #    if self.tracer
-        #    else contextlib.nullcontext()
-        # )
-        try:
-            self._validate_schema(
-                {"prompt": request.prompt},
-                request.input_schema,
-                error_code="llm_input_invalid",
+        generation_metadata = {}
+        if prompt_id:
+            generation_metadata["prompt_id"] = prompt_id
+        if prompt_version is not None:
+            generation_metadata["prompt_version"] = prompt_version
+        if prompt_frozen_hash:
+            generation_metadata["prompt_frozen_hash"] = prompt_frozen_hash
+            generation_metadata["prompt_hash"] = prompt_frozen_hash
+        if task_type_value:
+            generation_metadata["llm_task"] = task_type_value
+
+        generation_cm = (
+            self.tracer.observe(
+                as_type="generation",
+                name=f"llm.{task_type_value}" if task_type_value else "llm.call",
+                input={
+                    "prompt": request.prompt,
+                    "system_prompt": request.system_prompt,
+                },
+                metadata=generation_metadata,
+                model=provider_model,
+                model_parameters=model_parameters or None,
+                completion_start_time=datetime.utcnow(),
             )
-            # with generation_cm as generation_handle:
-            provider_result = await provider_instance.infer(request)
-            result = provider_result
+            if self.tracer
+            else contextlib.nullcontext()
+        )
+        generation_handle = None
+        try:
+            with generation_cm as generation_handle:
+                self._validate_schema(
+                    {"prompt": request.prompt},
+                    request.input_schema,
+                    error_code="llm_input_invalid",
+                )
+                guardrail_decision = None
+                if self.guardrail_engine and policy_llm is not None:
+                    guardrail_span_cm = (
+                        self.tracer.observe(
+                            as_type="guardrail",
+                            name="guardrail.llm",
+                            input={
+                                "provider": provider,
+                                "provider_model": provider_model,
+                            },
+                            metadata={"guardrail_type": "LLM"},
+                        )
+                        if self.tracer
+                        else contextlib.nullcontext()
+                    )
+                    with guardrail_span_cm as guardrail_handle:
+                        guardrail_decision = (
+                            await self.guardrail_engine.check_and_reserve(
+                                tenant_id=tenant_id,
+                                flow_run_id=flow_run_id,
+                                request=request,
+                                policy_llm=policy_llm,
+                                provider=provider,
+                                provider_model=provider_model,
+                            )
+                        )
+                        guardrail_output = {
+                            "decision": guardrail_decision.decision.value,
+                            "reason_code": guardrail_decision.reason_code,
+                            "applied_limits": guardrail_decision.applied_limits or {},
+                            "overrides": guardrail_decision.overrides,
+                        }
+                        if guardrail_handle:
+                            if (
+                                guardrail_decision.decision
+                                is GuardrailDecisionType.BLOCK
+                            ):
+                                guardrail_handle.update(
+                                    level="ERROR",
+                                    status_message=f"Guardrail blocked: {guardrail_decision.reason_code}",
+                                    output=guardrail_output,
+                                )
+                            else:
+                                guardrail_handle.success(output=guardrail_output)
+
+                        applied_limits = guardrail_decision.applied_limits or {}
+                        limit_label = (
+                            ",".join(applied_limits.keys())
+                            if applied_limits
+                            else "none"
+                        )
+                        current_value = (
+                            applied_limits.get("projected_cost")
+                            or applied_limits.get("current_calls")
+                            or applied_limits.get("max_latency_ms_hard")
+                        )
+                        payload: GuardrailCheckedPayload = GuardrailCheckedPayload(
+                            guardrail_type="LLM",
+                            decision=guardrail_decision.decision.value,
+                            limit=limit_label,
+                            current_value=current_value,
+                            estimated_cost_usd=applied_limits.get("projected_cost"),
+                            provider=provider,
+                            model_alias=request.model_alias,
+                            provider_model=provider_model,
+                            trace_id=str(trace.trace_id),
+                        )
+                        await self.repository.append_execution_event(
+                            tenant_id=tenant_id,
+                            session_id=session_id,
+                            flow_run_id=flow_run_id,
+                            event_type=ExecutionEventType.GuardrailChecked,
+                            payload=payload,
+                            correlation_id=correlation_id,
+                            causation_id=None,
+                            schema_version=1,
+                            node_id=node_id,
+                            edge_id=None,
+                        )
+                        if guardrail_decision.decision is GuardrailDecisionType.BLOCK:
+                            payload = GuardrailBlockedPayload(
+                                guardrail_type="LLM",
+                                limit=limit_label,
+                                current_value=current_value,
+                                reason_code=guardrail_decision.reason_code,
+                                provider=provider,
+                                model_alias=request.model_alias,
+                                provider_model=provider_model,
+                                trace_id=str(trace.trace_id),
+                            )
+                            await self.repository.append_execution_event(
+                                tenant_id=tenant_id,
+                                session_id=session_id,
+                                flow_run_id=flow_run_id,
+                                event_type=ExecutionEventType.GuardrailBlocked,
+                                payload=payload,
+                                correlation_id=correlation_id,
+                                causation_id=None,
+                                schema_version=1,
+                                node_id=node_id,
+                                edge_id=None,
+                            )
+                            raise DomainValidationException(message="guardrail_blocked")
+                        if guardrail_decision.decision is GuardrailDecisionType.DEGRADE:
+                            overrides = guardrail_decision.overrides or {}
+                            model_alias_override = overrides.get("model_alias")
+                            if (
+                                model_alias_override
+                                and self.provider_selector
+                                and self.provider_factory
+                            ):
+                                selection = await self.provider_selector.select(
+                                    tenant_id=tenant_id,
+                                    provider=provider,
+                                    model_alias=model_alias_override,
+                                )
+                                provider_model = selection.provider_model
+                                provider_instance = self.provider_factory(selection)
+                                request = request.model_copy(
+                                    update={"model_alias": provider_model}
+                                )
+                            sanitized_overrides: Dict[str, Any] = {}
+                            for key, value in overrides.items():
+                                if (
+                                    isinstance(value, (str, int, float, bool))
+                                    or value is None
+                                ):
+                                    sanitized_overrides[key] = value
+                                else:
+                                    sanitized_overrides[key] = str(value)
+                            payload = GuardrailDegradedPayload(
+                                guardrail_type="LLM",
+                                limit=limit_label,
+                                current_value=current_value,
+                                reason_code=guardrail_decision.reason_code,
+                                overrides=sanitized_overrides,
+                                provider=provider,
+                                model_alias=request.model_alias,
+                                provider_model=provider_model,
+                                trace_id=str(trace.trace_id),
+                            )
+                            await self.repository.append_execution_event(
+                                tenant_id=tenant_id,
+                                session_id=session_id,
+                                flow_run_id=flow_run_id,
+                                event_type=ExecutionEventType.GuardrailDegraded,
+                                payload=payload,
+                                correlation_id=correlation_id,
+                                causation_id=None,
+                                schema_version=1,
+                                node_id=node_id,
+                                edge_id=None,
+                            )
+                            max_latency_override = overrides.get("max_latency_ms")
+                            if max_latency_override:
+                                request = request.model_copy(
+                                    update={"max_latency_ms": max_latency_override}
+                                )
+                provider_result = await provider_instance.infer(request)
+                result = provider_result
             if result.latency_ms is None:
                 result = result.model_copy(
                     update={
@@ -411,29 +487,26 @@ class LLMExecutor(LLMExecutorPort):
                 raise schema_exc from schema_exc
             self._enforce_policy(request, result)
 
-            model_parameters = {}
-            if request.max_tokens:
-                model_parameters["max_tokens"] = request.max_tokens
-            if policy_llm:
-                if policy_llm.get("temperature") is not None:
-                    model_parameters["temperature"] = policy_llm.get("temperature")
-                if policy_llm.get("top_p") is not None:
-                    model_parameters["top_p"] = policy_llm.get("top_p")
-
-                # try:
-                #    generation_handle.update_success(
-                #        output=result.output,
-                #        token_usage=result.token_usage,
-                #        cost=result.cost_usd or 0.0,
-                #        latency_ms=result.latency_ms or 0,
-                #        model_version=provider_model,
-                #        input_data=sanitized_input,
-                #        model_parameters=model_parameters
-                #        if model_parameters
-                #        else None,
-                #    )
-                # except Exception:
-                #    pass
+            if generation_handle:
+                usage_details = {
+                    "prompt_tokens": result.token_usage.get("prompt_tokens")
+                    or result.token_usage.get("input_tokens")
+                    or 0,
+                    "completion_tokens": result.token_usage.get("completion_tokens")
+                    or result.token_usage.get("output_tokens")
+                    or 0,
+                    "total_tokens": result.token_usage.get("total_tokens") or 0,
+                }
+                cost_details = (
+                    {"total_cost": result.cost_usd}
+                    if result.cost_usd is not None
+                    else None
+                )
+                generation_handle.success(
+                    output=result.output,
+                    usage_details=usage_details,
+                    cost_details=cost_details,
+                )
 
             sanitized_usage: Dict[str, int | float | None] = {}
             for key, value in (result.token_usage or {}).items():
@@ -495,23 +568,14 @@ class LLMExecutor(LLMExecutorPort):
                 await self.circuit_breaker.record_success(scope)
             return result
         except Exception as exc:  # noqa: BLE001
+            if generation_handle:
+                generation_handle.error(
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    output={"status": "error"},
+                )
             if self.circuit_breaker:
                 await self.circuit_breaker.record_failure(scope)
-            # if self.tracer and "generation_handle" in locals():
-            #    try:
-            #        import traceback as tb
-            #
-            #        tb_str = tb.format_exc()
-            #        generation_handle.update_failure(
-            #            error_type=type(exc).__name__,
-            #            error_message=str(exc),
-            #            input_data=sanitized_input
-            #            if "sanitized_input" in locals()
-            #            else None,
-            #            traceback_str=tb_str,
-            #        )
-            #    except Exception:  # noqa: BLE001
-            #        pass
             payload: LLMCallFailedPayload = LLMCallFailedPayload(
                 task_type=task_type_value,
                 model_alias=request.model_alias,

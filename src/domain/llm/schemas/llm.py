@@ -31,6 +31,7 @@ class LLMRequest(BaseModel):
 
     prompt_version: int | None = None
     prompt_frozen_hash: str | None = None
+    prompt_id: str | None = None
     task_type: LLMTaskType | None = None
 
     conversation_key: str | None = None

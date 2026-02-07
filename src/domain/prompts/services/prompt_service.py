@@ -9,6 +9,7 @@ import jsonschema
 from jsonschema import ValidationError as JsonSchemaValidationError
 
 from adapters.observability.logging import get_logger
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.events import ExecutionEventType
 from domain.execution.services.observability.event_payloads import (
@@ -34,6 +35,7 @@ class PromptCacheEntry:
 class PromptService:
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         repository: PromptRepository,
         execution_repository: ExecutionRepository | None = None,
         cache_ttl: int = 3600,
@@ -41,6 +43,7 @@ class PromptService:
         self.repository = repository
         self.execution_repository = execution_repository
         self.cache_ttl = cache_ttl
+        self.tracer = tracer
         self._cache: dict[str, PromptCacheEntry] = {}
 
     @staticmethod
@@ -107,7 +110,12 @@ class PromptService:
         if entry and not entry.is_expired():
             return entry.prompt
 
-        prompt: NodePrompt = await self.repository.get_active_prompt(node_type)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.prompts.prompt_service.get_active_prompt",
+            input={"node_type": node_type},
+        ):
+            prompt = await self.repository.get_active_prompt(node_type)
         if prompt:
             self._cache[node_type] = PromptCacheEntry(
                 prompt, time.time(), self.cache_ttl
@@ -117,67 +125,102 @@ class PromptService:
     async def create_or_update_prompt(
         self, create: NodePromptCreate, tenant_id: UUID | None = None
     ) -> NodePrompt:
-        frozen_hash = self._calculate_frozen_hash(create.template_text)
+        with self.tracer.observe(
+            as_type="agent",
+            name="domain.prompts.prompt_service.create_or_update_prompt",
+            input={"node_type": create.node_type},
+        ):
+            frozen_hash = self._calculate_frozen_hash(create.template_text)
 
-        existing = await self.repository.get_active_prompt(create.node_type)
-        if existing:
-            from domain.prompts.schemas.prompt import NodePromptUpdate
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.prompts.prompt_service.get_active_prompt_create",
+                input={"node_type": create.node_type},
+            ):
+                existing = await self.repository.get_active_prompt(create.node_type)
+            if existing:
+                from domain.prompts.schemas.prompt import NodePromptUpdate
 
-            update_data = NodePromptUpdate(
-                template_text=create.template_text,
-                input_schema_id=create.input_schema_id,
-                output_schema_id=create.output_schema_id,
-                description=create.description,
-            )
-            prompt = await self.repository.update_prompt(
-                existing.prompt_id, update_data, frozen_hash
-            )
-        else:
-            prompt = await self.repository.create_prompt(create, frozen_hash)
+                update_data = NodePromptUpdate(
+                    template_text=create.template_text,
+                    input_schema_id=create.input_schema_id,
+                    output_schema_id=create.output_schema_id,
+                    description=create.description,
+                )
+                with self.tracer.observe(
+                    as_type="tool",
+                    name="domain.prompts.prompt_service.update_prompt",
+                    input={"prompt_id": str(existing.prompt_id)},
+                ):
+                    prompt = await self.repository.update_prompt(
+                        existing.prompt_id, update_data, frozen_hash
+                    )
+            else:
+                with self.tracer.observe(
+                    as_type="tool",
+                    name="domain.prompts.prompt_service.create_prompt",
+                    input={"node_type": create.node_type},
+                ):
+                    prompt = await self.repository.create_prompt(create, frozen_hash)
 
-        if not self._validate_prompt(prompt):
-            raise DomainValidationException(
-                message="prompt_validation_failed",
-                detail="Prompt validation failed",
-            )
+            if not self._validate_prompt(prompt):
+                raise DomainValidationException(
+                    message="prompt_validation_failed",
+                    detail="Prompt validation failed",
+                )
 
-        self._invalidate_cache(create.node_type)
+            self._invalidate_cache(create.node_type)
 
-        if self.execution_repository and tenant_id:
-            payload: NodePromptUpdatedPayload = NodePromptUpdatedPayload(
-                prompt_id=str(prompt.prompt_id),
+            if self.execution_repository and tenant_id:
+                payload: NodePromptUpdatedPayload = NodePromptUpdatedPayload(
+                    prompt_id=str(prompt.prompt_id),
+                    node_type=prompt.node_type,
+                    version=prompt.version,
+                    frozen_hash=prompt.frozen_hash,
+                    created_by=prompt.created_by or "system",
+                )
+                with self.tracer.observe(
+                    as_type="tool",
+                    name="domain.prompts.prompt_service.append_execution_event",
+                    input={"prompt_id": str(prompt.prompt_id)},
+                ):
+                    await self.execution_repository.append_execution_event(
+                        tenant_id=tenant_id,
+                        session_id=None,
+                        flow_run_id=None,
+                        event_type=ExecutionEventType.NodePromptUpdated,
+                        payload=payload,
+                        correlation_id=None,
+                        causation_id=None,
+                        schema_version=1,
+                        node_id=None,
+                        edge_id=None,
+                    )
+
+            logger.info(
+                "Prompt created or updated",
                 node_type=prompt.node_type,
                 version=prompt.version,
                 frozen_hash=prompt.frozen_hash,
-                created_by=prompt.created_by or "system",
-            )
-            await self.execution_repository.append_execution_event(
-                tenant_id=tenant_id,
-                session_id=None,
-                flow_run_id=None,
-                event_type=ExecutionEventType.NodePromptUpdated,
-                payload=payload,
-                correlation_id=None,
-                causation_id=None,
-                schema_version=1,
-                node_id=None,
-                edge_id=None,
             )
 
-        logger.info(
-            "Prompt created or updated",
-            node_type=prompt.node_type,
-            version=prompt.version,
-            frozen_hash=prompt.frozen_hash,
-        )
-
-        return prompt
+            return prompt
 
     async def deactivate_prompt(
         self, node_type: str, tenant_id: UUID | None = None
     ) -> None:
-        prompt = await self.repository.get_active_prompt(node_type)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.prompts.prompt_service.get_active_prompt_deactivate",
+            input={"node_type": node_type},
+        ):
+            prompt = await self.repository.get_active_prompt(node_type)
         if prompt:
-            await self.repository.deactivate_prompt(prompt.prompt_id)
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.prompts.prompt_service.deactivate_prompt",
+                input={"prompt_id": str(prompt.prompt_id)},
+            ):
+                await self.repository.deactivate_prompt(prompt.prompt_id)
             self._invalidate_cache(node_type)
             logger.info("Prompt deactivated", node_type=node_type)

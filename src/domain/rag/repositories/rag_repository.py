@@ -126,7 +126,7 @@ class RagRepository:
             instance = RagConfigModel(
                 tenant_id=tenant_id,
                 vector_store_id=vector_store_id,
-                status="DRAFT",  # Todo: Deve ser StrEnum
+                status=VersionStatus.DRAFT,
                 version_major=version_major,
                 version_minor=version_minor,
                 version_patch=version_patch,

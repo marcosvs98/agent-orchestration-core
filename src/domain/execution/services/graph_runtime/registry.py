@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Dict, Type
 
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.nodes import (
     ClarificationNode,
     FallbackNode,
@@ -19,6 +21,7 @@ from domain.execution.repositories.execution_repository import ExecutionReposito
 class NodeRegistry:
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
         tool_orchestrator: ToolOrchestrator | None = None,
@@ -28,6 +31,7 @@ class NodeRegistry:
         self.prompt_resolver = prompt_resolver
         self.tool_orchestrator = tool_orchestrator
         self.execution_repository = execution_repository
+        self.tracer = tracer
         self._registry: Dict[str, Type[NodeExecutor]] = {
             IntentToolSelectionNode.node_type: IntentToolSelectionNode,
             ParamExtractionNode.node_type: ParamExtractionNode,
@@ -42,70 +46,90 @@ class NodeRegistry:
     ) -> (
         type["_IntentNode"] | type["_ParamExtractionNode"] | type["NodeExecutor"] | None
     ):
-        node_cls = self._registry.get(node_type)
-        if node_type == IntentToolSelectionNode.node_type:
-            base_cls = node_cls or IntentToolSelectionNode
-            llm_executor = self.llm_executor
-            prompt_resolver = self.prompt_resolver
+        ctx = (
+            self.tracer.observe(
+                as_type="agent",
+                name="domain.execution.node_registry.resolve",
+                input={"node_type": node_type},
+            )
+            if self.tracer
+            else contextlib.nullcontext()
+        )
+        with ctx:
+            node_cls = self._registry.get(node_type)
+            if node_type == IntentToolSelectionNode.node_type:
+                base_cls = node_cls or IntentToolSelectionNode
+                llm_executor = self.llm_executor
+                prompt_resolver = self.prompt_resolver
+                tracer = self.tracer
 
-            class _IntentNode(base_cls):  # type: ignore[misc]
-                def __init__(self) -> None:
-                    super().__init__(
-                        llm_executor=llm_executor,
-                        prompt_resolver=prompt_resolver,
-                    )
+                class _IntentNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(
+                            llm_executor=llm_executor,
+                            prompt_resolver=prompt_resolver,
+                            tracer=tracer,
+                        )
 
-            return _IntentNode
-        if node_type == ParamExtractionNode.node_type:
-            base_cls = node_cls or ParamExtractionNode
-            llm_executor = self.llm_executor
-            prompt_resolver = self.prompt_resolver
+                return _IntentNode
+            if node_type == ParamExtractionNode.node_type:
+                base_cls = node_cls or ParamExtractionNode
+                llm_executor = self.llm_executor
+                prompt_resolver = self.prompt_resolver
+                tracer = self.tracer
 
-            class _ParamExtractionNode(base_cls):  # type: ignore[misc]
-                def __init__(self) -> None:
-                    super().__init__(
-                        llm_executor=llm_executor,
-                        prompt_resolver=prompt_resolver,
-                    )
+                class _ParamExtractionNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(
+                            llm_executor=llm_executor,
+                            prompt_resolver=prompt_resolver,
+                            tracer=tracer,
+                        )
 
-            return _ParamExtractionNode
-        if node_type == ClarificationNode.node_type:
-            base_cls = node_cls or ClarificationNode
-            llm_executor = self.llm_executor
-            prompt_resolver = self.prompt_resolver
+                return _ParamExtractionNode
+            if node_type == ClarificationNode.node_type:
+                base_cls = node_cls or ClarificationNode
+                llm_executor = self.llm_executor
+                prompt_resolver = self.prompt_resolver
+                tracer = self.tracer
 
-            class _ClarificationNode(base_cls):  # type: ignore[misc]
-                def __init__(self) -> None:
-                    super().__init__(
-                        llm_executor=llm_executor,
-                        prompt_resolver=prompt_resolver,
-                    )
+                class _ClarificationNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(
+                            llm_executor=llm_executor,
+                            prompt_resolver=prompt_resolver,
+                            tracer=tracer,
+                        )
 
-            return _ClarificationNode
-        if node_type == ToolExecutionNode.node_type:
-            base_cls = node_cls or ToolExecutionNode
-            tool_orchestrator = self.tool_orchestrator
-            execution_repository = self.execution_repository
+                return _ClarificationNode
+            if node_type == ToolExecutionNode.node_type:
+                base_cls = node_cls or ToolExecutionNode
+                tool_orchestrator = self.tool_orchestrator
+                execution_repository = self.execution_repository
+                tracer = self.tracer
 
-            class _ToolExecutionNode(base_cls):  # type: ignore[misc]
-                def __init__(self) -> None:
-                    super().__init__(
-                        tool_orchestrator=tool_orchestrator,
-                        execution_repository=execution_repository,
-                    )
+                class _ToolExecutionNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(
+                            tool_orchestrator=tool_orchestrator,
+                            execution_repository=execution_repository,
+                            tracer=tracer,
+                        )
 
-            return _ToolExecutionNode
-        if node_type == ResponseNode.node_type:
-            base_cls = node_cls or ResponseNode
-            llm_executor = self.llm_executor
-            prompt_resolver = self.prompt_resolver
+                return _ToolExecutionNode
+            if node_type == ResponseNode.node_type:
+                base_cls = node_cls or ResponseNode
+                llm_executor = self.llm_executor
+                prompt_resolver = self.prompt_resolver
+                tracer = self.tracer
 
-            class _ResponseNode(base_cls):  # type: ignore[misc]
-                def __init__(self) -> None:
-                    super().__init__(
-                        llm_executor=llm_executor,
-                        prompt_resolver=prompt_resolver,
-                    )
+                class _ResponseNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(
+                            llm_executor=llm_executor,
+                            prompt_resolver=prompt_resolver,
+                            tracer=tracer,
+                        )
 
-            return _ResponseNode
-        return node_cls
+                return _ResponseNode
+            return node_cls

@@ -20,9 +20,7 @@ from utils.query_compiler import compile_query
 
 class AIRepository:
     def __init__(
-        self,
-        database_connection: DatabaseConnection,
-        tracer: RuntimeTracerPort | None = None,
+        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
@@ -33,11 +31,14 @@ class AIRepository:
             query_sql = compile_query(stmt)
 
             span_cm = (
-                self.tracer.start_retriever_span(
-                    retriever_name="get_ai_task",
-                    query=query_sql,
-                    input={"ai_task_id": str(ai_task_id)},
+                self.tracer.observe(
+                    as_type="retriever",
                     name="domain.ai_policy.repository.get_ai_task",
+                    input={
+                        "query": query_sql,
+                        "params": {"ai_task_id": str(ai_task_id)},
+                    },
+                    metadata={"retriever_name": "get_ai_task"},
                 )
                 if self.tracer
                 else contextlib.nullcontext()
@@ -47,7 +48,7 @@ class AIRepository:
                 ai_task = result.scalar_one_or_none()
 
                 if retriever_handle:
-                    retriever_handle.update(
+                    retriever_handle.success(
                         output={
                             "result_count": 1 if ai_task else 0,
                             "found": ai_task is not None,

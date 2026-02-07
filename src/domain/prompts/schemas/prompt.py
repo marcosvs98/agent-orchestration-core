@@ -75,6 +75,7 @@ class ResolvedPrompt(BaseModel):
     prompt_text: str
     input_schema: Dict[str, Any] | None = None
     output_schema: Dict[str, Any] | None = None
+    prompt_id: UUID | None = None
     prompt_version: int | None = None
     prompt_frozen_hash: str | None = None
 

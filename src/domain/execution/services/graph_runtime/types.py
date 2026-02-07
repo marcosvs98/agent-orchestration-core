@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from domain.prompts.schemas.prompt import NodeType  # Todo: Isso não esta coeso
+from domain.prompts.schemas.prompt import NodeType
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
 
 

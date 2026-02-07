@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import contextlib
 import json
 import time
 
@@ -22,7 +23,7 @@ class ToolOrchestrator:
         repository: ExecutionRepository,
         executor: ToolExecutorPort,
         secret_resolver: SecretResolverPort,
-        tracer: RuntimeTracerPort | None = None,
+        tracer: RuntimeTracerPort,
         tools_repository: ToolsRepository | None = None,
     ) -> None:
         self.repository = repository
@@ -39,7 +40,14 @@ class ToolOrchestrator:
         for key, value in (headers_config or {}).items():
             if isinstance(value, dict) and "secret_ref" in value:
                 secret_ref = str(value["secret_ref"])
-                secret_value = await self.secret_resolver.resolve(secret_ref=secret_ref)
+                with self.tracer.observe(
+                    as_type="tool",
+                    name="domain.tools.tool_orchestrator.resolve_secret",
+                    input={"secret_ref": secret_ref},
+                ):
+                    secret_value = await self.secret_resolver.resolve(
+                        secret_ref=secret_ref
+                    )
                 resolved[str(key)] = secret_value
                 used_secret_refs.append(secret_ref)
                 continue
@@ -50,17 +58,32 @@ class ToolOrchestrator:
         return resolved, used_secret_refs
 
     async def execute_tool_run(self, *, tool_run_id: UUID) -> dict:
-        tool_run = await self.repository.get_tool_run(tool_run_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tool_orchestrator.get_tool_run",
+            input={"tool_run_id": str(tool_run_id)},
+        ):
+            tool_run = await self.repository.get_tool_run(tool_run_id)
         if tool_run is None:
             raise DomainValidationException(message="tool_run_not_found")
 
-        tool_config = await self.repository.get_tool_config(tool_run.tool_config_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tool_orchestrator.get_tool_config",
+            input={"tool_config_id": str(tool_run.tool_config_id)},
+        ):
+            tool_config = await self.repository.get_tool_config(tool_run.tool_config_id)
         if tool_config is None:
             raise DomainValidationException(message="tool_config_not_found")
 
         if self.tools_repository and tool_config.tool_id:
             try:
-                tool = await self.tools_repository.get_tool(tool_config.tool_id)
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.tools.tool_orchestrator.get_tool_metadata",
+                    input={"tool_id": str(tool_config.tool_id)},
+                ):
+                    tool = await self.tools_repository.get_tool(tool_config.tool_id)
                 if tool and tool.name:
                     pass
             except Exception:
@@ -78,129 +101,205 @@ class ToolOrchestrator:
         if not url:
             raise DomainValidationException(message="tool_config_missing_url")
 
-        await self.repository.update_tool_run_result(
-            tool_run_id=tool_run.tool_run_id,
-            status=RunStatus.RUNNING,
-            canonical_status=ToolRunStatus.EXECUTING,
-            output={},
-            error={},
-        )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tool_orchestrator.update_tool_run_running",
+            input={"tool_run_id": str(tool_run.tool_run_id)},
+        ):
+            await self.repository.update_tool_run_result(
+                tool_run_id=tool_run.tool_run_id,
+                status=RunStatus.RUNNING,
+                canonical_status=ToolRunStatus.EXECUTING,
+                output={},
+                error={},
+            )
 
         request_body = tool_run.input or {}
         request_size = len(json.dumps(request_body, default=str).encode("utf-8"))
         attempt = 0
         started_at = time.monotonic()
         result: dict | None = None
-        try:
-            # span_cm = (
-            #    self.tracer.start_tool_span(
-            #        tool_id=str(tool_run.tool_config_id),
-            #        input={"headers": list(headers.keys())},
-            #        name=tool_name,
-            #    )
-            #    if self.tracer
-            #    else contextlib.nullcontext()
-            # )
-            if secret_refs:
-                flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
-                    tool_run.tool_run_id
-                )
-                session_id, tenant_id = await self.repository.get_flow_context(
-                    flow_run_id
-                )
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.SecretAccessed,
-                    payload={
-                        "tool_run_id": str(tool_run.tool_run_id),
-                        "tool_config_id": str(tool_run.tool_config_id),
-                        "secret_refs": secret_refs,
-                    },
-                    correlation_id=tool_run.correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                )
-            # async with span_cm:
-            # async for attempt in AsyncRetrying(
-            #    stop=stop_after_attempt(max_attempts),
-            #    wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
-            #    reraise=True,
-            # ):
-            #    with attempt:
-            # attempt = attempt.retry_state.attempt_number
-            result = await self.executor.execute_http(
-                method=method,
-                url=url,
-                headers=headers,
-                json_body=request_body,
-                timeout_seconds=timeout_seconds,
+        span_cm = (
+            self.tracer.observe(
+                as_type="tool",
+                name=f"tool.{tool_run.tool_config_id}",
+                input={
+                    "tool_run_id": str(tool_run.tool_run_id),
+                    "tool_config_id": str(tool_run.tool_config_id),
+                    "method": method,
+                },
+                metadata={"tool_id": str(tool_run.tool_config_id)},
             )
-            try:
-                HttpToolResult.model_validate(result)
-            except ValidationError as validation_error:
-                raise DomainValidationException(
-                    message="tool_response_validation_failed",
-                    detail=validation_error.errors(),
-                ) from validation_error
+            if self.tracer
+            else contextlib.nullcontext()
+        )
+        try:
+            if secret_refs:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.tools.tool_orchestrator.get_flow_run_id",
+                    input={"tool_run_id": str(tool_run.tool_run_id)},
+                ):
+                    flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
+                        tool_run.tool_run_id
+                    )
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.tools.tool_orchestrator.get_flow_context",
+                    input={"flow_run_id": str(flow_run_id)},
+                ):
+                    session_id, tenant_id = await self.repository.get_flow_context(
+                        flow_run_id
+                    )
+                with self.tracer.observe(
+                    as_type="tool",
+                    name="domain.tools.tool_orchestrator.append_secret_accessed_event",
+                    input={"flow_run_id": str(flow_run_id)},
+                ):
+                    await self.repository.append_execution_event(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        event_type=ExecutionEventType.SecretAccessed,
+                        payload={
+                            "tool_run_id": str(tool_run.tool_run_id),
+                            "tool_config_id": str(tool_run.tool_config_id),
+                            "secret_refs": secret_refs,
+                        },
+                        correlation_id=tool_run.correlation_id,
+                        causation_id=None,
+                        schema_version=1,
+                    )
+            with span_cm as tool_handle:
+                try:
+                    with self.tracer.observe(
+                        as_type="tool",
+                        name="domain.tools.tool_orchestrator.execute_http",
+                        input={
+                            "tool_run_id": str(tool_run.tool_run_id),
+                            "url": url,
+                        },
+                    ):
+                        result = await self.executor.execute_http(
+                            method=method,
+                            url=url,
+                            headers=headers,
+                            json_body=request_body,
+                            timeout_seconds=timeout_seconds,
+                        )
+                    try:
+                        HttpToolResult.model_validate(result)
+                    except ValidationError as validation_error:
+                        raise DomainValidationException(
+                            message="tool_response_validation_failed",
+                            detail=validation_error.errors(),
+                        ) from validation_error
+                    if tool_handle:
+                        tool_handle.success(
+                            output={
+                                "status": "completed",
+                                "result_keys": list(result.keys())
+                                if isinstance(result, dict)
+                                else [],
+                            }
+                        )
+                except Exception as exc:
+                    if tool_handle:
+                        tool_handle.error(
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                            output={"status": "failed"},
+                        )
+                    raise
         except Exception as exc:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             retries = max(attempt - 1, 0)
-            flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
-                tool_run.tool_run_id
-            )
-            session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tool_orchestrator.get_flow_run_id_error",
+                input={"tool_run_id": str(tool_run.tool_run_id)},
+            ):
+                flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
+                    tool_run.tool_run_id
+                )
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tool_orchestrator.get_flow_context_error",
+                input={"flow_run_id": str(flow_run_id)},
+            ):
+                session_id, tenant_id = await self.repository.get_flow_context(
+                    flow_run_id
+                )
             if isinstance(exc, DomainValidationException):
+                with self.tracer.observe(
+                    as_type="tool",
+                    name="domain.tools.tool_orchestrator.append_validation_failed",
+                    input={"flow_run_id": str(flow_run_id)},
+                ):
+                    await self.repository.append_execution_event(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        event_type=ExecutionEventType.ValidationFailed,
+                        payload={
+                            "tool_run_id": str(tool_run.tool_run_id),
+                            "tool_config_id": str(tool_run.tool_config_id),
+                            "error_class": type(exc).__name__,
+                            "message": exc.message,
+                        },
+                        correlation_id=tool_run.correlation_id,
+                        causation_id=None,
+                        schema_version=1,
+                    )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.tools.tool_orchestrator.update_tool_run_failed",
+                input={"tool_run_id": str(tool_run.tool_run_id)},
+            ):
+                await self.repository.update_tool_run_result(
+                    tool_run_id=tool_run.tool_run_id,
+                    status=RunStatus.FAILED,
+                    canonical_status=ToolRunStatus.ERROR,
+                    output={},
+                    error={"error": str(exc)},
+                )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.tools.tool_orchestrator.append_invocation_failed",
+                input={"flow_run_id": str(flow_run_id)},
+            ):
                 await self.repository.append_execution_event(
                     tenant_id=tenant_id,
                     session_id=session_id,
                     flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.ValidationFailed,
+                    event_type=ExecutionEventType.ToolInvocationFailed,
                     payload={
                         "tool_run_id": str(tool_run.tool_run_id),
                         "tool_config_id": str(tool_run.tool_config_id),
+                        "executor_type": "http",
+                        "latency_ms": latency_ms,
+                        "request_size": request_size,
+                        "response_size": 0,
+                        "retries": retries,
                         "error_class": type(exc).__name__,
-                        "message": exc.message,
                     },
                     correlation_id=tool_run.correlation_id,
                     causation_id=None,
                     schema_version=1,
                 )
-            await self.repository.update_tool_run_result(
-                tool_run_id=tool_run.tool_run_id,
-                status=RunStatus.FAILED,
-                canonical_status=ToolRunStatus.ERROR,
-                output={},
-                error={"error": str(exc)},
-            )
-            await self.repository.append_execution_event(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                flow_run_id=flow_run_id,
-                event_type=ExecutionEventType.ToolInvocationFailed,
-                payload={
-                    "tool_run_id": str(tool_run.tool_run_id),
-                    "tool_config_id": str(tool_run.tool_config_id),
-                    "executor_type": "http",
-                    "latency_ms": latency_ms,
-                    "request_size": request_size,
-                    "response_size": 0,
-                    "retries": retries,
-                    "error_class": type(exc).__name__,
-                },
-                correlation_id=tool_run.correlation_id,
-                causation_id=None,
-                schema_version=1,
-            )
-            await self.repository.create_run_failure_for_tool_run(
-                tool_run_id=tool_run.tool_run_id,
-                correlation_id=tool_run.correlation_id,
-                error_type="tool_execution_error"
-                if not isinstance(exc, DomainValidationException)
-                else "tool_response_validation_failed",
-                error={"error": str(exc)},
-            )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.tools.tool_orchestrator.create_run_failure",
+                input={"tool_run_id": str(tool_run.tool_run_id)},
+            ):
+                await self.repository.create_run_failure_for_tool_run(
+                    tool_run_id=tool_run.tool_run_id,
+                    correlation_id=tool_run.correlation_id,
+                    error_type="tool_execution_error"
+                    if not isinstance(exc, DomainValidationException)
+                    else "tool_response_validation_failed",
+                    error={"error": str(exc)},
+                )
             raise
 
         if result is None:
@@ -212,42 +311,67 @@ class ToolOrchestrator:
             if isinstance(result, dict)
             else 0
         )
-        flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
-            tool_run.tool_run_id
-        )
-        session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
-        await self.repository.update_tool_run_result(
-            tool_run_id=tool_run.tool_run_id,
-            status=RunStatus.COMPLETED,
-            canonical_status=ToolRunStatus.SUCCESS,
-            output=result,
-            error={},
-        )
-        await self.repository.append_execution_event(
-            tenant_id=tenant_id,
-            session_id=session_id,
-            flow_run_id=flow_run_id,
-            event_type=ExecutionEventType.ToolInvocationSucceeded,
-            payload={
-                "tool_run_id": str(tool_run.tool_run_id),
-                "tool_config_id": str(tool_run.tool_config_id),
-                "executor_type": "http",
-                "latency_ms": latency_ms,
-                "request_size": request_size,
-                "response_size": response_size,
-                "retries": retries,
-            },
-            correlation_id=tool_run.correlation_id,
-            causation_id=None,
-            schema_version=1,
-        )
-        await self.repository.create_response_artifact_for_tool_run(
-            tool_run_id=tool_run.tool_run_id,
-            payload={
-                "type": "tool_result",
-                "tool_run_id": str(tool_run.tool_run_id),
-                "result": result,
-            },
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tool_orchestrator.get_flow_run_id_success",
+            input={"tool_run_id": str(tool_run.tool_run_id)},
+        ):
+            flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
+                tool_run.tool_run_id
+            )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tool_orchestrator.get_flow_context_success",
+            input={"flow_run_id": str(flow_run_id)},
+        ):
+            session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tool_orchestrator.update_tool_run_success",
+            input={"tool_run_id": str(tool_run.tool_run_id)},
+        ):
+            await self.repository.update_tool_run_result(
+                tool_run_id=tool_run.tool_run_id,
+                status=RunStatus.COMPLETED,
+                canonical_status=ToolRunStatus.SUCCESS,
+                output=result,
+                error={},
+            )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tool_orchestrator.append_invocation_succeeded",
+            input={"flow_run_id": str(flow_run_id)},
+        ):
+            await self.repository.append_execution_event(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                flow_run_id=flow_run_id,
+                event_type=ExecutionEventType.ToolInvocationSucceeded,
+                payload={
+                    "tool_run_id": str(tool_run.tool_run_id),
+                    "tool_config_id": str(tool_run.tool_config_id),
+                    "executor_type": "http",
+                    "latency_ms": latency_ms,
+                    "request_size": request_size,
+                    "response_size": response_size,
+                    "retries": retries,
+                },
+                correlation_id=tool_run.correlation_id,
+                causation_id=None,
+                schema_version=1,
+            )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tool_orchestrator.create_response_artifact",
+            input={"tool_run_id": str(tool_run.tool_run_id)},
+        ):
+            await self.repository.create_response_artifact_for_tool_run(
+                tool_run_id=tool_run.tool_run_id,
+                payload={
+                    "type": "tool_result",
+                    "tool_run_id": str(tool_run.tool_run_id),
+                    "result": result,
+                },
+            )
 
         return result

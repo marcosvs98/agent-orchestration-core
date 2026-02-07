@@ -12,6 +12,13 @@ class GuardrailDecisionType(StrEnum):
     BLOCK = "BLOCK"
 
 
+class ObservationLevel(StrEnum):
+    DEBUG = "DEBUG"
+    DEFAULT = "DEFAULT"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
 class GuardrailDecision(BaseModel):
     decision: GuardrailDecisionType
     reason_code: str

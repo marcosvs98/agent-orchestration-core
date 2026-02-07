@@ -198,7 +198,7 @@ class FlowsRepository:
                 await session.commit()
                 return instance
             existing.definition = definition
-            existing.status = "DRAFT"  # TODO: hardcoded value - Use StrEnum P0
+            existing.status = VersionStatus.DRAFT
             existing.validated_at = None
             existing.validated_by = None
             await session.commit()
@@ -216,7 +216,7 @@ class FlowsRepository:
             instance = result.scalar_one_or_none()
             if instance is None:
                 raise NotFoundServiceException(message="flow_graph_draft_not_found")
-            instance.status = "VALIDATED"  # TODO: hardcoded value - Use StrEnum P0
+            instance.status = VersionStatus.VALIDATED
             instance.validated_by = principal_id
             instance.validated_at = sa.func.now()  # type: ignore[attr-defined]
             await session.commit()
@@ -372,7 +372,7 @@ class FlowsRepository:
 
             instance = FlowVersionModel(
                 flow_id=flow_id,
-                status="DRAFT",  # TODO: hardcoded value - Use StrEnum P0
+                status=VersionStatus.DRAFT,
                 version_major=version_major,
                 version_minor=version_minor,
                 version_patch=version_patch,

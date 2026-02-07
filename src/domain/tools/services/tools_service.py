@@ -1,7 +1,9 @@
 from uuid import UUID
 
+
 from domain.agents.repositories.agents_repository import AgentsRepository
 from domain.common.schemas.versioning import VersionStatus
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
@@ -31,10 +33,12 @@ class ToolsService(ToolsServicePort):
         repository: ToolsRepository,
         agents_repository: AgentsRepository,
         authoring_events: AuthoringEventRepository,
+        tracer: RuntimeTracerPort,
     ) -> None:
         self.repository = repository
         self.agents_repository = agents_repository
         self.authoring_events = authoring_events
+        self.tracer = tracer
         self.openapi_parser = OpenAPIParser()
 
     async def import_tool(
@@ -44,21 +48,36 @@ class ToolsService(ToolsServicePort):
         tool_import_request: ToolImportRequest,
         principal_id: str,
     ) -> Tool:
-        parsed_spec = await self.openapi_parser.parse_openapi_spec(
-            tool_import_request.openapi_url
-        )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tools_service.parse_openapi_spec",
+            input={"openapi_url": tool_import_request.openapi_url},
+        ):
+            parsed_spec = await self.openapi_parser.parse_openapi_spec(
+                tool_import_request.openapi_url
+            )
         tool_name = tool_import_request.name or parsed_spec.get("title")
         if not tool_name:
             raise DomainValidationException(
                 message="tool_name_required_from_openapi_or_request"
             )
-        existing_tool = await self.repository.get_tool_by_name(tool_name)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.get_tool_by_name",
+            input={"tool_name": tool_name},
+        ):
+            existing_tool = await self.repository.get_tool_by_name(tool_name)
         if existing_tool is not None:
             tool_model = existing_tool
         else:
-            tool_model = await self.repository.create_tool(
-                name=tool_name, created_by=principal_id
-            )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.tools.tools_service.create_tool",
+                input={"tool_name": tool_name},
+            ):
+                tool_model = await self.repository.create_tool(
+                    name=tool_name, created_by=principal_id
+                )
 
         operations = self.openapi_parser.extract_operations(parsed_spec)
         base_url = (
@@ -89,21 +108,31 @@ class ToolsService(ToolsServicePort):
                 created_by=principal_id,
             )
 
-        await self.authoring_events.append_event(
-            tenant_id=tenant_id,
-            resource_type="tool",
-            resource_id=tool_model.tool_id,
-            version_id=None,
-            event_type=AuthoringEventType.TOOL_IMPORTED.value,
-            change_type=ChangeType.CREATE.value,
-            principal_id=principal_id,
-            justification="import tool from openapi",
-            schema_version=1,
-        )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tools_service.append_event_import",
+            input={"tenant_id": str(tenant_id), "resource_id": str(tool_model.tool_id)},
+        ):
+            await self.authoring_events.append_event(
+                tenant_id=tenant_id,
+                resource_type="tool",
+                resource_id=tool_model.tool_id,
+                version_id=None,
+                event_type=AuthoringEventType.TOOL_IMPORTED.value,
+                change_type=ChangeType.CREATE.value,
+                principal_id=principal_id,
+                justification="import tool from openapi",
+                schema_version=1,
+            )
         return Tool(id=tool_model.tool_id, name=tool_model.name)
 
     async def list_tools(self, *, tenant_id: UUID, limit: int = 200) -> list[Tool]:
-        tools = await self.repository.list_tools(tenant_id=tenant_id, limit=limit)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.list_tools",
+            input={"tenant_id": str(tenant_id), "limit": limit},
+        ):
+            tools = await self.repository.list_tools(tenant_id=tenant_id, limit=limit)
         return [Tool(id=tool.tool_id, name=tool.name) for tool in tools]
 
     async def list_tool_configs(
@@ -113,9 +142,18 @@ class ToolsService(ToolsServicePort):
         status_filter: list[str] | None = None,
         limit: int = 200,
     ) -> list[ToolConfig]:
-        configs = await self.repository.list_tool_configs(
-            tenant_id=tenant_id, status_filter=status_filter, limit=limit
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.list_tool_configs",
+            input={
+                "tenant_id": str(tenant_id),
+                "status_filter": status_filter,
+                "limit": limit,
+            },
+        ):
+            configs = await self.repository.list_tool_configs(
+                tenant_id=tenant_id, status_filter=status_filter, limit=limit
+            )
         return [
             ToolConfig(
                 id=config.tool_config_id,
@@ -134,18 +172,28 @@ class ToolsService(ToolsServicePort):
     async def list_available_tools_for_execution(
         self, *, tenant_id: UUID, limit: int = 200
     ) -> list[AvailableTool]:
-        tool_configs = await self.list_tool_configs(
-            tenant_id=tenant_id,
-            status_filter=[VersionStatus.PUBLISHED.value],
-            limit=limit,
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.list_tool_configs_execution",
+            input={"tenant_id": str(tenant_id), "limit": limit},
+        ):
+            tool_configs = await self.list_tool_configs(
+                tenant_id=tenant_id,
+                status_filter=[VersionStatus.PUBLISHED.value],
+                limit=limit,
+            )
         if not tool_configs:
             return []
-        tools = await self.repository.list_tools(
-            tenant_id=tenant_id,
-            status_filter=[VersionStatus.PUBLISHED.value],
-            limit=limit,
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.list_tools_execution",
+            input={"tenant_id": str(tenant_id), "limit": limit},
+        ):
+            tools = await self.repository.list_tools(
+                tenant_id=tenant_id,
+                status_filter=[VersionStatus.PUBLISHED.value],
+                limit=limit,
+            )
         tool_map = {tool.tool_id: tool for tool in tools}
         available_tools = []
         for config in tool_configs:
@@ -170,31 +218,52 @@ class ToolsService(ToolsServicePort):
         tool_config_create: ToolConfigCreate,
         principal_id: str,
     ) -> ToolConfig:
-        tool = await self.repository.get_tool(tool_config_create.tool_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.get_tool",
+            input={"tool_id": str(tool_config_create.tool_id)},
+        ):
+            tool = await self.repository.get_tool(tool_config_create.tool_id)
         if tool is None:
             raise NotFoundServiceException(message="tool_not_found")
-        model = await self.repository.create_tool_config(
-            tool_id=tool_config_create.tool_id,
-            tenant_id=tenant_id,
-            source_config_id=tool_config_create.source_config_id,
-            version_major=tool_config_create.version_major,
-            version_minor=tool_config_create.version_minor,
-            version_patch=tool_config_create.version_patch,
-            config=tool_config_create.config or {},
-            schema_version=tool_config_create.schema_version,
-            created_by=principal_id,
-        )
-        await self.authoring_events.append_event(
-            tenant_id=tenant_id,
-            resource_type="tool_config",
-            resource_id=model.tool_config_id,
-            version_id=None,
-            event_type=AuthoringEventType.TOOL_CONFIG_CREATED.value,
-            change_type=ChangeType.CREATE.value,
-            principal_id=principal_id,
-            justification="create tool config",
-            schema_version=1,
-        )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tools_service.create_tool_config",
+            input={
+                "tool_id": str(tool_config_create.tool_id),
+                "tenant_id": str(tenant_id),
+            },
+        ):
+            model = await self.repository.create_tool_config(
+                tool_id=tool_config_create.tool_id,
+                tenant_id=tenant_id,
+                source_config_id=tool_config_create.source_config_id,
+                version_major=tool_config_create.version_major,
+                version_minor=tool_config_create.version_minor,
+                version_patch=tool_config_create.version_patch,
+                config=tool_config_create.config or {},
+                schema_version=tool_config_create.schema_version,
+                created_by=principal_id,
+            )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tools_service.append_event_tool_config",
+            input={
+                "tenant_id": str(tenant_id),
+                "resource_id": str(model.tool_config_id),
+            },
+        ):
+            await self.authoring_events.append_event(
+                tenant_id=tenant_id,
+                resource_type="tool_config",
+                resource_id=model.tool_config_id,
+                version_id=None,
+                event_type=AuthoringEventType.TOOL_CONFIG_CREATED.value,
+                change_type=ChangeType.CREATE.value,
+                principal_id=principal_id,
+                justification="create tool config",
+                schema_version=1,
+            )
         return ToolConfig(
             id=model.tool_config_id,
             tool_id=model.tool_id,
@@ -214,35 +283,66 @@ class ToolsService(ToolsServicePort):
         binding_create: AgentVersionToolBindingCreate,
         principal_id: str,
     ) -> AgentVersionToolBinding:
-        agent_version = await self.agents_repository.get_agent_version(
-            binding_create.agent_version_id
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.get_agent_version",
+            input={"agent_version_id": str(binding_create.agent_version_id)},
+        ):
+            agent_version = await self.agents_repository.get_agent_version(
+                binding_create.agent_version_id
+            )
         if agent_version is None:
             raise NotFoundServiceException(message="agent_version_not_found")
-        agent = await self.agents_repository.get_agent(agent_version.agent_id)
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.get_agent",
+            input={"agent_id": str(agent_version.agent_id)},
+        ):
+            agent = await self.agents_repository.get_agent(agent_version.agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
-        tool_config = await self.repository.get_tool_config(
-            binding_create.tool_config_id
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.tools.tools_service.get_tool_config_binding",
+            input={"tool_config_id": str(binding_create.tool_config_id)},
+        ):
+            tool_config = await self.repository.get_tool_config(
+                binding_create.tool_config_id
+            )
         if tool_config is None or tool_config.tenant_id != tenant_id:
             raise NotFoundServiceException(message="tool_config_not_found")
-        model = await self.repository.create_agent_version_tool_binding(
-            agent_version_id=binding_create.agent_version_id,
-            tool_config_id=binding_create.tool_config_id,
-            created_by=principal_id,
-        )
-        await self.authoring_events.append_event(
-            tenant_id=tenant_id,
-            resource_type="agent_version_tool_binding",
-            resource_id=model.agent_version_tool_binding_id,
-            version_id=None,
-            event_type=AuthoringEventType.AGENT_VERSION_TOOL_BINDING_CREATED.value,
-            change_type=ChangeType.CREATE.value,
-            principal_id=principal_id,
-            justification="create agent version tool binding",
-            schema_version=1,
-        )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tools_service.create_agent_version_tool_binding",
+            input={
+                "agent_version_id": str(binding_create.agent_version_id),
+                "tool_config_id": str(binding_create.tool_config_id),
+            },
+        ):
+            model = await self.repository.create_agent_version_tool_binding(
+                agent_version_id=binding_create.agent_version_id,
+                tool_config_id=binding_create.tool_config_id,
+                created_by=principal_id,
+            )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.tools.tools_service.append_event_binding",
+            input={
+                "tenant_id": str(tenant_id),
+                "resource_id": str(model.agent_version_tool_binding_id),
+            },
+        ):
+            await self.authoring_events.append_event(
+                tenant_id=tenant_id,
+                resource_type="agent_version_tool_binding",
+                resource_id=model.agent_version_tool_binding_id,
+                version_id=None,
+                event_type=AuthoringEventType.AGENT_VERSION_TOOL_BINDING_CREATED.value,
+                change_type=ChangeType.CREATE.value,
+                principal_id=principal_id,
+                justification="create agent version tool binding",
+                schema_version=1,
+            )
         return AgentVersionToolBinding(
             id=model.agent_version_tool_binding_id,
             agent_version_id=model.agent_version_id,

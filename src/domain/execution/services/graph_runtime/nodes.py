@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict
 from uuid import UUID
 
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.types import (
     ExecutionContext,
     NodeExecutionStatus,
@@ -32,11 +33,13 @@ class IntentToolSelectionNode(NodeExecutor):
 
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
+        self.tracer = tracer
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -69,11 +72,16 @@ class IntentToolSelectionNode(NodeExecutor):
             except Exception:  # noqa: BLE001
                 node_uuid = None
 
-            resolved_prompt = await self.prompt_resolver.resolve(
-                intent=PromptIntent.INTENT_TOOL_SELECTION,
-                context=context,
-                node_id=node_uuid,
-            )
+            with self.tracer.observe(
+                as_type="chain",
+                name="domain.execution.nodes.intent_tool_selection.resolve_prompt",
+                input={"node_id": str(node_uuid) if node_uuid else None},
+            ):
+                resolved_prompt = await self.prompt_resolver.resolve(
+                    intent=PromptIntent.INTENT_TOOL_SELECTION,
+                    context=context,
+                    node_id=node_uuid,
+                )
 
             task_type = LLMTaskType.INTENT_SELECTION
 
@@ -91,25 +99,33 @@ class IntentToolSelectionNode(NodeExecutor):
                 retry_limit=llm_policy.get("retry_limit"),
                 fallback_model_alias=llm_policy.get("fallback_model_alias"),
                 available_tools=context.available_tools,
+                prompt_id=str(resolved_prompt.prompt_id)
+                if resolved_prompt.prompt_id
+                else None,
                 prompt_version=resolved_prompt.prompt_version,
                 prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
                 task_type=task_type,
             )
-            result: LLMResult = await self.llm_executor.execute_llm(
-                request=request,
-                trace=TraceContext(
-                    trace_id=context.trace_id or UUID(int=0),
-                    flow_run_id=context.flow_run_id,
+            with self.tracer.observe(
+                as_type="generation",
+                name="domain.execution.nodes.intent_tool_selection.execute_llm",
+                input={"model_alias": model_alias, "provider": provider},
+            ):
+                result: LLMResult = await self.llm_executor.execute_llm(
+                    request=request,
+                    trace=TraceContext(
+                        trace_id=context.trace_id or UUID(int=0),
+                        flow_run_id=context.flow_run_id,
+                        tenant_id=context.tenant_id,
+                    ),
                     tenant_id=context.tenant_id,
-                ),
-                tenant_id=context.tenant_id,
-                session_id=context.session_id,
-                flow_run_id=context.flow_run_id,
-                correlation_id=context.correlation_id,
-                node_id=node_uuid,
-                provider=provider,
-                policy_llm=llm_policy,
-            )
+                    session_id=context.session_id,
+                    flow_run_id=context.flow_run_id,
+                    correlation_id=context.correlation_id,
+                    node_id=node_uuid,
+                    provider=provider,
+                    policy_llm=llm_policy,
+                )
             output_payload = result.output or {}
 
             tool_config_id = output_payload.get("tool_config_id")
@@ -151,11 +167,13 @@ class ParamExtractionNode(NodeExecutor):
 
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
+        self.tracer = tracer
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -197,11 +215,16 @@ class ParamExtractionNode(NodeExecutor):
 
             intent = PromptIntent.SLOT_FILLING
 
-            resolved_prompt = await self.prompt_resolver.resolve(
-                intent=intent,
-                context=context,
-                node_id=node_uuid,
-            )
+            with self.tracer.observe(
+                as_type="chain",
+                name="domain.execution.nodes.param_extraction.resolve_prompt",
+                input={"node_id": str(node_uuid) if node_uuid else None},
+            ):
+                resolved_prompt = await self.prompt_resolver.resolve(
+                    intent=intent,
+                    context=context,
+                    node_id=node_uuid,
+                )
 
             request = LLMRequest(
                 prompt=resolved_prompt.prompt_text,
@@ -216,27 +239,35 @@ class ParamExtractionNode(NodeExecutor):
                 max_cost_usd=llm_policy.get("max_cost_usd"),
                 retry_limit=llm_policy.get("retry_limit"),
                 fallback_model_alias=llm_policy.get("fallback_model_alias"),
+                prompt_id=str(resolved_prompt.prompt_id)
+                if resolved_prompt.prompt_id
+                else None,
                 prompt_version=resolved_prompt.prompt_version,
                 prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
                 task_type=task_type,
             )
 
             try:
-                result = await self.llm_executor.execute_llm(
-                    request=request,
-                    trace=TraceContext(
-                        trace_id=context.trace_id or UUID(int=0),
-                        flow_run_id=context.flow_run_id,
+                with self.tracer.observe(
+                    as_type="generation",
+                    name="domain.execution.nodes.param_extraction.execute_llm",
+                    input={"model_alias": model_alias, "provider": provider},
+                ):
+                    result = await self.llm_executor.execute_llm(
+                        request=request,
+                        trace=TraceContext(
+                            trace_id=context.trace_id or UUID(int=0),
+                            flow_run_id=context.flow_run_id,
+                            tenant_id=context.tenant_id,
+                        ),
                         tenant_id=context.tenant_id,
-                    ),
-                    tenant_id=context.tenant_id,
-                    session_id=context.session_id,
-                    flow_run_id=context.flow_run_id,
-                    correlation_id=context.correlation_id,
-                    node_id=node_uuid,
-                    provider=provider,
-                    policy_llm=llm_policy,
-                )
+                        session_id=context.session_id,
+                        flow_run_id=context.flow_run_id,
+                        correlation_id=context.correlation_id,
+                        node_id=node_uuid,
+                        provider=provider,
+                        policy_llm=llm_policy,
+                    )
 
             except Exception as exc:
                 raise exc from exc  # Todo: Rever isso P0
@@ -287,11 +318,13 @@ class ToolExecutionNode(NodeExecutor):
 
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         tool_orchestrator: Any | None = None,
         execution_repository: Any | None = None,
     ) -> None:
         self.tool_orchestrator = tool_orchestrator
         self.execution_repository = execution_repository
+        self.tracer = tracer
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -348,19 +381,29 @@ class ToolExecutionNode(NodeExecutor):
             )
 
         try:
-            tool_run_id = await self.execution_repository.create_tool_run(
-                tool_config_id=UUID(str(tool_config_id)),
-                correlation_id=context.correlation_id,
-                agent_run_id=None,
-                node_run_id=context.current_node_run_id,
-                idempotency_key=None,
-                has_side_effect=True,
-                input_payload=extracted_params,
-            )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.nodes.tool_execution.create_tool_run",
+                input={"tool_config_id": str(tool_config_id)},
+            ):
+                tool_run_id = await self.execution_repository.create_tool_run(
+                    tool_config_id=UUID(str(tool_config_id)),
+                    correlation_id=context.correlation_id,
+                    agent_run_id=None,
+                    node_run_id=context.current_node_run_id,
+                    idempotency_key=None,
+                    has_side_effect=True,
+                    input_payload=extracted_params,
+                )
 
-            result = await self.tool_orchestrator.execute_tool_run(
-                tool_run_id=tool_run_id
-            )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.nodes.tool_execution.execute_tool_run",
+                input={"tool_run_id": str(tool_run_id)},
+            ):
+                result = await self.tool_orchestrator.execute_tool_run(
+                    tool_run_id=tool_run_id
+                )
 
             payload = {
                 "tool_run_id": str(tool_run_id),
@@ -391,11 +434,13 @@ class ClarificationNode(NodeExecutor):
 
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
+        self.tracer = tracer
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -428,11 +473,16 @@ class ClarificationNode(NodeExecutor):
             except Exception:  # noqa: BLE001
                 node_uuid = None
 
-            resolved_prompt = await self.prompt_resolver.resolve(
-                intent=PromptIntent.CLARIFICATION,
-                context=context,
-                node_id=node_uuid,
-            )
+            with self.tracer.observe(
+                as_type="chain",
+                name="domain.execution.nodes.clarification.resolve_prompt",
+                input={"node_id": str(node_uuid) if node_uuid else None},
+            ):
+                resolved_prompt = await self.prompt_resolver.resolve(
+                    intent=PromptIntent.CLARIFICATION,
+                    context=context,
+                    node_id=node_uuid,
+                )
 
             request = LLMRequest(
                 prompt=resolved_prompt.prompt_text,
@@ -447,26 +497,34 @@ class ClarificationNode(NodeExecutor):
                 max_cost_usd=llm_policy.get("max_cost_usd"),
                 retry_limit=llm_policy.get("retry_limit"),
                 fallback_model_alias=llm_policy.get("fallback_model_alias"),
+                prompt_id=str(resolved_prompt.prompt_id)
+                if resolved_prompt.prompt_id
+                else None,
                 prompt_version=resolved_prompt.prompt_version,
                 prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
                 task_type=LLMTaskType.CLARIFICATION,
             )
 
-            result = await self.llm_executor.execute_llm(
-                request=request,
-                trace=TraceContext(
-                    trace_id=context.trace_id or UUID(int=0),
-                    flow_run_id=context.flow_run_id,
+            with self.tracer.observe(
+                as_type="generation",
+                name="domain.execution.nodes.clarification.execute_llm",
+                input={"model_alias": model_alias, "provider": provider},
+            ):
+                result = await self.llm_executor.execute_llm(
+                    request=request,
+                    trace=TraceContext(
+                        trace_id=context.trace_id or UUID(int=0),
+                        flow_run_id=context.flow_run_id,
+                        tenant_id=context.tenant_id,
+                    ),
                     tenant_id=context.tenant_id,
-                ),
-                tenant_id=context.tenant_id,
-                session_id=context.session_id,
-                flow_run_id=context.flow_run_id,
-                correlation_id=context.correlation_id,
-                node_id=node_uuid,
-                provider=provider,
-                policy_llm=llm_policy,
-            )
+                    session_id=context.session_id,
+                    flow_run_id=context.flow_run_id,
+                    correlation_id=context.correlation_id,
+                    node_id=node_uuid,
+                    provider=provider,
+                    policy_llm=llm_policy,
+                )
             payload = result.output or {}
             return NodeResult(
                 status=NodeExecutionStatus.NEEDS_INPUT,
@@ -487,11 +545,13 @@ class ResponseNode(NodeExecutor):
 
     def __init__(
         self,
+        tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
+        self.tracer = tracer
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -540,11 +600,16 @@ class ResponseNode(NodeExecutor):
         except ValueError:
             task_type = LLMTaskType.RESPONSE_RENDER
 
-        resolved_prompt = await self.prompt_resolver.resolve(
-            intent=PromptIntent.RESPONSE_RENDER,
-            context=context,
-            node_id=node_uuid,
-        )
+        with self.tracer.observe(
+            as_type="chain",
+            name="domain.execution.nodes.response.resolve_prompt",
+            input={"node_id": str(node_uuid) if node_uuid else None},
+        ):
+            resolved_prompt = await self.prompt_resolver.resolve(
+                intent=PromptIntent.RESPONSE_RENDER,
+                context=context,
+                node_id=node_uuid,
+            )
 
         request = LLMRequest(
             prompt=resolved_prompt.prompt_text,
@@ -559,26 +624,34 @@ class ResponseNode(NodeExecutor):
             max_cost_usd=llm_policy.get("max_cost_usd"),
             retry_limit=llm_policy.get("retry_limit"),
             fallback_model_alias=llm_policy.get("fallback_model_alias"),
+            prompt_id=str(resolved_prompt.prompt_id)
+            if resolved_prompt.prompt_id
+            else None,
             prompt_version=resolved_prompt.prompt_version,
             prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
             task_type=task_type,
         )
 
-        result = await self.llm_executor.execute_llm(
-            request=request,
-            trace=TraceContext(
-                trace_id=context.trace_id or UUID(int=0),
-                flow_run_id=context.flow_run_id,
+        with self.tracer.observe(
+            as_type="generation",
+            name="domain.execution.nodes.response.execute_llm",
+            input={"model_alias": model_alias, "provider": provider},
+        ):
+            result = await self.llm_executor.execute_llm(
+                request=request,
+                trace=TraceContext(
+                    trace_id=context.trace_id or UUID(int=0),
+                    flow_run_id=context.flow_run_id,
+                    tenant_id=context.tenant_id,
+                ),
                 tenant_id=context.tenant_id,
-            ),
-            tenant_id=context.tenant_id,
-            session_id=context.session_id,
-            flow_run_id=context.flow_run_id,
-            correlation_id=context.correlation_id,
-            node_id=node_uuid,
-            provider=provider,
-            policy_llm=llm_policy,
-        )
+                session_id=context.session_id,
+                flow_run_id=context.flow_run_id,
+                correlation_id=context.correlation_id,
+                node_id=node_uuid,
+                provider=provider,
+                policy_llm=llm_policy,
+            )
 
         llm_output = result.output or {}
         system_output = (

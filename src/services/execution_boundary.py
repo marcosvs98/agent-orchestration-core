@@ -1,3 +1,4 @@
+import contextlib
 from uuid import UUID
 
 from domain.governance.schemas.scopes import Scope
@@ -45,30 +46,75 @@ class ExecutionBoundary:
         request_id: str | None,
         trace_id: str | None,
     ) -> FlowRun:
-        await self.rate_limit_service.enforce(
-            tenant_id=auth.tenant_id,
-            principal_type=auth.principal_type,
-            principal_id=auth.principal_id,
-            action=Scope.ExecutionFlowRunCreate,
+        tracer = self.execution_service.tracer
+        guardrail_cm = (
+            tracer.observe(
+                as_type="guardrail",
+                name="execution_boundary.rate_limit.enforce",
+                input={
+                    "tenant_id": str(auth.tenant_id),
+                    "action": str(Scope.ExecutionFlowRunCreate),
+                },
+                metadata={"guardrail_type": "rate_limit"},
+            )
+            if tracer
+            else contextlib.nullcontext()
         )
-        await self.access_policy_service.authorize(
-            tenant_id=auth.tenant_id,
-            principal_type=auth.principal_type,
-            principal_id=auth.principal_id,
-            scopes=auth.scopes,
-            action=str(Scope.ExecutionFlowRunCreate),
+        with guardrail_cm:
+            await self.rate_limit_service.enforce(
+                tenant_id=auth.tenant_id,
+                principal_type=auth.principal_type,
+                principal_id=auth.principal_id,
+                action=Scope.ExecutionFlowRunCreate,
+            )
+
+        access_cm = (
+            tracer.observe(
+                as_type="guardrail",
+                name="execution_boundary.access_policy.authorize",
+                input={
+                    "tenant_id": str(auth.tenant_id),
+                    "action": str(Scope.ExecutionFlowRunCreate),
+                },
+                metadata={"guardrail_type": "access_policy"},
+            )
+            if tracer
+            else contextlib.nullcontext()
         )
-        return await self.execution_service.create_flow_run(
-            tenant_id=auth.tenant_id,
-            endpoint=endpoint,
-            idempotency_key=idempotency_key,
-            flow_run=flow_run,
-            channel=channel,
-            headers=headers,
-            external_message_id=external_message_id,
-            request_id=request_id,
-            trace_id=trace_id,
+        with access_cm:
+            await self.access_policy_service.authorize(
+                tenant_id=auth.tenant_id,
+                principal_type=auth.principal_type,
+                principal_id=auth.principal_id,
+                scopes=auth.scopes,
+                action=str(Scope.ExecutionFlowRunCreate),
+            )
+
+        span_cm = (
+            tracer.observe(
+                as_type="span",
+                name="execution_boundary.create_flow_run",
+                input={
+                    "tenant_id": str(auth.tenant_id),
+                    "endpoint": endpoint,
+                },
+            )
+            if tracer
+            else contextlib.nullcontext()
         )
+        with span_cm:
+            return await self.execution_service.create_flow_run(
+                tenant_id=auth.tenant_id,
+                endpoint=endpoint,
+                idempotency_key=idempotency_key,
+                flow_run=flow_run,
+                channel=channel,
+                headers=headers,
+                external_message_id=external_message_id,
+                request_id=request_id,
+                trace_id=trace_id,
+                user_id=str(auth.tenant_id),
+            )
 
     async def execute_tool_run(self, *, auth: AuthContext, tool_run_id: UUID) -> dict:
         await self.rate_limit_service.enforce(

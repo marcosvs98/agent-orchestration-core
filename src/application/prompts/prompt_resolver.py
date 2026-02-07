@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 from uuid import UUID
 
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.services.graph_runtime.types import ExecutionContext
 from domain.llm.services.context_builder import ContextBuilder
@@ -24,11 +25,12 @@ class PromptResolver:
         prompt_service: PromptService,
         context_builder: ContextBuilder,
         execution_repository: ExecutionRepository,
+        tracer: RuntimeTracerPort,
     ):
         self.prompt_service = prompt_service
         self.context_builder = context_builder
         self.repository = execution_repository
-
+        self.tracer = tracer
         self._INTENT_TO_NODE_TYPE: dict[PromptIntent, NodeType] = {
             PromptIntent.INTENT_TOOL_SELECTION: NodeType.IntentToolSelectionNode,
             PromptIntent.SLOT_FILLING: NodeType.ParamExtractionNode,
@@ -46,9 +48,14 @@ class PromptResolver:
     async def _get_agent_version_id(self, node_id: UUID | None) -> UUID | None:
         if not node_id:
             return None
-        return await self.context_builder.agents_repository.get_agent_version_id_by_node_id(
-            node_id
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="application.prompts.prompt_resolver.get_agent_version_id",
+            input={"node_id": str(node_id)},
+        ):
+            return await self.context_builder.agents_repository.get_agent_version_id_by_node_id(
+                node_id
+            )
 
     def _render_simple(self, template: str, context: BaseModel) -> str:
         ctx: dict = context.model_dump(mode="json")
@@ -144,77 +151,88 @@ class PromptResolver:
         context: ExecutionContext,
         node_id: UUID | None = None,
     ) -> ResolvedPrompt:
-        node_type_enum = self._INTENT_TO_NODE_TYPE.get(intent)
-        if not node_type_enum:
-            raise DomainValidationException(
-                message="prompt_intent_not_supported",
-                detail=f"Intent {intent} não mapeado",
-            )
+        with self.tracer.observe(
+            as_type="agent",
+            name="application.prompts.prompt_resolver.resolve",
+            input={"intent": intent.value},
+        ):
+            node_type_enum = self._INTENT_TO_NODE_TYPE.get(intent)
+            if not node_type_enum:
+                raise DomainValidationException(
+                    message="prompt_intent_not_supported",
+                    detail=f"Intent {intent} is not supported",
+                )
 
-        node_type = node_type_enum.value
-        prompt = await self.prompt_service.get_prompt(node_type)
+            node_type = node_type_enum.value
+            with self.tracer.observe(
+                as_type="retriever",
+                name="application.prompts.prompt_resolver.get_prompt",
+                input={"node_type": node_type},
+            ):
+                prompt = await self.prompt_service.get_prompt(node_type)
 
-        if not prompt:
-            raise DomainValidationException(
-                message="prompt_not_found",
-                detail=f"Prompt não encontrado para node_type={node_type}",  # Todo:
-            )
+            if not prompt:
+                raise DomainValidationException(
+                    message="prompt_not_found",
+                    detail=f"Prompt not found for node_type={node_type}",
+                )
 
-        agent_version_id = await self._get_agent_version_id(node_id)
+            agent_version_id = await self._get_agent_version_id(node_id)
 
-        input_payload = context.input_payload or {}
-        if context.state:
-            intent_output = context.state.get("intent_output", {})
-            if isinstance(intent_output, dict):
-                user_input = (context.input_payload or {}).get("user_input", "")
+            input_payload = context.input_payload or {}
+            if context.state:
+                intent_output = context.state.get("intent_output", {})
+                if isinstance(intent_output, dict):
+                    user_input = (context.input_payload or {}).get("user_input", "")
+                    input_payload = {
+                        "intent": intent_output.get("intent", ""),
+                        "tool_config_id": intent_output.get("tool_config_id"),
+                        "user_input": user_input,
+                    }
+
+            if intent == PromptIntent.RESPONSE_RENDER:
+                intent_output = (context.state or {}).get("intent_output", {})
+                original_intent = (
+                    intent_output.get("intent", "")
+                    if isinstance(intent_output, dict)
+                    else ""
+                )
+                tool_response = (
+                    context.node_output.get("output", {}) if context.node_output else {}
+                )
                 input_payload = {
-                    "intent": intent_output.get("intent", ""),
-                    "tool_config_id": intent_output.get("tool_config_id"),
-                    "user_input": user_input,
+                    "tool_response": tool_response,
+                    "original_intent": original_intent,
                 }
 
-        if intent == PromptIntent.RESPONSE_RENDER:
-            intent_output = (context.state or {}).get("intent_output", {})
-            original_intent = (
-                intent_output.get("intent", "")
-                if isinstance(intent_output, dict)
-                else ""
+            rendered_prompt = prompt.template_text
+            if prompt.template_text and agent_version_id:
+                rendered_prompt = await self._render_prompt_with_context(
+                    prompt.template_text,
+                    agent_version_id,
+                    node_id,
+                    intent,
+                    input_payload,
+                    context,
+                )
+
+            input_schema = None
+            if prompt.input_schema_id:
+                schema_data = self._load_schema_from_prompt(prompt.input_schema_id)
+                if schema_data:
+                    input_schema = schema_data
+
+            output_schema = None
+            if prompt.output_schema_id:
+                schema_data = self._load_schema_from_prompt(prompt.output_schema_id)
+                if schema_data:
+                    output_schema = schema_data
+
+            return ResolvedPrompt(
+                prompt_text=rendered_prompt,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                prompt_id=prompt.prompt_id,
+                prompt_version=prompt.version,
+                prompt_frozen_hash=prompt.frozen_hash,
             )
-            tool_response = (
-                context.node_output.get("output", {}) if context.node_output else {}
-            )
-            input_payload = {
-                "tool_response": tool_response,
-                "original_intent": original_intent,
-            }
-
-        rendered_prompt = prompt.template_text
-        if prompt.template_text and agent_version_id:
-            rendered_prompt = await self._render_prompt_with_context(
-                prompt.template_text,
-                agent_version_id,
-                node_id,
-                intent,
-                input_payload,
-                context,
-            )
-
-        input_schema = None
-        if prompt.input_schema_id:
-            schema_data = self._load_schema_from_prompt(prompt.input_schema_id)
-            if schema_data:
-                input_schema = schema_data
-
-        output_schema = None
-        if prompt.output_schema_id:
-            schema_data = self._load_schema_from_prompt(prompt.output_schema_id)
-            if schema_data:
-                output_schema = schema_data
-
-        return ResolvedPrompt(
-            prompt_text=rendered_prompt,
-            input_schema=input_schema,
-            output_schema=output_schema,
-            prompt_version=prompt.version,
-            prompt_frozen_hash=prompt.frozen_hash,
-        )

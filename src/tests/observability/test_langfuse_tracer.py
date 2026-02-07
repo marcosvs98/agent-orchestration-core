@@ -1,4 +1,5 @@
 import importlib
+import contextlib
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -47,10 +48,20 @@ def test_tracer_creates_trace_context(mock_get_client, monkeypatch):
     mock_span.__enter__ = MagicMock(return_value=mock_span)
     mock_span.__exit__ = MagicMock(return_value=False)
     mock_client.start_as_current_observation = MagicMock(return_value=mock_span)
-    mock_client.get_current_observation_id = MagicMock(return_value="obs_123")
+    mock_span.id = "obs_123"
 
-    with tracer.start_flow_span(trace=ctx):
+    captured = {}
+
+    def fake_propagate_attributes(**kwargs):
+        captured.update(kwargs)
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr(tracer_module, "propagate_attributes", fake_propagate_attributes)
+
+    with tracer.flow(trace=ctx, input={"flow_run_id": str(flow_run_id)}):
         assert ctx.root_observation_id is not None
+    assert captured["user_id"] == str(ctx.tenant_id)
+    assert captured["version"] == str(ctx.flow_version_id)
 
 
 @patch("langfuse.get_client")
@@ -79,7 +90,7 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
     mock_generation.update = MagicMock()
 
     def mock_start_observation(**kwargs):
-        if kwargs.get("as_type") == "span" and kwargs.get("name") == "flow-run":
+        if kwargs.get("as_type") == "span" and kwargs.get("name") == "flow.run":
             return mock_flow_span
         elif kwargs.get("as_type") == "span" and kwargs.get("name") == "node-execution":
             return mock_node_span
@@ -88,7 +99,6 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
         return MagicMock()
 
     mock_client.start_as_current_observation = MagicMock(side_effect=mock_start_observation)
-    mock_client.get_current_observation_id = MagicMock(return_value="obs_123")
     mock_client.flush = MagicMock()
     mock_client.shutdown = MagicMock()
 
@@ -102,19 +112,24 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
         user_id=None,
     )
 
-    with tracer.start_flow_span(trace=trace_context):
-        with tracer.start_node_span(node_id="node1", node_type="IntentNode", input={}):
-            with tracer.start_llm_generation(
-                model_id="gpt-4",
-                task_type="INTENT_SELECTION",
-                input={},
+    with tracer.flow(trace=trace_context, input={"flow_run_id": str(trace_context.flow_run_id)}):
+        with tracer.observe(
+            as_type="span",
+            name="node-execution",
+            input={"node_id": "node1"},
+            metadata={"node_type": "IntentNode"},
+        ):
+            with tracer.observe(
+                as_type="generation",
+                name="llm.INTENT_SELECTION",
+                input={"prompt": "prompt", "system_prompt": None},
+                metadata={"llm_task": "INTENT_SELECTION"},
+                model="gpt-4",
             ) as handle:
-                handle.update_success(
-                    output={},
-                    token_usage={"input": 10, "output": 20},
-                    cost=0.002,
-                    latency_ms=45,
-                    model_version="1.0",
+                handle.success(
+                    output={"status": "ok"},
+                    usage_details={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+                    cost_details={"total_cost": 0.002},
                 )
 
     assert mock_client.start_as_current_observation.call_count >= 3
@@ -144,13 +159,13 @@ def test_tracer_guardrail_span(mock_get_client, monkeypatch):
 
     tracer = tracer_module.LangfuseRuntimeTracer(environment="test", runtime_version="0.0.0")
 
-    with tracer.start_guardrail_span(guardrail_type="LLM", input={}) as handle:
-        handle.update_decision(
-            decision="ALLOW",
-            reason_code="ALLOW",
-            applied_limits={},
-            overrides={},
-        )
+    with tracer.observe(
+        as_type="guardrail",
+        name="guardrail.llm",
+        input={"provider": "openai"},
+        metadata={"guardrail_type": "LLM"},
+    ) as handle:
+        handle.success(output={"decision": "ALLOW"})
 
     mock_guardrail_span.update.assert_called_once()
 
@@ -174,8 +189,13 @@ def test_tracer_tool_span(mock_get_client, monkeypatch):
 
     tracer = tracer_module.LangfuseRuntimeTracer(environment="test", runtime_version="0.0.0")
 
-    with tracer.start_tool_span(tool_id="calculate-tax", input={}):
-        pass
+    with tracer.observe(
+        as_type="tool",
+        name="tool.calculate-tax",
+        input={"tool_id": "calculate-tax"},
+        metadata={"tool_id": "calculate-tax"},
+    ) as handle:
+        handle.success(output={"status": "completed"})
 
     mock_tool_span.update.assert_called_once()
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Dict
 from uuid import UUID
 
 from adapters.cache.redis_adapter import RedisAdapter
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.guardrails import GuardrailDecision, GuardrailDecisionType
 from domain.llm.services.cost_engine import CostEngine
 from exceptions.service_exceptions import DomainValidationException
@@ -11,10 +13,21 @@ from exceptions.service_exceptions import DomainValidationException
 
 class GuardrailEngine:
     def __init__(
-        self, redis_adapter: RedisAdapter, cost_engine: CostEngine | None = None
+        self,
+        tracer: RuntimeTracerPort,
+        redis_adapter: RedisAdapter,
+        cost_engine: CostEngine | None = None,
     ) -> None:
         self.redis = redis_adapter
         self.cost_engine = cost_engine
+        self.tracer = tracer
+
+    def tracer(
+        self, *, as_type: str, name: str, input: dict
+    ) -> contextlib.AbstractContextManager:
+        if not self.tracer:
+            return contextlib.nullcontext()
+        return self.tracer.observe(as_type=as_type, name=name, input=input)
 
     @staticmethod
     def _flow_cost_key(flow_run_id: UUID) -> str:
@@ -33,16 +46,55 @@ class GuardrailEngine:
         return f"llm_calls:tenant:{tenant_id}"
 
     async def _get_cost(self, key: str) -> float:
-        data = await self.redis.get(key) or {}
-        try:
-            return float(data.get("usd", 0))
-        except (TypeError, ValueError):
-            return 0.0
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.execution.guardrail_engine.get_cost",
+            input={"key": key},
+        ):
+            data = await self.redis.get(key) or {}
+            try:
+                return float(data.get("usd", 0))
+            except (TypeError, ValueError):
+                return 0.0
 
     async def _set_cost(self, key: str, value: float, ttl: int | None = None) -> None:
-        await self.redis.set(key, {"usd": value}, ttl=ttl or 0)
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.guardrail_engine.set_cost",
+            input={"key": key},
+        ):
+            await self.redis.set(key, {"usd": value}, ttl=ttl or 0)
 
     async def check_and_reserve(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_run_id: UUID,
+        request: Any,
+        policy_llm: Dict[str, Any],
+        provider: str,
+        provider_model: str,
+    ) -> GuardrailDecision:
+        with self.tracer.observe(
+            as_type="guardrail",
+            name="domain.execution.guardrail_engine.check_and_reserve",
+            input={
+                "tenant_id": str(tenant_id),
+                "flow_run_id": str(flow_run_id),
+                "provider": provider,
+                "provider_model": provider_model,
+            },
+        ):
+            return await self._check_and_reserve_impl(
+                tenant_id=tenant_id,
+                flow_run_id=flow_run_id,
+                request=request,
+                policy_llm=policy_llm,
+                provider=provider,
+                provider_model=provider_model,
+            )
+
+    async def _check_and_reserve_impl(
         self,
         *,
         tenant_id: UUID,
@@ -75,12 +127,22 @@ class GuardrailEngine:
         # Rate limits
         flow_calls_key = self._flow_calls_key(flow_run_id)
         tenant_calls_key = self._tenant_calls_key(tenant_id)
-        flow_calls = await self.redis.incr_with_ttl(
-            flow_calls_key, ttl=tenant_calls_ttl
-        )
-        tenant_calls = await self.redis.incr_with_ttl(
-            tenant_calls_key, ttl=tenant_calls_ttl
-        )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.guardrail_engine.incr_flow_calls",
+            input={"key": flow_calls_key},
+        ):
+            flow_calls = await self.redis.incr_with_ttl(
+                flow_calls_key, ttl=tenant_calls_ttl
+            )
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.guardrail_engine.incr_tenant_calls",
+            input={"key": tenant_calls_key},
+        ):
+            tenant_calls = await self.redis.incr_with_ttl(
+                tenant_calls_key, ttl=tenant_calls_ttl
+            )
 
         if max_calls_flow is not None and flow_calls > int(max_calls_flow):
             return GuardrailDecision(

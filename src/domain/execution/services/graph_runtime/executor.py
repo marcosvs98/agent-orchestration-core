@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Dict, List
 from uuid import UUID
 from domain.execution.services.graph_runtime.types import NodeExecutor
@@ -19,7 +20,7 @@ from domain.execution.services.graph_runtime.execution_plan import (
     CompiledEdge,
 )
 from domain.execution.services.observability.hooks import ExecutionEventHook
-from domain.execution.services.state_machine import NodeRunStatus
+from domain.execution.services.state_machine import FlowRunStatus, NodeRunStatus
 from domain.flows.schemas.graph import EdgeKind
 from domain.flows.services.flow_graph_validator import TERMINAL_NODE_TYPES
 from exceptions.service_exceptions import DomainValidationException
@@ -31,8 +32,8 @@ class RuntimeExecutor:
     def __init__(
         self,
         repository: ExecutionRepository,
+        tracer: RuntimeTracerPort,
         registry: NodeRegistry | None = None,
-        tracer: RuntimeTracerPort | None = None,
         hook: ExecutionEventHook | None = None,
     ) -> None:
         self.repository = repository
@@ -40,6 +41,15 @@ class RuntimeExecutor:
         self.tracer = tracer
         self.hook = hook
         self._default_loop_limit = 10
+
+    def tracer(
+        self, *, as_type: str, name: str, input: dict, metadata: dict | None = None
+    ):
+        if not self.tracer:
+            return contextlib.nullcontext()
+        return self.tracer.observe(
+            as_type=as_type, name=name, input=input, metadata=metadata or {}
+        )
 
     async def run(
         self,
@@ -57,6 +67,44 @@ class RuntimeExecutor:
         trace_context=None,
     ) -> None:
         """Execute a compiled execution plan deterministically, persisting node runs and events."""
+        with self.tracer.observe(
+            as_type="agent",
+            name="domain.execution.graph_runtime.run",
+            input={
+                "flow_run_id": str(flow_run_id),
+                "flow_id": str(flow_id),
+                "start_node_id": plan.start_node_id,
+            },
+        ):
+            await self._run_impl(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                input_payload=input_payload,
+                flow_id=flow_id,
+                flow_version_id=flow_version_id,
+                flow_run_id=flow_run_id,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                plan=plan,
+                runtime_policy=runtime_policy,
+                trace_context=trace_context,
+            )
+
+    async def _run_impl(
+        self,
+        *,
+        tenant_id: UUID,
+        session_id: UUID,
+        input_payload: FlowRunInput,
+        flow_id: UUID,
+        flow_version_id: UUID,
+        flow_run_id: UUID,
+        correlation_id: UUID,
+        trace_id: UUID | None,
+        plan: ExecutionPlan,
+        runtime_policy: ResolvedRuntimePolicy | None = None,
+        trace_context=None,
+    ) -> None:
         loop_limit = (
             runtime_policy.definition.limits.get(
                 "max_loop_iterations", self._default_loop_limit
@@ -95,25 +143,37 @@ class RuntimeExecutor:
             edges = adjacency.get(context.current_node_id, [])
             spec = node_specs.get(context.current_node_id)
             if spec is None:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.NODE_NOT_FOUND,
-                )
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.execution.graph_runtime.node_not_found",
+                    input={"current_node_id": context.current_node_id},
+                    metadata={"event_type": "structural_plan_failure"},
+                ):
+                    await self._fail_flow(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        reason=FlowFailureReason.NODE_NOT_FOUND,
+                    )
                 return
 
             node_type = spec.get("type")
             node_cls = self.registry.resolve(node_type)
             if node_cls is None:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.UNKNOWN_NODE_TYPE,
-                )
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.execution.graph_runtime.unknown_node_type",
+                    input={"node_type": node_type},
+                    metadata={"event_type": "registry_misconfiguration"},
+                ):
+                    await self._fail_flow(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        reason=FlowFailureReason.UNKNOWN_NODE_TYPE,
+                    )
                 return
 
             node: NodeExecutor = node_cls()
@@ -161,7 +221,45 @@ class RuntimeExecutor:
                 )
 
             config = spec.get("config")
-            node_result: NodeResult = await node.execute(context, config)
+            node_span_cm = (
+                self.tracer.observe(
+                    as_type="span",
+                    name=f"node.{node_type}",
+                    input={
+                        "node_id": context.current_node_id,
+                        "node_type": node_type,
+                        "state_keys": list((context.state or {}).keys()),
+                        "memory_len": len(context.memory or []),
+                    },
+                    metadata={"node_type": node_type},
+                )
+                if self.tracer
+                else contextlib.nullcontext()
+            )
+            with node_span_cm as node_handle:
+                try:
+                    node_result: NodeResult = await node.execute(context, config)
+                except Exception as exc:
+                    if node_handle:
+                        node_handle.error(
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                            output={"status": "failed"},
+                        )
+                    raise
+                if node_handle:
+                    payload_keys = (
+                        list(node_result.payload.keys())
+                        if isinstance(node_result.payload, dict)
+                        else []
+                    )
+                    node_handle.success(
+                        output={
+                            "status": node_result.status,
+                            "payload_keys": payload_keys,
+                            "has_error": bool(node_result.error),
+                        }
+                    )
             context.node_output = node_result.payload
 
             status = self._map_status(node_result.status)
@@ -224,38 +322,44 @@ class RuntimeExecutor:
             )
 
             if node_type in TERMINAL_NODE_TYPES:
-                await self.repository.complete_flow_run(
-                    flow_run_id=flow_run_id,
-                    status="COMPLETED",
-                    output=node_result.payload,
-                )
-                if self.hook:
-                    await self.hook.on_flow_complete(
-                        tenant_id=tenant_id,
-                        session_id=session_id,
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.execution.graph_runtime.flow_completed",
+                    input={"terminated_at": context.current_node_id},
+                    metadata={"event_type": "flow_completion"},
+                ):
+                    await self.repository.complete_flow_run(
                         flow_run_id=flow_run_id,
-                        correlation_id=correlation_id,
-                        payload={
-                            "terminated_at": context.current_node_id,
-                            "payload": node_result.payload,
-                        },
-                        causation_id=None,
-                        schema_version=1,
+                        status=FlowRunStatus.COMPLETED,
+                        output=node_result.payload,
                     )
-                else:
-                    await self.repository.append_execution_event(
-                        tenant_id=tenant_id,
-                        session_id=session_id,
-                        flow_run_id=flow_run_id,
-                        event_type=ExecutionEventType.FlowCompleted,
-                        payload={
-                            "terminated_at": context.current_node_id,
-                            "payload": node_result.payload,
-                        },
-                        correlation_id=correlation_id,
-                        causation_id=None,
-                        schema_version=1,
-                    )
+                    if self.hook:
+                        await self.hook.on_flow_complete(
+                            tenant_id=tenant_id,
+                            session_id=session_id,
+                            flow_run_id=flow_run_id,
+                            correlation_id=correlation_id,
+                            payload={
+                                "terminated_at": context.current_node_id,
+                                "payload": node_result.payload,
+                            },
+                            causation_id=None,
+                            schema_version=1,
+                        )
+                    else:
+                        await self.repository.append_execution_event(
+                            tenant_id=tenant_id,
+                            session_id=session_id,
+                            flow_run_id=flow_run_id,
+                            event_type=ExecutionEventType.FlowCompleted,
+                            payload={
+                                "terminated_at": context.current_node_id,
+                                "payload": node_result.payload,
+                            },
+                            correlation_id=correlation_id,
+                            causation_id=None,
+                            schema_version=1,
+                        )
                 return
 
             try:
@@ -271,31 +375,52 @@ class RuntimeExecutor:
                     correlation_id=correlation_id,
                 )
             except DomainValidationException as exc:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=str(exc),
-                )
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.execution.graph_runtime.edge_evaluation_error",
+                    input={"reason": str(exc)},
+                    metadata={"event_type": "edge_evaluation_error"},
+                ):
+                    await self._fail_flow(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        reason=str(exc),
+                    )
                 return
             if not matching:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.NO_MATCHING_EDGE,
-                )
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.execution.graph_runtime.no_matching_edge",
+                    input={"current_node_id": context.current_node_id},
+                    metadata={"event_type": "no_valid_edge"},
+                ):
+                    await self._fail_flow(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        reason=FlowFailureReason.NO_MATCHING_EDGE,
+                    )
                 return
             if len(matching) > 1:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.MULTIPLE_MATCHING_EDGES,
-                )
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.execution.graph_runtime.multiple_matching_edges",
+                    input={
+                        "current_node_id": context.current_node_id,
+                        "matches": matching,
+                    },
+                    metadata={"event_type": "structural_ambiguity"},
+                ):
+                    await self._fail_flow(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        reason=FlowFailureReason.MULTIPLE_MATCHING_EDGES,
+                    )
                 return
 
             context = context.model_copy(
@@ -306,14 +431,19 @@ class RuntimeExecutor:
                     "node_output": node_result.payload,
                 }
             )
-
-        await self._fail_flow(
-            tenant_id=tenant_id,
-            session_id=session_id,
-            flow_run_id=flow_run_id,
-            correlation_id=correlation_id,
-            reason=FlowFailureReason.MAX_STEPS_EXCEEDED,
-        )
+        with self.tracer.observe(
+            as_type="event",
+            name="domain.execution.graph_runtime.max_steps_exceeded",
+            input={},
+            metadata={"event_type": "loop_limit_exceeded"},
+        ):
+            await self._fail_flow(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                flow_run_id=flow_run_id,
+                correlation_id=correlation_id,
+                reason=FlowFailureReason.MAX_STEPS_EXCEEDED,
+            )
 
     async def _evaluate_edges(
         self,
@@ -369,14 +499,17 @@ class RuntimeExecutor:
         result: bool,
     ) -> None:
         if self.tracer:
-            self.tracer.create_event(
-                event_type=ExecutionEventType.EdgeEvaluated,
+            with self.tracer.observe(
+                as_type="event",
+                name=f"event.{ExecutionEventType.EdgeEvaluated.value}",
                 input={
                     "from_node": current_node_id,
                     "to_node": to_node,
                     "result": result,
                 },
-            )
+                metadata={"event_type": ExecutionEventType.EdgeEvaluated.value},
+            ) as handle:
+                handle.success(output={"status": "recorded"})
         if self.hook:
             edge_id = f"{current_node_id}->{to_node}"
             await self.hook.on_edge_evaluated(
@@ -427,10 +560,13 @@ class RuntimeExecutor:
         )
 
         if self.tracer:
-            self.tracer.create_event(
-                event_type=ExecutionEventType.FlowFailed,
+            with self.tracer.observe(
+                as_type="event",
+                name=f"event.{ExecutionEventType.FlowFailed.value}",
                 input={"reason": reason_str},
-            )
+                metadata={"event_type": ExecutionEventType.FlowFailed.value},
+            ) as handle:
+                handle.success(output={"status": "recorded"})
         if self.hook:
             await self.hook.on_flow_failed(
                 tenant_id=tenant_id,
