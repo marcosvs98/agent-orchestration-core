@@ -14,6 +14,7 @@ PORT: int = config("PORT", default=8010, cast=int)
 LOG_LEVEL: str = config("LOG_LEVEL", default="DEBUG", cast=str)
 RELOAD: bool = config("RELOAD", default=False, cast=bool)
 PYTEST_RUNNING: int = config("PYTEST_RUNNING", default=0, cast=int)
+TRACING_ENABLE: bool = config("TRACING_ENABLE", default=False, cast=bool)
 
 DATABASE_URL: str = config(
     "DATABASE_URL",
