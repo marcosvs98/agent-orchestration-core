@@ -49,16 +49,12 @@ class DbExecutionEventHook(ExecutionEventHook):
         self, *, event_type: ExecutionEventType, data: Dict[str, Any]
     ) -> None:
         try:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="tool",
-                    name="domain.execution.hooks.append_execution_event",
-                    input={"event_type": event_type.value},
-                ):
-                    await self.repository.append_execution_event(
-                        **data, event_type=event_type.value
-                    )
-            else:
+            
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.hooks.append_execution_event",
+                input={"event_type": event_type.value},
+            ):
                 await self.repository.append_execution_event(
                     **data, event_type=event_type.value
                 )
@@ -76,14 +72,14 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
-        if self.tracer:
-            with self.tracer.observe(
-                as_type="event",
-                name=f"event.{ExecutionEventType.FlowStarted.value}",
-                input=payload,
-                metadata={"event_type": ExecutionEventType.FlowStarted.value},
-            ) as handle:
-                handle.success(output={"status": "recorded"})
+
+        with self.tracer.observe(
+            as_type="event",
+            name=f"event.{ExecutionEventType.FlowStarted.value}",
+            input=payload,
+            metadata={"event_type": ExecutionEventType.FlowStarted.value},
+        ) as handle:
+            handle.success(output={"status": "recorded"})
         await self._safe_emit(
             event_type=ExecutionEventType.FlowStarted,
             data={
@@ -192,14 +188,13 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
-        if self.tracer:
-            with self.tracer.observe(
-                as_type="event",
-                name=f"event.{ExecutionEventType.FlowCompleted.value}",
-                input=payload,
-                metadata={"event_type": ExecutionEventType.FlowCompleted.value},
-            ) as handle:
-                handle.success(output={"status": "recorded"})
+        with self.tracer.observe(
+            as_type="event",
+            name=f"event.{ExecutionEventType.FlowCompleted.value}",
+            input=payload,
+            metadata={"event_type": ExecutionEventType.FlowCompleted.value},
+        ) as handle:
+            handle.success(output={"status": "recorded"})
         await self._safe_emit(
             event_type=ExecutionEventType.FlowCompleted,
             data={
@@ -226,14 +221,14 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
-        if self.tracer:
-            with self.tracer.observe(
-                as_type="event",
-                name=f"event.{ExecutionEventType.FlowFailed.value}",
-                input=payload,
-                metadata={"event_type": ExecutionEventType.FlowFailed.value},
-            ) as handle:
-                handle.success(output={"status": "recorded"})
+        
+        with self.tracer.observe(
+            as_type="event",
+            name=f"event.{ExecutionEventType.FlowFailed.value}",
+            input=payload,
+            metadata={"event_type": ExecutionEventType.FlowFailed.value},
+        ) as handle:
+            handle.success(output={"status": "recorded"})
         await self._safe_emit(
             event_type=ExecutionEventType.FlowFailed,
             data={

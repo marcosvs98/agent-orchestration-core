@@ -21,13 +21,6 @@ class GraphCompiler:
     def __init__(self, tracer: RuntimeTracerPort) -> None:
         self.tracer = tracer
 
-    def tracer(
-        self, *, as_type: str, name: str, input: dict
-    ) -> contextlib.AbstractContextManager:
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(as_type=as_type, name=name, input=input)
-
     def compile(
         self,
         snapshot: Dict[str, Any],

@@ -31,8 +31,8 @@ class RateLimitService:
         principal_id: str,
         action: str,
     ) -> None:
-        guardrail_cm = (
-            self.tracer.observe(
+       
+        with self.tracer.observe(
                 as_type="guardrail",
                 name="governance.rate_limit.enforce",
                 input={
@@ -41,37 +41,28 @@ class RateLimitService:
                     "principal_type": principal_type,
                 },
                 metadata={"guardrail_type": "rate_limit"},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with guardrail_cm:
-            policy_cm = (
-                self.tracer.observe(
+            ):
+            
+            with self.tracer.observe(
                     as_type="retriever",
                     name="governance.rate_limit.get_default_policy",
                     input={"tenant_id": str(tenant_id)},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with policy_cm as policy_handle:
+                ) as policy_handle:
                 policy = await self.repository.get_default_policy_for_tenant(tenant_id)
                 if policy_handle:
                     policy_handle.success(output={"found": policy is not None})
         if policy is None:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.rate_limit.policy_missing",
-                    input={"tenant_id": str(tenant_id), "action": action},
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.rate_limit.policy_missing",
+                input={"tenant_id": str(tenant_id), "action": action},
+            ):
+                pass
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_configured"
             )
-        version_cm = (
-            self.tracer.observe(
+       
+        with self.tracer.observe(
                 as_type="retriever",
                 name="governance.rate_limit.get_policy_version",
                 input={
@@ -79,11 +70,7 @@ class RateLimitService:
                     "action": action,
                     "principal_type": principal_type,
                 },
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with version_cm as version_handle:
+            ) as version_handle:
             version = await self.repository.get_published_policy_version(
                 policy.rate_limit_policy_id,
                 action=action,
@@ -92,22 +79,22 @@ class RateLimitService:
             if version_handle:
                 version_handle.success(output={"found": version is not None})
         if version is None:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.rate_limit.policy_unpublished",
-                    input={
-                        "policy_id": str(policy.rate_limit_policy_id),
-                        "action": action,
-                    },
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.rate_limit.policy_unpublished",
+                input={
+                    "policy_id": str(policy.rate_limit_policy_id),
+                    "action": action,
+                },
+            ):
+                pass
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_published"
             )
         key = f"rate:{tenant_id}:{principal_type}:{principal_id}:{action}"
-        tool_cm = (
-            self.tracer.observe(
+
+
+        with self.tracer.observe(
                 as_type="tool",
                 name="governance.rate_limit.increment",
                 input={
@@ -116,25 +103,20 @@ class RateLimitService:
                     "principal_type": principal_type,
                 },
                 metadata={"tool_name": "redis.incr_with_ttl"},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with tool_cm as tool_handle:
+            ) as tool_handle:
             value = await self.redis.incr_with_ttl(key, int(version.window_seconds))
             if tool_handle:
                 tool_handle.success(output={"count": int(value)})
         if int(value) > int(version.limit):
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.rate_limit.exceeded",
-                    input={
-                        "tenant_id": str(tenant_id),
-                        "action": action,
-                        "limit": int(version.limit),
-                        "count": int(value),
-                    },
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.rate_limit.exceeded",
+                input={
+                    "tenant_id": str(tenant_id),
+                    "action": action,
+                    "limit": int(version.limit),
+                    "count": int(value),
+                },
+            ):
+                pass
             raise RateLimitExceededException(message="rate_limit_exceeded")

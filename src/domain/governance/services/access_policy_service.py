@@ -25,8 +25,8 @@ class AccessPolicyService(AccessPolicyServicePort):
         scopes: set[str],
         action: str,
     ) -> None:
-        guardrail_cm = (
-            self.tracer.observe(
+        
+        with self.tracer.observe(
                 as_type="guardrail",
                 name="governance.access_policy.authorize",
                 input={
@@ -35,56 +35,41 @@ class AccessPolicyService(AccessPolicyServicePort):
                     "principal_type": principal_type,
                 },
                 metadata={"guardrail_type": "access_policy"},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with guardrail_cm:
-            policy_cm = (
-                self.tracer.observe(
+            ):
+            with self.tracer.observe(
                     as_type="retriever",
                     name="governance.access_policy.get_default_policy",
                     input={"tenant_id": str(tenant_id)},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with policy_cm as policy_handle:
+                ) as policy_handle:
                 policy = await self.repository.get_default_policy_for_tenant(tenant_id)
                 if policy_handle:
                     policy_handle.success(output={"found": policy is not None})
         if policy is None:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.access_policy.missing",
-                    input={"tenant_id": str(tenant_id), "action": action},
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.access_policy.missing",
+                input={"tenant_id": str(tenant_id), "action": action},
+            ):
+                pass
             raise AuthorizationDeniedException(message="access_policy_not_configured")
-        version_cm = (
-            self.tracer.observe(
+        
+        with self.tracer.observe(
                 as_type="retriever",
                 name="governance.access_policy.get_policy_version",
                 input={"policy_id": str(policy.access_policy_id)},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with version_cm as version_handle:
+            ) as version_handle:
             policy_version = await self.repository.get_published_policy_version(
                 policy.access_policy_id
             )
             if version_handle:
                 version_handle.success(output={"found": policy_version is not None})
         if policy_version is None:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.access_policy.unpublished",
-                    input={"policy_id": str(policy.access_policy_id)},
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.access_policy.unpublished",
+                input={"policy_id": str(policy.access_policy_id)},
+            ):
+                pass
             raise AuthorizationDeniedException(
                 message="access_policy_version_not_published"
             )
@@ -92,21 +77,19 @@ class AccessPolicyService(AccessPolicyServicePort):
         rules: dict = policy_version.rules or {}
         allowed: set[str] = {str(s) for s in (rules.get("allow") or [])}
         if action not in allowed:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.access_policy.denied",
-                    input={"tenant_id": str(tenant_id), "action": action},
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.access_policy.denied",
+                input={"tenant_id": str(tenant_id), "action": action},
+            ):
+                pass
             raise AuthorizationDeniedException(message="action_not_allowed")
 
         if action not in scopes:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="governance.access_policy.missing_scope",
-                    input={"tenant_id": str(tenant_id), "action": action},
-                ):
-                    pass
+            with self.tracer.observe(
+                as_type="event",
+                name="governance.access_policy.missing_scope",
+                input={"tenant_id": str(tenant_id), "action": action},
+            ):
+                pass
             raise AuthorizationDeniedException(message="missing_required_scope")

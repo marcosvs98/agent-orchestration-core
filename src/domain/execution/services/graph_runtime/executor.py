@@ -46,14 +46,6 @@ class RuntimeExecutor:
         self.hook = hook
         self._default_loop_limit = 10
 
-    def tracer(
-        self, *, as_type: str, name: str, input: dict, metadata: dict | None = None
-    ):
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(
-            as_type=as_type, name=name, input=input, metadata=metadata or {}
-        )
 
     async def run(
         self,
@@ -236,8 +228,7 @@ class RuntimeExecutor:
                 )
 
             config = spec.get("config")
-            node_span_cm = (
-                self.tracer.observe(
+            with self.tracer.observe(
                     as_type="span",
                     name=f"node.{node_type}",
                     input={
@@ -247,11 +238,7 @@ class RuntimeExecutor:
                         "memory_len": len(context.memory or []),
                     },
                     metadata={"node_type": node_type},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with node_span_cm as node_handle:
+                ) as node_handle:
                 try:
                     node_result: NodeResult = await node.execute(context, config)
                 except Exception as exc:
@@ -541,17 +528,16 @@ class RuntimeExecutor:
         to_node: str,
         result: bool,
     ) -> None:
-        if self.tracer:
-            with self.tracer.observe(
-                as_type="event",
-                name=f"event.{ExecutionEventType.EdgeEvaluated.value}",
-                input={
-                    "from_node": current_node_id,
-                    "to_node": to_node,
-                    "result": result,
-                },
-                metadata={"event_type": ExecutionEventType.EdgeEvaluated.value},
-            ) as handle:
+        with self.tracer.observe(
+            as_type="event",
+            name=f"event.{ExecutionEventType.EdgeEvaluated.value}",
+            input={
+                "from_node": current_node_id,
+                "to_node": to_node,
+                "result": result,
+            },
+            metadata={"event_type": ExecutionEventType.EdgeEvaluated.value},
+        ) as handle:
                 handle.success(output={"status": "recorded"})
         if self.hook:
             edge_id = f"{current_node_id}->{to_node}"
@@ -602,14 +588,13 @@ class RuntimeExecutor:
             failure_reason=reason_str,
         )
 
-        if self.tracer:
-            with self.tracer.observe(
-                as_type="event",
-                name=f"event.{ExecutionEventType.FlowFailed.value}",
-                input={"reason": reason_str},
-                metadata={"event_type": ExecutionEventType.FlowFailed.value},
-            ) as handle:
-                handle.success(output={"status": "recorded"})
+        with self.tracer.observe(
+            as_type="event",
+            name=f"event.{ExecutionEventType.FlowFailed.value}",
+            input={"reason": reason_str},
+            metadata={"event_type": ExecutionEventType.FlowFailed.value},
+        ) as handle:
+            handle.success(output={"status": "recorded"})
         if self.hook:
             await self.hook.on_flow_failed(
                 tenant_id=tenant_id,

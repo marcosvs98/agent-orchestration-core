@@ -119,20 +119,6 @@ class ToolOrchestrator:
         attempt = 0
         started_at = time.monotonic()
         result: dict | None = None
-        span_cm = (
-            self.tracer.observe(
-                as_type="tool",
-                name=f"tool.{tool_run.tool_config_id}",
-                input={
-                    "tool_run_id": str(tool_run.tool_run_id),
-                    "tool_config_id": str(tool_run.tool_config_id),
-                    "method": method,
-                },
-                metadata={"tool_id": str(tool_run.tool_config_id)},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
         try:
             if secret_refs:
                 with self.tracer.observe(
@@ -170,7 +156,16 @@ class ToolOrchestrator:
                         causation_id=None,
                         schema_version=1,
                     )
-            with span_cm as tool_handle:
+            with self.tracer.observe(
+                as_type="tool",
+                name=f"tool.{tool_run.tool_config_id}",
+                input={
+                    "tool_run_id": str(tool_run.tool_run_id),
+                    "tool_config_id": str(tool_run.tool_config_id),
+                    "method": method,
+                },
+                metadata={"tool_id": str(tool_run.tool_config_id)},
+            ) as tool_handle:
                 try:
                     with self.tracer.observe(
                         as_type="tool",

@@ -136,12 +136,6 @@ class RunLifecycleStateMachine:
         ToolRunStatus.TIMEOUT: set(),
     }
 
-    def _guardrail(
-        self, name: str, input_dict: dict
-    ) -> contextlib.AbstractContextManager:
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(as_type="guardrail", name=name, input=input_dict)
 
     def validate_flow(self, current: FlowRunStatus, target: FlowRunStatus) -> None:
         with self.tracer.observe(

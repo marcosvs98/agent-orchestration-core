@@ -22,13 +22,6 @@ class GuardrailEngine:
         self.cost_engine = cost_engine
         self.tracer = tracer
 
-    def tracer(
-        self, *, as_type: str, name: str, input: dict
-    ) -> contextlib.AbstractContextManager:
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(as_type=as_type, name=name, input=input)
-
     @staticmethod
     def _flow_cost_key(flow_run_id: UUID) -> str:
         return f"cost:flow_run:{flow_run_id}"

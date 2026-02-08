@@ -67,29 +67,19 @@ class LLMExecutor(LLMExecutorPort):
     ) -> None:
         if not schema:
             return
-
-        if not self.tracer:
-            try:
-                validate(instance=payload, schema=schema)
-            except JsonSchemaValidationError as exc:
-                raise DomainValidationException(
-                    message=error_code, detail=str(exc)
-                ) from exc
-            return
-
-        span_cm = self.tracer.observe(
-            as_type="evaluator",
-            name="evaluator.schema_validation",
-            input={
-                "payload_keys": list(payload.keys()),
-                "schema_keys": list(schema.keys()),
-            },
-            metadata={"evaluator_name": "schema_validation"},
-        )
+    
         evaluator_handle = None
         validation_exc = None
         try:
-            with span_cm as evaluator_handle:
+            with self.tracer.observe(
+                as_type="evaluator",
+                name="evaluator.schema_validation",
+                input={
+                    "payload_keys": list(payload.keys()),
+                    "schema_keys": list(schema.keys()),
+                },
+                metadata={"evaluator_name": "schema_validation"},
+            ) as evaluator_handle:
                 try:
                     validate(instance=payload, schema=schema)
                     if evaluator_handle:
@@ -173,31 +163,21 @@ class LLMExecutor(LLMExecutorPort):
         provider_model = request.model_alias
         provider_instance = self.provider
         if self.provider_selector and self.provider_factory:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="agent",
-                    name="domain.llm.llm_executor.select_provider",
-                    input={
-                        "tenant_id": str(tenant_id),
-                        "provider": provider,
-                        "model_alias": request.model_alias,
-                    },
-                ):
-                    selection: LLMProviderSelection = (
-                        await self.provider_selector.select(
-                            tenant_id=tenant_id,
-                            provider=provider,
-                            model_alias=request.model_alias,
-                        )
+            with self.tracer.observe(
+                as_type="agent",
+                name="domain.llm.llm_executor.select_provider",
+                input={
+                    "tenant_id": str(tenant_id),
+                    "provider": provider,
+                    "model_alias": request.model_alias,
+                },
+            ):
+                selection: LLMProviderSelection = (
+                    await self.provider_selector.select(
+                        tenant_id=tenant_id,
+                        provider=provider,
+                        model_alias=request.model_alias,
                     )
-                    provider_model = selection.provider_model
-                    provider_instance = self.provider_factory(selection)
-                    request = request.model_copy(update={"model_alias": provider_model})
-            else:
-                selection: LLMProviderSelection = await self.provider_selector.select(
-                    tenant_id=tenant_id,
-                    provider=provider,
-                    model_alias=request.model_alias,
                 )
                 provider_model = selection.provider_model
                 provider_instance = self.provider_factory(selection)
@@ -209,14 +189,11 @@ class LLMExecutor(LLMExecutorPort):
                 detail="No LLM provider available. Either provide a default provider or configure provider_selector and provider_factory.",
             )
         if self.circuit_breaker:
-            if self.tracer:
-                with self.tracer.observe(
-                    as_type="guardrail",
-                    name="domain.llm.llm_executor.circuit_breaker_check",
-                    input={"scope": scope},
-                ):
-                    await self.circuit_breaker.ensure_closed(scope)
-            else:
+            with self.tracer.observe(
+                as_type="guardrail",
+                name="domain.llm.llm_executor.circuit_breaker_check",
+                input={"scope": scope},
+            ):
                 await self.circuit_breaker.ensure_closed(scope)
 
         guardrail_decision = None
@@ -266,8 +243,9 @@ class LLMExecutor(LLMExecutorPort):
         if task_type_value:
             generation_metadata["llm_task"] = task_type_value
 
-        generation_cm = (
-            self.tracer.observe(
+        generation_handle = None
+        try:
+            with self.tracer.observe(
                 as_type="generation",
                 name=f"llm.{task_type_value}" if task_type_value else "llm.call",
                 input={
@@ -278,13 +256,7 @@ class LLMExecutor(LLMExecutorPort):
                 model=provider_model,
                 model_parameters=model_parameters or None,
                 completion_start_time=datetime.utcnow(),
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        generation_handle = None
-        try:
-            with generation_cm as generation_handle:
+            ) as generation_handle:
                 self._validate_schema(
                     {"prompt": request.prompt},
                     request.input_schema,
@@ -292,7 +264,7 @@ class LLMExecutor(LLMExecutorPort):
                 )
                 guardrail_decision = None
                 if self.guardrail_engine and policy_llm is not None:
-                    guardrail_span_cm = (
+                    with (
                         self.tracer.observe(
                             as_type="guardrail",
                             name="guardrail.llm",
@@ -301,11 +273,7 @@ class LLMExecutor(LLMExecutorPort):
                                 "provider_model": provider_model,
                             },
                             metadata={"guardrail_type": "LLM"},
-                        )
-                        if self.tracer
-                        else contextlib.nullcontext()
-                    )
-                    with guardrail_span_cm as guardrail_handle:
+                        ) as guardrail_handle:
                         guardrail_decision = (
                             await self.guardrail_engine.check_and_reserve(
                                 tenant_id=tenant_id,

@@ -16,16 +16,12 @@ class IdempotencyService:
         return f"idempotency:{tenant_id}:{endpoint}:{idempotency_key}"
 
     async def try_acquire(self, key: str) -> bool:
-        cm = (
+        with (
             self.tracer.observe(
                 as_type="tool",
                 name="domain.execution.idempotency.try_acquire",
                 input={"key": key},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with cm:
+            ):
             return bool(
                 await self.redis.set_if_not_exists(
                     key,
@@ -35,27 +31,19 @@ class IdempotencyService:
             )
 
     async def get(self, key: str) -> dict | None:
-        cm = (
-            self.tracer.observe(
+
+        with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.idempotency.get",
                 input={"key": key},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with cm:
+            ):
             return await self.redis.get(key)
 
     async def set_result(self, key: str, data: dict) -> None:
-        cm = (
-            self.tracer.observe(
+       
+        with self.tracer.observe(
                 as_type="tool",
                 name="domain.execution.idempotency.set_result",
                 input={"key": key},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with cm:
+            ):
             await self.redis.set(key, data, ttl=IDEMPOTENCY_TTL_SECONDS)

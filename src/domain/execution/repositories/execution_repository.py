@@ -67,24 +67,6 @@ class ExecutionRepository:
         self.db = database_connection
         self.tracer = tracer
 
-    def tracer(
-        self,
-        *,
-        as_type: str,
-        name: str,
-        input: dict[str, object],
-        metadata: dict[str, object] | None = None,
-        **kwargs: object,
-    ) -> contextlib.AbstractContextManager[ObservationHandle | None]:
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(
-            as_type=as_type,
-            name=name,
-            input=input,
-            metadata=metadata,
-            **kwargs,
-        )
 
     async def create_flow_run(
         self,
@@ -506,8 +488,8 @@ class ExecutionRepository:
             stmt = select(FlowRunModel).where(FlowRunModel.flow_run_id == flow_run_id)
             query_sql = compile_query(stmt)
 
-            span_cm = (
-                self.tracer.observe(
+            
+            with self.tracer.observe(
                     as_type="retriever",
                     name="domain.execution.repository.get_flow_run",
                     input={
@@ -515,11 +497,7 @@ class ExecutionRepository:
                         "params": {"flow_run_id": str(flow_run_id)},
                     },
                     metadata={"retriever_name": "get_flow_run"},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with span_cm as retriever_handle:
+                ) as retriever_handle:
                 result = await session.execute(stmt)
                 flow_run = result.scalar_one_or_none()
 
@@ -1068,17 +1046,12 @@ class ExecutionRepository:
             stmt = select(FlowModel).where(FlowModel.flow_id == flow_id)
             query_sql = compile_query(stmt)
 
-            span_cm = (
-                self.tracer.observe(
+            with self.tracer.observe(
                     as_type="retriever",
                     name="domain.execution.repository.get_flow",
                     input={"query": query_sql, "params": {"flow_id": str(flow_id)}},
                     metadata={"retriever_name": "get_flow"},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with span_cm as retriever_handle:
+                ) as retriever_handle:
                 result = await session.execute(stmt)
                 flow = result.scalar_one_or_none()
 
@@ -1154,8 +1127,7 @@ class ExecutionRepository:
             )
             query_sql = compile_query(stmt)
 
-            span_cm = (
-                self.tracer.observe(
+            with self.tracer.observe(
                     as_type="retriever",
                     name="domain.execution.repository.get_tool_config",
                     input={
@@ -1163,11 +1135,7 @@ class ExecutionRepository:
                         "params": {"tool_config_id": str(tool_config_id)},
                     },
                     metadata={"retriever_name": "get_tool_config"},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with span_cm as retriever_handle:
+                ) as retriever_handle:
                 result = await session.execute(stmt)
                 tool_config = result.scalar_one_or_none()
 
@@ -1320,17 +1288,12 @@ class ExecutionRepository:
             stmt = select(NodeModel).where(NodeModel.node_id == node_id)
             query_sql = compile_query(stmt)
 
-            span_cm = (
-                self.tracer.observe(
+            with self.tracer.observe(
                     as_type="retriever",
                     name="domain.execution.repository.get_node",
                     input={"query": query_sql, "params": {"node_id": str(node_id)}},
                     metadata={"retriever_name": "get_node"},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with span_cm as retriever_handle:
+                ) as retriever_handle:
                 result = await session.execute(stmt)
                 node = result.scalar_one_or_none()
 
@@ -1349,8 +1312,7 @@ class ExecutionRepository:
             stmt = select(AITaskModel).where(AITaskModel.ai_task_id == ai_task_id)
             query_sql = compile_query(stmt)
 
-            span_cm = (
-                self.tracer.observe(
+            with self.tracer.observe(
                     as_type="retriever",
                     name="domain.execution.repository.get_ai_task",
                     input={
@@ -1358,11 +1320,7 @@ class ExecutionRepository:
                         "params": {"ai_task_id": str(ai_task_id)},
                     },
                     metadata={"retriever_name": "get_ai_task"},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with span_cm as retriever_handle:
+                ) as retriever_handle:
                 result = await session.execute(stmt)
                 ai_task = result.scalar_one_or_none()
 

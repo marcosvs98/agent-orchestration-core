@@ -254,16 +254,6 @@ class ExecutionService(ExecutionServicePort):
         normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(normalized.encode()).hexdigest()
 
-    def tracer(
-        self,
-        *,
-        as_type: str,
-        name: str,
-        input: dict[str, Any],
-    ):
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(as_type=as_type, name=name, input=input)
 
     async def create_flow_run(
         self,

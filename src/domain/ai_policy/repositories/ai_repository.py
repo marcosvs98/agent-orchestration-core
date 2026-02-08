@@ -30,8 +30,7 @@ class AIRepository:
             stmt = select(AITaskModel).where(AITaskModel.ai_task_id == ai_task_id)
             query_sql = compile_query(stmt)
 
-            span_cm = (
-                self.tracer.observe(
+            with self.tracer.observe(
                     as_type="retriever",
                     name="domain.ai_policy.repository.get_ai_task",
                     input={
@@ -39,11 +38,7 @@ class AIRepository:
                         "params": {"ai_task_id": str(ai_task_id)},
                     },
                     metadata={"retriever_name": "get_ai_task"},
-                )
-                if self.tracer
-                else contextlib.nullcontext()
-            )
-            with span_cm as retriever_handle:
+                ) as retriever_handle:
                 result = await session.execute(stmt)
                 ai_task = result.scalar_one_or_none()
 

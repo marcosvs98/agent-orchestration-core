@@ -46,16 +46,11 @@ class NodeRegistry:
     ) -> (
         type["_IntentNode"] | type["_ParamExtractionNode"] | type["NodeExecutor"] | None
     ):
-        ctx = (
-            self.tracer.observe(
+        with self.tracer.observe(
                 as_type="agent",
                 name="domain.execution.node_registry.resolve",
                 input={"node_type": node_type},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with ctx:
+            ):
             node_cls = self._registry.get(node_type)
             if node_type == IntentToolSelectionNode.node_type:
                 base_cls = node_cls or IntentToolSelectionNode

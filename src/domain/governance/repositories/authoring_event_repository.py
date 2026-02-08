@@ -21,17 +21,6 @@ class AuthoringEventRepository:
         self.db = database_connection
         self.tracer = tracer
 
-    def _observe(
-        self,
-        *,
-        as_type: str,
-        name: str,
-        input: dict,
-    ):
-        if not self.tracer:
-            return contextlib.nullcontext()
-        return self.tracer.observe(as_type=as_type, name=name, input=input)
-
     async def append_event(
         self,
         *,
@@ -46,7 +35,7 @@ class AuthoringEventRepository:
         schema_version: int = 1,
     ) -> UUID:
         event_id = uuid4()
-        with self._observe(
+        with self.tracer.observe(
             as_type="tool",
             name="domain.governance.authoring_event_repository.append_event",
             input={
@@ -76,7 +65,7 @@ class AuthoringEventRepository:
     async def list_events_for_resource(
         self, *, tenant_id: UUID, resource_type: str, resource_id: UUID
     ) -> list[AuthoringEventModel]:
-        with self._observe(
+        with self.tracer.observe(
             as_type="retriever",
             name="domain.governance.authoring_event_repository.list_events",
             input={
