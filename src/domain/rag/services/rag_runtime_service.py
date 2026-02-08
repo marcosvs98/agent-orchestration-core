@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Iterable
 from uuid import UUID
 
 import tiktoken
@@ -25,7 +24,6 @@ from infra.database.models.rag.rag_chunk import RagChunk as RagChunkModel
 from infra.database.models.rag.rag_query_cache import (
     RagQueryCache as RagQueryCacheModel,
 )
-
 
 
 class RagRuntimeService:
@@ -129,9 +127,7 @@ class RagRuntimeService:
             metadata=created.doc_metadata,
         )
 
-    async def list_documents(
-        self, *, tenant_id: UUID, limit: int
-    ) -> list[RagDocument]:
+    async def list_documents(self, *, tenant_id: UUID, limit: int) -> list[RagDocument]:
         """List documents available for a tenant."""
         items = await self.repository.list_documents(tenant_id=tenant_id, limit=limit)
         return [
@@ -145,13 +141,9 @@ class RagRuntimeService:
             for item in items
         ]
 
-    async def list_chunks(
-        self, *, document_id: UUID, limit: int
-    ) -> list[RagChunk]:
+    async def list_chunks(self, *, document_id: UUID, limit: int) -> list[RagChunk]:
         """List chunks for a stored document."""
-        items = await self.repository.list_chunks(
-            document_id=document_id, limit=limit
-        )
+        items = await self.repository.list_chunks(document_id=document_id, limit=limit)
         return [
             RagChunk(
                 id=item.chunk_id,
@@ -196,7 +188,9 @@ class RagRuntimeService:
             and cached.embedding_dimension == options.embedding.dimension
         ):
             embedding = cached.embedding
-            await self.repository.update_query_cache_usage(cache_id=cached.query_cache_id)
+            await self.repository.update_query_cache_usage(
+                cache_id=cached.query_cache_id
+            )
         else:
             embedding = await self.embedding_adapter.generate_embedding(
                 user_input,
@@ -249,7 +243,6 @@ class RagRuntimeService:
             },
         ):
             if avg_score < options.retrieval.similarity_threshold + 0.05:
-
                 return RagContext(
                     context_items=[],
                     context_summary=None,

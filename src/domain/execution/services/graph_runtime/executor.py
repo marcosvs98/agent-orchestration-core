@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 from typing import Dict, List
 from uuid import UUID
 from domain.execution.services.graph_runtime.types import NodeExecutor
@@ -45,7 +44,6 @@ class RuntimeExecutor:
         self.tracer = tracer
         self.hook = hook
         self._default_loop_limit = 10
-
 
     async def run(
         self,
@@ -229,16 +227,16 @@ class RuntimeExecutor:
 
             config = spec.get("config")
             with self.tracer.observe(
-                    as_type="span",
-                    name=f"node.{node_type}",
-                    input={
-                        "node_id": context.current_node_id,
-                        "node_type": node_type,
-                        "state_keys": list((context.state or {}).keys()),
-                        "memory_len": len(context.memory or []),
-                    },
-                    metadata={"node_type": node_type},
-                ) as node_handle:
+                as_type="span",
+                name=f"node.{node_type}",
+                input={
+                    "node_id": context.current_node_id,
+                    "node_type": node_type,
+                    "state_keys": list((context.state or {}).keys()),
+                    "memory_len": len(context.memory or []),
+                },
+                metadata={"node_type": node_type},
+            ) as node_handle:
                 try:
                     node_result: NodeResult = await node.execute(context, config)
                 except Exception as exc:
@@ -538,7 +536,7 @@ class RuntimeExecutor:
             },
             metadata={"event_type": ExecutionEventType.EdgeEvaluated.value},
         ) as handle:
-                handle.success(output={"status": "recorded"})
+            handle.success(output={"status": "recorded"})
         if self.hook:
             edge_id = f"{current_node_id}->{to_node}"
             await self.hook.on_edge_evaluated(

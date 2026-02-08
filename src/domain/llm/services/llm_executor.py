@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-import contextlib
 from datetime import datetime
 
 from typing import Any, Dict, Callable
@@ -67,7 +66,7 @@ class LLMExecutor(LLMExecutorPort):
     ) -> None:
         if not schema:
             return
-    
+
         evaluator_handle = None
         validation_exc = None
         try:
@@ -172,12 +171,10 @@ class LLMExecutor(LLMExecutorPort):
                     "model_alias": request.model_alias,
                 },
             ):
-                selection: LLMProviderSelection = (
-                    await self.provider_selector.select(
-                        tenant_id=tenant_id,
-                        provider=provider,
-                        model_alias=request.model_alias,
-                    )
+                selection: LLMProviderSelection = await self.provider_selector.select(
+                    tenant_id=tenant_id,
+                    provider=provider,
+                    model_alias=request.model_alias,
                 )
                 provider_model = selection.provider_model
                 provider_instance = self.provider_factory(selection)
@@ -264,16 +261,15 @@ class LLMExecutor(LLMExecutorPort):
                 )
                 guardrail_decision = None
                 if self.guardrail_engine and policy_llm is not None:
-                    with (
-                        self.tracer.observe(
-                            as_type="guardrail",
-                            name="guardrail.llm",
-                            input={
-                                "provider": provider,
-                                "provider_model": provider_model,
-                            },
-                            metadata={"guardrail_type": "LLM"},
-                        ) as guardrail_handle:
+                    with self.tracer.observe(
+                        as_type="guardrail",
+                        name="guardrail.llm",
+                        input={
+                            "provider": provider,
+                            "provider_model": provider_model,
+                        },
+                        metadata={"guardrail_type": "LLM"},
+                    ) as guardrail_handle:
                         guardrail_decision = (
                             await self.guardrail_engine.check_and_reserve(
                                 tenant_id=tenant_id,

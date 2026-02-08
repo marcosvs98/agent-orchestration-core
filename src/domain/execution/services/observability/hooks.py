@@ -49,7 +49,6 @@ class DbExecutionEventHook(ExecutionEventHook):
         self, *, event_type: ExecutionEventType, data: Dict[str, Any]
     ) -> None:
         try:
-            
             with self.tracer.observe(
                 as_type="tool",
                 name="domain.execution.hooks.append_execution_event",
@@ -72,7 +71,6 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
-
         with self.tracer.observe(
             as_type="event",
             name=f"event.{ExecutionEventType.FlowStarted.value}",
@@ -221,7 +219,6 @@ class DbExecutionEventHook(ExecutionEventHook):
         causation_id: UUID | None = None,
         schema_version: int = 1,
     ) -> None:
-        
         with self.tracer.observe(
             as_type="event",
             name=f"event.{ExecutionEventType.FlowFailed.value}",

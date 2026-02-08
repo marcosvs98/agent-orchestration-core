@@ -1,4 +1,3 @@
-import contextlib
 from uuid import UUID
 
 from domain.governance.ports.access_policy_service import AccessPolicyServicePort
@@ -25,22 +24,21 @@ class AccessPolicyService(AccessPolicyServicePort):
         scopes: set[str],
         action: str,
     ) -> None:
-        
         with self.tracer.observe(
-                as_type="guardrail",
-                name="governance.access_policy.authorize",
-                input={
-                    "tenant_id": str(tenant_id),
-                    "action": action,
-                    "principal_type": principal_type,
-                },
-                metadata={"guardrail_type": "access_policy"},
-            ):
+            as_type="guardrail",
+            name="governance.access_policy.authorize",
+            input={
+                "tenant_id": str(tenant_id),
+                "action": action,
+                "principal_type": principal_type,
+            },
+            metadata={"guardrail_type": "access_policy"},
+        ):
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="governance.access_policy.get_default_policy",
-                    input={"tenant_id": str(tenant_id)},
-                ) as policy_handle:
+                as_type="retriever",
+                name="governance.access_policy.get_default_policy",
+                input={"tenant_id": str(tenant_id)},
+            ) as policy_handle:
                 policy = await self.repository.get_default_policy_for_tenant(tenant_id)
                 if policy_handle:
                     policy_handle.success(output={"found": policy is not None})
@@ -52,12 +50,12 @@ class AccessPolicyService(AccessPolicyServicePort):
             ):
                 pass
             raise AuthorizationDeniedException(message="access_policy_not_configured")
-        
+
         with self.tracer.observe(
-                as_type="retriever",
-                name="governance.access_policy.get_policy_version",
-                input={"policy_id": str(policy.access_policy_id)},
-            ) as version_handle:
+            as_type="retriever",
+            name="governance.access_policy.get_policy_version",
+            input={"policy_id": str(policy.access_policy_id)},
+        ) as version_handle:
             policy_version = await self.repository.get_published_policy_version(
                 policy.access_policy_id
             )

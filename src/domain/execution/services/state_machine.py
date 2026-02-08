@@ -1,4 +1,3 @@
-import contextlib
 from enum import StrEnum
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
@@ -135,7 +134,6 @@ class RunLifecycleStateMachine:
         ToolRunStatus.ERROR: set(),
         ToolRunStatus.TIMEOUT: set(),
     }
-
 
     def validate_flow(self, current: FlowRunStatus, target: FlowRunStatus) -> None:
         with self.tracer.observe(

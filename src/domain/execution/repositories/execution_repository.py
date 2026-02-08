@@ -1,5 +1,4 @@
 from uuid import UUID, uuid4
-import contextlib
 from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -12,7 +11,7 @@ from exceptions.service_exceptions import (
     NotFoundServiceException,
 )
 from infra.database import DatabaseConnection
-from domain.execution.ports.runtime_tracer import RuntimeTracerPort, ObservationHandle
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from utils.query_compiler import compile_query
 from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
 from infra.database.models.execution.tool_run import ToolRun as ToolRunModel
@@ -66,7 +65,6 @@ class ExecutionRepository:
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
-
 
     async def create_flow_run(
         self,
@@ -488,16 +486,15 @@ class ExecutionRepository:
             stmt = select(FlowRunModel).where(FlowRunModel.flow_run_id == flow_run_id)
             query_sql = compile_query(stmt)
 
-            
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.execution.repository.get_flow_run",
-                    input={
-                        "query": query_sql,
-                        "params": {"flow_run_id": str(flow_run_id)},
-                    },
-                    metadata={"retriever_name": "get_flow_run"},
-                ) as retriever_handle:
+                as_type="retriever",
+                name="domain.execution.repository.get_flow_run",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_run_id": str(flow_run_id)},
+                },
+                metadata={"retriever_name": "get_flow_run"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 flow_run = result.scalar_one_or_none()
 
@@ -1047,11 +1044,11 @@ class ExecutionRepository:
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.execution.repository.get_flow",
-                    input={"query": query_sql, "params": {"flow_id": str(flow_id)}},
-                    metadata={"retriever_name": "get_flow"},
-                ) as retriever_handle:
+                as_type="retriever",
+                name="domain.execution.repository.get_flow",
+                input={"query": query_sql, "params": {"flow_id": str(flow_id)}},
+                metadata={"retriever_name": "get_flow"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 flow = result.scalar_one_or_none()
 
@@ -1128,14 +1125,14 @@ class ExecutionRepository:
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.execution.repository.get_tool_config",
-                    input={
-                        "query": query_sql,
-                        "params": {"tool_config_id": str(tool_config_id)},
-                    },
-                    metadata={"retriever_name": "get_tool_config"},
-                ) as retriever_handle:
+                as_type="retriever",
+                name="domain.execution.repository.get_tool_config",
+                input={
+                    "query": query_sql,
+                    "params": {"tool_config_id": str(tool_config_id)},
+                },
+                metadata={"retriever_name": "get_tool_config"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 tool_config = result.scalar_one_or_none()
 
@@ -1289,11 +1286,11 @@ class ExecutionRepository:
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.execution.repository.get_node",
-                    input={"query": query_sql, "params": {"node_id": str(node_id)}},
-                    metadata={"retriever_name": "get_node"},
-                ) as retriever_handle:
+                as_type="retriever",
+                name="domain.execution.repository.get_node",
+                input={"query": query_sql, "params": {"node_id": str(node_id)}},
+                metadata={"retriever_name": "get_node"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 node = result.scalar_one_or_none()
 
@@ -1313,14 +1310,14 @@ class ExecutionRepository:
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.execution.repository.get_ai_task",
-                    input={
-                        "query": query_sql,
-                        "params": {"ai_task_id": str(ai_task_id)},
-                    },
-                    metadata={"retriever_name": "get_ai_task"},
-                ) as retriever_handle:
+                as_type="retriever",
+                name="domain.execution.repository.get_ai_task",
+                input={
+                    "query": query_sql,
+                    "params": {"ai_task_id": str(ai_task_id)},
+                },
+                metadata={"retriever_name": "get_ai_task"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 ai_task = result.scalar_one_or_none()
 

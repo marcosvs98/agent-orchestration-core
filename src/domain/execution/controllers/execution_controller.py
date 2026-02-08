@@ -1,5 +1,3 @@
-import contextlib
-
 from fastapi import APIRouter, Depends, Header, Request, status
 from uuid import UUID
 
@@ -111,10 +109,10 @@ class ExecutionController:
             raise RouterValidationException(errors=["missing_idempotency_key"])
 
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.controller.create_flow_run",
-                input={"endpoint": request.url.path},
-            ):
+            as_type="span",
+            name="domain.execution.controller.create_flow_run",
+            input={"endpoint": request.url.path},
+        ):
             return await self.boundary.ingest_interaction_and_create_flow_run(
                 auth=auth,
                 endpoint=request.url.path,
@@ -137,10 +135,10 @@ class ExecutionController:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.controller.create_tool_run",
-                input={"endpoint": request.url.path},
-            ):
+            as_type="span",
+            name="domain.execution.controller.create_tool_run",
+            input={"endpoint": request.url.path},
+        ):
             return await self.boundary.create_tool_run(
                 auth=auth,
                 endpoint=request.url.path,
@@ -151,12 +149,11 @@ class ExecutionController:
     async def execute_tool_run(
         self, tool_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> dict:
-
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.controller.execute_tool_run",
-                input={"tool_run_id": tool_run_id},
-            ):
+            as_type="span",
+            name="domain.execution.controller.execute_tool_run",
+            input={"tool_run_id": tool_run_id},
+        ):
             return await self.boundary.execute_tool_run(
                 auth=auth, tool_run_id=UUID(tool_run_id)
             )

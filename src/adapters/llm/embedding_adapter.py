@@ -44,7 +44,11 @@ class OpenAIEmbeddingAdapter:
             return embedding
 
     async def generate_embeddings_batch(
-        self, texts: List[str], *, model: str | None = None, dimension: int | None = None
+        self,
+        texts: List[str],
+        *,
+        model: str | None = None,
+        dimension: int | None = None,
     ) -> List[List[float]]:
         """Generate embeddings for a batch of texts."""
         model_name = model or self.model

@@ -1,5 +1,4 @@
 from uuid import UUID
-import contextlib
 
 from sqlalchemy import select
 
@@ -31,14 +30,14 @@ class AIRepository:
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.ai_policy.repository.get_ai_task",
-                    input={
-                        "query": query_sql,
-                        "params": {"ai_task_id": str(ai_task_id)},
-                    },
-                    metadata={"retriever_name": "get_ai_task"},
-                ) as retriever_handle:
+                as_type="retriever",
+                name="domain.ai_policy.repository.get_ai_task",
+                input={
+                    "query": query_sql,
+                    "params": {"ai_task_id": str(ai_task_id)},
+                },
+                metadata={"retriever_name": "get_ai_task"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 ai_task = result.scalar_one_or_none()
 

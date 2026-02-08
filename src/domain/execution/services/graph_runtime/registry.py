@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 from typing import Any, Dict, Type
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
@@ -47,10 +46,10 @@ class NodeRegistry:
         type["_IntentNode"] | type["_ParamExtractionNode"] | type["NodeExecutor"] | None
     ):
         with self.tracer.observe(
-                as_type="agent",
-                name="domain.execution.node_registry.resolve",
-                input={"node_type": node_type},
-            ):
+            as_type="agent",
+            name="domain.execution.node_registry.resolve",
+            input={"node_type": node_type},
+        ):
             node_cls = self._registry.get(node_type)
             if node_type == IntentToolSelectionNode.node_type:
                 base_cls = node_cls or IntentToolSelectionNode

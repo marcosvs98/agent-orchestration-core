@@ -1,5 +1,3 @@
-import contextlib
-
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from uuid import UUID
 
@@ -112,12 +110,12 @@ class ExecutionPlaneController:
     ) -> FlowRun:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
-    
+
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.create_flow_run",
-                input={"endpoint": request.url.path},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.create_flow_run",
+            input={"endpoint": request.url.path},
+        ):
             return await self.boundary.ingest_interaction_and_create_flow_run(
                 auth=auth,
                 endpoint=request.url.path,
@@ -140,10 +138,10 @@ class ExecutionPlaneController:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.create_tool_run",
-                input={"endpoint": request.url.path},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.create_tool_run",
+            input={"endpoint": request.url.path},
+        ):
             return await self.boundary.create_tool_run(
                 auth=auth,
                 endpoint=request.url.path,
@@ -154,12 +152,11 @@ class ExecutionPlaneController:
     async def execute_tool_run(
         self, tool_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> dict:
-        
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.execute_tool_run",
-                input={"tool_run_id": tool_run_id},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.execute_tool_run",
+            input={"tool_run_id": tool_run_id},
+        ):
             return await self.boundary.execute_tool_run(
                 auth=auth, tool_run_id=UUID(tool_run_id)
             )
@@ -167,12 +164,11 @@ class ExecutionPlaneController:
     async def get_flow_run(
         self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> FlowRun:
-
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.get_flow_run",
-                input={"flow_run_id": flow_run_id},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.get_flow_run",
+            input={"flow_run_id": flow_run_id},
+        ):
             return await self.boundary.get_flow_run(auth=auth, flow_run_id=flow_run_id)
 
     async def resume_flow_run(
@@ -183,10 +179,10 @@ class ExecutionPlaneController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> FlowRun:
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.resume_flow_run",
-                input={"flow_run_id": flow_run_id, "endpoint": request.url.path},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.resume_flow_run",
+            input={"flow_run_id": flow_run_id, "endpoint": request.url.path},
+        ):
             return await self.boundary.resume_flow_run(
                 auth=auth,
                 flow_run_id=UUID(flow_run_id),
@@ -202,10 +198,10 @@ class ExecutionPlaneController:
         self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)
     ) -> GraphState:
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.get_graph_state",
-                input={"flow_run_id": flow_run_id},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.get_graph_state",
+            input={"flow_run_id": flow_run_id},
+        ):
             return await self.boundary.get_graph_state(
                 auth=auth, flow_run_id=flow_run_id
             )
@@ -216,12 +212,11 @@ class ExecutionPlaneController:
         limit: int = Query(default=200, ge=1, le=1000),
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[NodeRun]:
-
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.list_node_runs",
-                input={"flow_run_id": flow_run_id, "limit": limit},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.list_node_runs",
+            input={"flow_run_id": flow_run_id, "limit": limit},
+        ):
             return await self.boundary.list_node_runs(
                 auth=auth, flow_run_id=flow_run_id, limit=limit
             )
@@ -233,10 +228,10 @@ class ExecutionPlaneController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[AgentRun]:
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.list_agent_runs",
-                input={"flow_run_id": flow_run_id, "limit": limit},
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.list_agent_runs",
+            input={"flow_run_id": flow_run_id, "limit": limit},
+        ):
             return await self.boundary.list_agent_runs(
                 auth=auth, flow_run_id=flow_run_id, limit=limit
             )
@@ -249,14 +244,14 @@ class ExecutionPlaneController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[ExecutionEvent]:
         with self.tracer.observe(
-                as_type="span",
-                name="domain.execution.plane_controller.list_execution_events",
-                input={
-                    "flow_run_id": flow_run_id,
-                    "correlation_id": correlation_id,
-                    "limit": limit,
-                },
-            ):
+            as_type="span",
+            name="domain.execution.plane_controller.list_execution_events",
+            input={
+                "flow_run_id": flow_run_id,
+                "correlation_id": correlation_id,
+                "limit": limit,
+            },
+        ):
             flow_uuid = UUID(flow_run_id) if flow_run_id else None
             corr_uuid = UUID(correlation_id) if correlation_id else None
             events = await self.boundary.list_execution_events(

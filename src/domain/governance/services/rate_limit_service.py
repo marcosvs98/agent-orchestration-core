@@ -1,4 +1,3 @@
-import contextlib
 from uuid import UUID
 
 from adapters.cache.redis_adapter import RedisAdapter
@@ -31,23 +30,21 @@ class RateLimitService:
         principal_id: str,
         action: str,
     ) -> None:
-       
         with self.tracer.observe(
-                as_type="guardrail",
-                name="governance.rate_limit.enforce",
-                input={
-                    "tenant_id": str(tenant_id),
-                    "action": action,
-                    "principal_type": principal_type,
-                },
-                metadata={"guardrail_type": "rate_limit"},
-            ):
-            
+            as_type="guardrail",
+            name="governance.rate_limit.enforce",
+            input={
+                "tenant_id": str(tenant_id),
+                "action": action,
+                "principal_type": principal_type,
+            },
+            metadata={"guardrail_type": "rate_limit"},
+        ):
             with self.tracer.observe(
-                    as_type="retriever",
-                    name="governance.rate_limit.get_default_policy",
-                    input={"tenant_id": str(tenant_id)},
-                ) as policy_handle:
+                as_type="retriever",
+                name="governance.rate_limit.get_default_policy",
+                input={"tenant_id": str(tenant_id)},
+            ) as policy_handle:
                 policy = await self.repository.get_default_policy_for_tenant(tenant_id)
                 if policy_handle:
                     policy_handle.success(output={"found": policy is not None})
@@ -61,16 +58,16 @@ class RateLimitService:
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_configured"
             )
-       
+
         with self.tracer.observe(
-                as_type="retriever",
-                name="governance.rate_limit.get_policy_version",
-                input={
-                    "policy_id": str(policy.rate_limit_policy_id),
-                    "action": action,
-                    "principal_type": principal_type,
-                },
-            ) as version_handle:
+            as_type="retriever",
+            name="governance.rate_limit.get_policy_version",
+            input={
+                "policy_id": str(policy.rate_limit_policy_id),
+                "action": action,
+                "principal_type": principal_type,
+            },
+        ) as version_handle:
             version = await self.repository.get_published_policy_version(
                 policy.rate_limit_policy_id,
                 action=action,
@@ -93,17 +90,16 @@ class RateLimitService:
             )
         key = f"rate:{tenant_id}:{principal_type}:{principal_id}:{action}"
 
-
         with self.tracer.observe(
-                as_type="tool",
-                name="governance.rate_limit.increment",
-                input={
-                    "tenant_id": str(tenant_id),
-                    "action": action,
-                    "principal_type": principal_type,
-                },
-                metadata={"tool_name": "redis.incr_with_ttl"},
-            ) as tool_handle:
+            as_type="tool",
+            name="governance.rate_limit.increment",
+            input={
+                "tenant_id": str(tenant_id),
+                "action": action,
+                "principal_type": principal_type,
+            },
+            metadata={"tool_name": "redis.incr_with_ttl"},
+        ) as tool_handle:
             value = await self.redis.incr_with_ttl(key, int(version.window_seconds))
             if tool_handle:
                 tool_handle.success(output={"count": int(value)})
