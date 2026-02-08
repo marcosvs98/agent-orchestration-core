@@ -17,11 +17,13 @@ from seeds.demo.ids import (
     AI_TASK_INTENT_DETECTION_ID,
     AI_TASK_RESPONSE_FORMATTING_ID,
     AI_TASK_SLOT_FILLING_ID,
+    AI_TASK_CLARIFICATION_ID,
     FLOW_VERSION_V1_ID,
     NODE_INTENT_ID,
     NODE_SLOT_ID,
     NODE_TOOL_EXEC_ID,
     NODE_RESPONSE_ID,
+    NODE_CLARIFICATION_ID,
 )
 
 
@@ -32,6 +34,7 @@ async def seed_nodes() -> None:
             (NODE_SLOT_ID, AI_TASK_SLOT_FILLING_ID, "SlotFilling"),
             (NODE_TOOL_EXEC_ID, None, "ToolExecution"),
             (NODE_RESPONSE_ID, AI_TASK_RESPONSE_FORMATTING_ID, "ResponseFormatting"),
+            (NODE_CLARIFICATION_ID, AI_TASK_CLARIFICATION_ID, "Clarification"),
         ]
 
         for node_id, ai_task_id, node_name in nodes:

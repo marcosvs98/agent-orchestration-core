@@ -19,8 +19,14 @@ class Interaction(ORMBaseModel):
         ForeignKey("flow_run.flow_run_id", ondelete="SET NULL"),
         nullable=True,
     )
+    result_node_run_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("node_run.node_run_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     channel = Column(String(length=64), nullable=False, server_default="http")
     payload = Column(JSONB, nullable=False, server_default="{}")
+    output = Column(JSONB, nullable=False, server_default="{}")
     headers = Column(JSONB, nullable=False, server_default="{}")
     interaction_metadata = Column(JSONB, nullable=False, server_default="{}")
     external_message_id = Column(String(length=128), nullable=True)

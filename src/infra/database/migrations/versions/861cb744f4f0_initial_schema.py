@@ -1029,11 +1029,18 @@ def upgrade() -> None:
         sa.Column("interaction_id", sa.UUID(), nullable=False),
         sa.Column("session_id", sa.UUID(), nullable=False),
         sa.Column("flow_run_id", sa.UUID(), nullable=True),
+        sa.Column("result_node_run_id", sa.UUID(), nullable=True),
         sa.Column(
             "channel", sa.String(length=64), server_default="http", nullable=False
         ),
         sa.Column(
             "payload",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default="{}",
+            nullable=False,
+        ),
+        sa.Column(
+            "output",
             postgresql.JSONB(astext_type=sa.Text()),
             server_default="{}",
             nullable=False,
@@ -1983,6 +1990,14 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("node_run_id", name=op.f("pk_node_run")),
     )
+    op.create_foreign_key(
+        op.f("fk_interaction_result_node_run_id_node_run"),
+        "interaction",
+        "node_run",
+        ["result_node_run_id"],
+        ["node_run_id"],
+        ondelete="SET NULL",
+    )
     op.create_table(
         "router",
         sa.Column("router_id", sa.UUID(), nullable=False),
@@ -2377,6 +2392,11 @@ def downgrade() -> None:
     op.drop_index("ix_step_run_onboarding_run_id", table_name="step_run")
     op.drop_table("step_run")
     op.drop_table("router")
+    op.drop_constraint(
+        op.f("fk_interaction_result_node_run_id_node_run"),
+        "interaction",
+        type_="foreignkey",
+    )
     op.drop_table("node_run")
     op.drop_table("node_ai_execution_policy_binding")
     op.drop_table("node_agent_binding")

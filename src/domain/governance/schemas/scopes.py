@@ -4,6 +4,7 @@ from enum import StrEnum
 class Scope(StrEnum):
     ExecutionFlowRunCreate = "execution:flow_run:create"
     ExecutionFlowRunGet = "execution:flow_run:get"
+    ExecutionFlowRunResume = "execution:flow_run:resume"
     ExecutionToolRunCreate = "execution:tool_run:create"
     ExecutionToolRunExecute = "execution:tool_run:execute"
     ExecutionEventsList = "execution:events:list"

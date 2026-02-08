@@ -17,6 +17,7 @@ from seeds.demo.ids import (
     AI_TASK_INTENT_DETECTION_ID,
     AI_TASK_RESPONSE_FORMATTING_ID,
     AI_TASK_SLOT_FILLING_ID,
+    AI_TASK_CLARIFICATION_ID,
 )
 
 
@@ -26,6 +27,7 @@ async def seed_ai_tasks() -> None:
             (AI_TASK_INTENT_DETECTION_ID, "IntentDetection"),
             (AI_TASK_SLOT_FILLING_ID, "SlotFilling"),
             (AI_TASK_RESPONSE_FORMATTING_ID, "ResponseFormatting"),
+            (AI_TASK_CLARIFICATION_ID, "Clarification"),
         ]
 
         for task_id, task_name in tasks:

@@ -279,6 +279,16 @@ class ParamExtractionNode(NodeExecutor):
             else:
                 payload = extracted_params
                 missing_fields = []
+            missing_fields_count = (
+                len(missing_fields) if isinstance(missing_fields, list) else 0
+            )
+            execution_ready = missing_fields_count == 0
+            node_payload = {
+                "payload": payload,
+                "missing_fields": missing_fields if isinstance(missing_fields, list) else [],
+                "missing_fields_count": missing_fields_count,
+                "execution_ready": execution_ready,
+            }
             current_state = context.state or {}
             next_state = {
                 **current_state,
@@ -289,7 +299,7 @@ class ParamExtractionNode(NodeExecutor):
 
             return NodeResult(
                 status=NodeExecutionStatus.SUCCESS,
-                payload=result.output,
+                payload=node_payload,
                 metrics=result.token_usage,
                 next_state=next_state,
             )
@@ -298,6 +308,16 @@ class ParamExtractionNode(NodeExecutor):
             config, {"extracted_params": {}, "validation_status": "VALID"}
         )
         missing_fields = payload.get("missing_fields", [])
+        missing_fields_count = (
+            len(missing_fields) if isinstance(missing_fields, list) else 0
+        )
+        execution_ready = missing_fields_count == 0
+        node_payload = {
+            "payload": payload.get("extracted_params", {}),
+            "missing_fields": missing_fields if isinstance(missing_fields, list) else [],
+            "missing_fields_count": missing_fields_count,
+            "execution_ready": execution_ready,
+        }
         current_state = context.state or {}
         next_state = {
             **current_state,
@@ -307,7 +327,9 @@ class ParamExtractionNode(NodeExecutor):
         }
 
         return NodeResult(
-            status=NodeExecutionStatus.SUCCESS, payload=payload, next_state=next_state
+            status=NodeExecutionStatus.SUCCESS,
+            payload=node_payload,
+            next_state=next_state,
         )
 
 
@@ -325,6 +347,7 @@ class ToolExecutionNode(NodeExecutor):
         self.tool_orchestrator = tool_orchestrator
         self.execution_repository = execution_repository
         self.tracer = tracer
+
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -526,15 +549,18 @@ class ClarificationNode(NodeExecutor):
                     policy_llm=llm_policy,
                 )
             payload = result.output or {}
+            system_output = (
+                payload.get("system_output")
+                if isinstance(payload, dict)
+                else str(payload)
+            )
             return NodeResult(
                 status=NodeExecutionStatus.NEEDS_INPUT,
-                payload=payload,
+                payload={"system_output": system_output},
                 metrics=result.token_usage,
             )
 
-        payload = _payload_from_config(
-            config, {"missing_fields": [], "user_message": ""}
-        )
+        payload = _payload_from_config(config, {"system_output": ""})
         return NodeResult(status=NodeExecutionStatus.NEEDS_INPUT, payload=payload)
 
 

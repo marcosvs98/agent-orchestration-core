@@ -8,6 +8,7 @@ from domain.execution.schemas.execution import (
     AgentRun,
     FlowRun,
     FlowRunCreate,
+    FlowRunInput,
     GraphState,
     NodeRun,
     ToolRun,
@@ -65,6 +66,13 @@ class ExecutionPlaneController:
             self.get_flow_run,
             methods=["GET"],
             response_model=FlowRun,
+        )
+        r(
+            "/flow-runs/{flow_run_id}:resume",
+            self.resume_flow_run,
+            methods=["POST"],
+            response_model=FlowRun,
+            responses=self._resp405(),
         )
         r(
             "/flow-runs/{flow_run_id}/graph-state",
@@ -183,6 +191,34 @@ class ExecutionPlaneController:
         )
         with cm:
             return await self.boundary.get_flow_run(auth=auth, flow_run_id=flow_run_id)
+
+    async def resume_flow_run(
+        self,
+        request: Request,
+        flow_run_id: str,
+        payload: FlowRunInput,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> FlowRun:
+        cm = (
+            self.tracer.observe(
+                as_type="span",
+                name="domain.execution.plane_controller.resume_flow_run",
+                input={"flow_run_id": flow_run_id, "endpoint": request.url.path},
+            )
+            if self.tracer
+            else contextlib.nullcontext()
+        )
+        with cm:
+            return await self.boundary.resume_flow_run(
+                auth=auth,
+                flow_run_id=UUID(flow_run_id),
+                input_payload=payload,
+                channel="http",
+                headers=dict(request.headers),
+                external_message_id=request.headers.get("X-External-Message-Id"),
+                request_id=request.headers.get("X-Request-Id"),
+                trace_id=request.headers.get("X-Trace-Id"),
+            )
 
     async def get_graph_state(
         self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)

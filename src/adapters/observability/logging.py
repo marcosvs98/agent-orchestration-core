@@ -40,7 +40,7 @@ class LogLevel(Enum):
             ) from e
 
 
-LOG_LEVEL = config("LOG_LEVEL", default="DEBUG", cast=LogLevel.cast_log_level)
+LOG_LEVEL = config("LOG_LEVEL", default="INFO", cast=LogLevel.cast_log_level)
 
 
 def configure_logger(is_async: bool = False) -> None:

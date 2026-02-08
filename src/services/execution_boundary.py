@@ -8,6 +8,7 @@ from domain.execution.schemas.execution import (
     AgentRun,
     FlowRun,
     FlowRunCreate,
+    FlowRunInput,
     GraphState,
     NodeRun,
     ToolRun,
@@ -108,6 +109,86 @@ class ExecutionBoundary:
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
                 flow_run=flow_run,
+                channel=channel,
+                headers=headers,
+                external_message_id=external_message_id,
+                request_id=request_id,
+                trace_id=trace_id,
+                user_id=str(auth.tenant_id),
+            )
+
+    async def resume_flow_run(
+        self,
+        *,
+        auth: AuthContext,
+        flow_run_id: UUID,
+        input_payload: FlowRunInput | None,
+        channel: str,
+        headers: dict[str, str],
+        external_message_id: str | None,
+        request_id: str | None,
+        trace_id: str | None,
+    ) -> FlowRun:
+        tracer = self.execution_service.tracer
+        guardrail_cm = (
+            tracer.observe(
+                as_type="guardrail",
+                name="execution_boundary.rate_limit.enforce_resume",
+                input={
+                    "tenant_id": str(auth.tenant_id),
+                    "action": str(Scope.ExecutionFlowRunResume),
+                },
+                metadata={"guardrail_type": "rate_limit"},
+            )
+            if tracer
+            else contextlib.nullcontext()
+        )
+        with guardrail_cm:
+            await self.rate_limit_service.enforce(
+                tenant_id=auth.tenant_id,
+                principal_type=auth.principal_type,
+                principal_id=auth.principal_id,
+                action=Scope.ExecutionFlowRunResume,
+            )
+
+        access_cm = (
+            tracer.observe(
+                as_type="guardrail",
+                name="execution_boundary.access_policy.authorize_resume",
+                input={
+                    "tenant_id": str(auth.tenant_id),
+                    "action": str(Scope.ExecutionFlowRunResume),
+                },
+                metadata={"guardrail_type": "access_policy"},
+            )
+            if tracer
+            else contextlib.nullcontext()
+        )
+        with access_cm:
+            await self.access_policy_service.authorize(
+                tenant_id=auth.tenant_id,
+                principal_type=auth.principal_type,
+                principal_id=auth.principal_id,
+                scopes=auth.scopes,
+                action=str(Scope.ExecutionFlowRunResume),
+            )
+
+        span_cm = (
+            tracer.observe(
+                as_type="span",
+                name="execution_boundary.resume_flow_run",
+                input={
+                    "tenant_id": str(auth.tenant_id),
+                    "flow_run_id": str(flow_run_id),
+                },
+            )
+            if tracer
+            else contextlib.nullcontext()
+        )
+        with span_cm:
+            return await self.execution_service.resume_flow_run(
+                flow_run_id=flow_run_id,
+                input_payload=input_payload,
                 channel=channel,
                 headers=headers,
                 external_message_id=external_message_id,

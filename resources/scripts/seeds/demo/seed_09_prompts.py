@@ -69,7 +69,9 @@ Extract parameters from user input to fill the request schema.
 JSON object:
 {{
   "payload": {{ ... }},
-  "missing_fields": [ ... ]
+  "missing_fields": [ ... ],
+  "missing_fields_count": 0,
+  "execution_ready": true
 }}
 
 # Constraints
@@ -93,7 +95,7 @@ Ask the user for missing required information.
 # Output Format
 JSON object:
 {{
-  "message": "Please provide ..."
+  "system_output": "Please provide ..."
 }}
 
 # Constraints
@@ -166,8 +168,15 @@ JSON object:
                             "type": "array",
                             "items": {"type": "string"},
                         },
+                        "missing_fields_count": {"type": "integer"},
+                        "execution_ready": {"type": "boolean"},
                     },
-                    "required": ["payload", "missing_fields"],
+                    "required": [
+                        "payload",
+                        "missing_fields",
+                        "missing_fields_count",
+                        "execution_ready",
+                    ],
                 },
             ),
             (
@@ -176,8 +185,8 @@ JSON object:
                 clarification_template,
                 {
                     "type": "object",
-                    "properties": {"message": {"type": "string"}},
-                    "required": ["message"],
+                    "properties": {"system_output": {"type": "string"}},
+                    "required": ["system_output"],
                 },
             ),
             (

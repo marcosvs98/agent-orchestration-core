@@ -18,6 +18,7 @@ from domain.execution.schemas.execution import (
     Channel,
     FlowRun,
     FlowRunCreate,
+    FlowRunInput,
     ExecutionEvent,
     FlowFailureReason,
     GraphState,
@@ -665,6 +666,185 @@ class ExecutionService(ExecutionServicePort):
                 },
             )
         return response
+
+    async def resume_flow_run(
+        self,
+        *,
+        flow_run_id: UUID,
+        input_payload: FlowRunInput | None,
+        channel: str,
+        headers: dict[str, str],
+        external_message_id: str | None,
+        request_id: str | None,
+        trace_id: str | None,
+        user_id: str | None = None,
+    ) -> FlowRun:
+        input_payload = input_payload or FlowRunInput()
+
+        flow_run = await self.repository.get_flow_run(flow_run_id)
+        if flow_run is None:
+            raise NotFoundServiceException(message="flow_run_not_found")
+
+        tenant_id, session_id = await self.repository.get_flow_context(flow_run_id)
+
+        graph_state = await self.repository.get_graph_state(flow_run_id)
+        if graph_state is None:
+            raise NotFoundServiceException(message="graph_state_not_found")
+
+        flow_version = await self.repository.get_flow_version(flow_run.flow_version_id)
+        if flow_version is None:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        flow_id = flow_version.flow_id
+
+        graph_snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(
+            flow_version.flow_version_id
+        )
+        if graph_snapshot is None:
+            raise NotFoundServiceException(message="flow_graph_snapshot_not_found")
+
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.execution.execution_service.list_available_tools_resume",
+            input={"tenant_id": str(tenant_id)},
+        ):
+            available_tools: list[
+                AvailableTool
+            ] = await self.tools_service.list_available_tools_for_execution(
+                tenant_id=tenant_id
+            )
+
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.execution.execution_service.cache_get_plan_resume",
+            input={"graph_hash": graph_snapshot.graph_hash},
+        ):
+            cached_plan = await self.cache_adapter.get(graph_snapshot.graph_hash)
+        if cached_plan:
+            plan: ExecutionPlan = ExecutionPlan.model_validate(cached_plan)
+        else:
+            with self.tracer.observe(
+                as_type="chain",
+                name="domain.execution.execution_service.compile_plan_resume",
+                input={
+                    "graph_hash": graph_snapshot.graph_hash,
+                    "tool_count": len(available_tools),
+                },
+            ):
+                plan = self.plan_compiler.compile(
+                    graph_snapshot.snapshot,
+                    graph_snapshot.graph_hash,
+                    available_tools=available_tools,
+                )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.execution_service.cache_set_plan_resume",
+                input={"graph_hash": graph_snapshot.graph_hash},
+            ):
+                await self.cache_adapter.set(
+                    graph_snapshot.graph_hash, plan.model_dump(mode="json")
+                )
+
+        runtime_policy = await self.policy_resolver.resolve(
+            tenant_id=tenant_id, flow_id=flow_id
+        )
+
+        interaction_id = await self.repository.create_interaction(
+            session_id=session_id,
+            channel=channel,
+            payload={"resume_input": input_payload.model_dump(mode="json")},
+            headers=headers,
+            metadata={},
+            external_message_id=external_message_id,
+            request_id=request_id,
+            trace_id=trace_id,
+        )
+
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.execution_service.link_interaction_to_flow_run_resume",
+            input={
+                "flow_run_id": str(flow_run_id),
+                "interaction_id": str(interaction_id),
+            },
+        ):
+            await self.repository.link_interaction_to_flow_run(
+                interaction_id=interaction_id, flow_run_id=flow_run_id
+            )
+
+        trace_uuid = UUID(trace_id) if trace_id else flow_run.trace_id or uuid4()
+
+        with self.tracer.observe(
+            as_type="event",
+            name="domain.execution.execution_service.start_flow_resume_trace",
+            input={"flow_run_id": str(flow_run_id), "flow_id": str(flow_id)},
+        ):
+            trace_context: TraceContext = self.tracer.start_flow_trace(
+                flow_run_id=flow_run_id,
+                flow_id=flow_id,
+                flow_version_id=flow_version.flow_version_id,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=user_id,
+                external_request_id=request_id,
+                trace_id=trace_uuid,
+                interaction_id=interaction_id,
+                correlation_id=flow_run.correlation_id,
+                channel=channel,
+                external_message_id=external_message_id,
+                graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
+            )
+
+        if trace_context.root_observation_id:
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.execution_service.set_root_observation_id_resume",
+                input={
+                    "flow_run_id": str(flow_run_id),
+                    "root_observation_id": trace_context.root_observation_id or "",
+                },
+            ):
+                await self.repository.set_root_observation_id(
+                    flow_run_id=flow_run_id,
+                    root_observation_id=trace_context.root_observation_id,
+                )
+
+        await self.repository.set_flow_run_status(
+            flow_run_id=flow_run_id,
+            status=RunStatus.RUNNING,
+            canonical_status=FlowRunStatus.RUNNING,
+        )
+
+        resume_to_node_id = graph_state.state.get(
+            "resume_to_node_id"
+        ) or graph_state.state.get("current_node_id")
+        initial_state = graph_state.state.get("state", {})
+        initial_memory = graph_state.state.get("memory", [])
+
+        with self.tracer.flow(
+            trace=trace_context,
+            input={"user_input": input_payload.user_input},
+        ):
+            await self.runtime.run(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                input_payload=input_payload,
+                flow_id=flow_id,
+                flow_version_id=flow_version.flow_version_id,
+                flow_run_id=flow_run_id,
+                correlation_id=flow_run.correlation_id,
+                trace_id=trace_uuid,
+                plan=plan,
+                runtime_policy=runtime_policy,
+                trace_context=trace_context,
+                start_node_id=resume_to_node_id,
+                initial_state=initial_state,
+                initial_memory=initial_memory,
+            )
+
+        flow_run_result = await self.repository.get_flow_run(flow_run_id)
+        if flow_run_result is None:
+            raise NotFoundServiceException(message="flow_run_not_found")
+        return FlowRun.from_model(flow_run_result)
 
     async def create_agent_run(
         self,

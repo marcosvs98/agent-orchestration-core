@@ -1,3 +1,4 @@
+import contextlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -5,8 +6,14 @@ from uuid import uuid4
 import pytest
 
 from domain.execution.repositories.execution_repository import ExecutionRepository
-from domain.execution.schemas.execution import AgentRunCreate, FlowRunCreate, ToolRunCreate
+from domain.execution.schemas.execution import (
+    AgentRunCreate,
+    FlowRunCreate,
+    FlowRunInput,
+    ToolRunCreate,
+)
 from domain.execution.services.execution_service import ExecutionService
+from domain.execution.services.graph_runtime.execution_plan import ExecutionPlan
 from domain.execution.services.state_machine import (
     RunStatus,
     RunLifecycleStateMachine,
@@ -24,6 +31,16 @@ from exceptions.service_exceptions import (
 
 
 class TestExecutionService:
+    class _FakeTracer:
+        def observe(self, *, as_type, name, input, metadata=None):
+            return contextlib.nullcontext()
+
+        def flow(self, *, trace=None, input=None):
+            return contextlib.nullcontext()
+
+        def start_flow_trace(self, **kwargs):
+            return SimpleNamespace(root_observation_id=None)
+
     @pytest.fixture
     def repository(self):
         repo = MagicMock(spec=ExecutionRepository)
@@ -78,6 +95,7 @@ class TestExecutionService:
             idempotency=idempotency_service,
             lifecycle=RunLifecycleStateMachine(),
             limits=limits,
+            tracer=self._FakeTracer(),
         )
         service.llm_executor = MagicMock()
         return service
@@ -208,6 +226,101 @@ class TestExecutionService:
         )
 
         assert result.origin_flow_run_id == origin_flow_run_id
+
+    @pytest.mark.asyncio
+    async def test_resume_flow_run_uses_graph_state_for_start_node(
+        self, execution_service, repository
+    ):
+        flow_run_id = uuid4()
+        flow_version_id = uuid4()
+        flow_id = uuid4()
+        session_id = uuid4()
+        tenant_id = uuid4()
+        correlation_id = uuid4()
+        graph_snapshot_id = uuid4()
+        resume_node_id = "resume-node"
+        plan = ExecutionPlan(
+            start_node_id=resume_node_id,
+            ordered_nodes=[],
+            adjacency_map={},
+            terminal_nodes=set(),
+            structural_hash="hash",
+            nodes={},
+        )
+
+        repository.get_flow_run.return_value = SimpleNamespace(
+            flow_run_id=flow_run_id,
+            origin_flow_run_id=None,
+            flow_version_id=flow_version_id,
+            session_id=session_id,
+            interaction_id=None,
+            status="RUNNING",
+            canonical_status="RUNNING",
+            correlation_id=correlation_id,
+            started_at=None,
+            finished_at=None,
+            waiting_reason=None,
+            waiting_deadline_at=None,
+            input={"user_input": "resume"},
+            output={},
+            error={},
+            failure_reason=None,
+            trace_id=uuid4(),
+            root_observation_id=None,
+            flow_graph_snapshot_id=graph_snapshot_id,
+            execution_plan_hash=None,
+            runtime_policy_hash=None,
+            tool_catalog_hash=None,
+            llm_provider_config_hash=None,
+        )
+        repository.get_flow_context.return_value = (tenant_id, session_id)
+        repository.get_graph_state.return_value = SimpleNamespace(
+            state={
+                "resume_to_node_id": resume_node_id,
+                "state": {"key": "value"},
+                "memory": [{"memory": "entry"}],
+            }
+        )
+        repository.get_flow_version.return_value = SimpleNamespace(
+            flow_id=flow_id, flow_version_id=flow_version_id
+        )
+        repository.get_flow_graph_snapshot_by_flow_version.return_value = SimpleNamespace(
+            graph_hash="hash",
+            flow_graph_snapshot_id=graph_snapshot_id,
+            snapshot={"start_node": resume_node_id, "nodes": {}, "edges": []},
+        )
+        repository.create_interaction.return_value = uuid4()
+        repository.link_interaction_to_flow_run = AsyncMock()
+        repository.set_flow_run_status = AsyncMock()
+        repository.set_root_observation_id = AsyncMock()
+
+        execution_service.tools_service = MagicMock()
+        execution_service.tools_service.list_available_tools_for_execution = AsyncMock(
+            return_value=[]
+        )
+        execution_service.cache_adapter.get = AsyncMock(
+            return_value=plan.model_dump(mode="json")
+        )
+        execution_service.cache_adapter.set = AsyncMock()
+        execution_service.runtime.run = AsyncMock()
+        execution_service.policy_resolver = MagicMock()
+        execution_service.policy_resolver.resolve = AsyncMock(return_value=None)
+
+        result = await execution_service.resume_flow_run(
+            flow_run_id=flow_run_id,
+            input_payload=FlowRunInput(user_input="resume"),
+            channel="http",
+            headers={},
+            external_message_id=None,
+            request_id=None,
+            trace_id=None,
+            user_id=str(tenant_id),
+        )
+
+        assert result.id == flow_run_id
+        execution_service.runtime.run.assert_called_once()
+        _, kwargs = execution_service.runtime.run.call_args
+        assert kwargs["start_node_id"] == resume_node_id
         repository.create_flow_run.assert_called_once()
         call_args = repository.create_flow_run.call_args
         assert call_args.kwargs["origin_flow_run_id"] == origin_flow_run_id

@@ -209,6 +209,49 @@ class ExecutionRepository:
                 )
                 await session.commit()
 
+    async def set_flow_run_status(
+        self,
+        *,
+        flow_run_id: UUID,
+        status: str,
+        canonical_status: str,
+    ) -> None:
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.repository.set_flow_run_status",
+            input={"flow_run_id": str(flow_run_id), "status": status},
+        ):
+            async with self.db.get_session() as session:
+                await session.execute(
+                    sa.update(FlowRunModel)
+                    .where(FlowRunModel.flow_run_id == flow_run_id)
+                    .values(
+                        status=status,
+                        canonical_status=canonical_status,
+                    )
+                )
+                await session.commit()
+
+    async def set_flow_run_output(
+        self,
+        *,
+        flow_run_id: UUID,
+        output: dict,
+    ) -> None:
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.repository.set_flow_run_output",
+            input={"flow_run_id": str(flow_run_id)},
+        ):
+            async with self.db.get_session() as session:
+                await session.execute(
+                    sa.update(FlowRunModel)
+                    .where(FlowRunModel.flow_run_id == flow_run_id)
+                    .values(output=output or {})
+                )
+                await session.commit()
+
+
     async def get_session(self, session_id: UUID) -> SessionModel | None:
         with self.tracer.observe(
             as_type="retriever",
@@ -384,8 +427,10 @@ class ExecutionRepository:
                         session_id=session_id,
                         channel=channel,
                         payload=payload,
+                        output={},
                         headers=headers,
-                        metadata=metadata,
+                        interaction_metadata=metadata,
+                        result_node_run_id=None,
                         external_message_id=external_message_id,
                         request_id=request_id,
                         trace_id=trace_id,
@@ -414,6 +459,11 @@ class ExecutionRepository:
             if instance is None:
                 raise NotFoundServiceException(message="interaction_not_found")
             instance.flow_run_id = flow_run_id
+            await session.execute(
+                sa.update(FlowRunModel)
+                .where(FlowRunModel.flow_run_id == flow_run_id)
+                .values(interaction_id=interaction_id)
+            )
             with self.tracer.observe(
                 as_type="tool",
                 name="domain.execution.repository.link_interaction_to_flow_run",
@@ -422,6 +472,34 @@ class ExecutionRepository:
                     "flow_run_id": str(flow_run_id),
                 },
             ):
+                await session.commit()
+
+    async def set_current_interaction_result_for_flow_run(
+        self,
+        *,
+        flow_run_id: UUID,
+        output: dict,
+        result_node_run_id: UUID | None,
+    ) -> None:
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.repository.set_current_interaction_result_for_flow_run",
+            input={"flow_run_id": str(flow_run_id)},
+        ):
+            async with self.db.get_session() as session:
+                interaction_id_subq = (
+                    select(FlowRunModel.interaction_id)
+                    .where(FlowRunModel.flow_run_id == flow_run_id)
+                    .scalar_subquery()
+                )
+                await session.execute(
+                    sa.update(InteractionModel)
+                    .where(InteractionModel.interaction_id == interaction_id_subq)
+                    .values(
+                        output=output or {},
+                        result_node_run_id=result_node_run_id,
+                    )
+                )
                 await session.commit()
 
     async def get_flow_run(self, flow_run_id: UUID) -> FlowRunModel | None:

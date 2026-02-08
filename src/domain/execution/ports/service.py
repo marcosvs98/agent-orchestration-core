@@ -6,6 +6,7 @@ from domain.execution.schemas.execution import (
     AgentRunCreate,
     FlowRun,
     FlowRunCreate,
+    FlowRunInput,
     ToolRun,
     ToolRunCreate,
 )
@@ -31,6 +32,21 @@ class ExecutionServicePort(ABC):
 
     @abstractmethod
     async def get_flow_run(self, flow_run_id: str):
+        raise NotImplementedServiceException()
+
+    @abstractmethod
+    async def resume_flow_run(
+        self,
+        *,
+        flow_run_id: UUID,
+        input_payload: FlowRunInput | None,
+        channel: str,
+        headers: dict[str, str],
+        external_message_id: str | None,
+        request_id: str | None,
+        trace_id: str | None,
+        user_id: str | None = None,
+    ) -> FlowRun:
         raise NotImplementedServiceException()
 
     @abstractmethod

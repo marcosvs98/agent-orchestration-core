@@ -20,7 +20,11 @@ from domain.execution.services.graph_runtime.execution_plan import (
     CompiledEdge,
 )
 from domain.execution.services.observability.hooks import ExecutionEventHook
-from domain.execution.services.state_machine import FlowRunStatus, NodeRunStatus
+from domain.execution.services.state_machine import (
+    FlowRunStatus,
+    NodeRunStatus,
+    RunStatus,
+)
 from domain.flows.schemas.graph import EdgeKind
 from domain.flows.services.flow_graph_validator import TERMINAL_NODE_TYPES
 from exceptions.service_exceptions import DomainValidationException
@@ -65,6 +69,9 @@ class RuntimeExecutor:
         plan: ExecutionPlan,
         runtime_policy: ResolvedRuntimePolicy | None = None,
         trace_context=None,
+        start_node_id: str | None = None,
+        initial_state: dict[str, object] | None = None,
+        initial_memory: list[dict[str, object]] | None = None,
     ) -> None:
         """Execute a compiled execution plan deterministically, persisting node runs and events."""
         with self.tracer.observe(
@@ -88,6 +95,9 @@ class RuntimeExecutor:
                 plan=plan,
                 runtime_policy=runtime_policy,
                 trace_context=trace_context,
+                start_node_id=start_node_id,
+                initial_state=initial_state,
+                initial_memory=initial_memory,
             )
 
     async def _run_impl(
@@ -104,6 +114,9 @@ class RuntimeExecutor:
         plan: ExecutionPlan,
         runtime_policy: ResolvedRuntimePolicy | None = None,
         trace_context=None,
+        start_node_id: str | None = None,
+        initial_state: dict[str, object] | None = None,
+        initial_memory: list[dict[str, object]] | None = None,
     ) -> None:
         loop_limit = (
             runtime_policy.definition.limits.get(
@@ -128,8 +141,10 @@ class RuntimeExecutor:
             flow_run_id=flow_run_id,
             correlation_id=correlation_id,
             trace_id=trace_id,
-            current_node_id=plan.start_node_id,
+            current_node_id=start_node_id or plan.start_node_id,
             metadata=metadata,
+            state=initial_state or {},
+            memory=initial_memory or [],
         )
         adjacency = plan.adjacency_map
         node_specs = plan.nodes
@@ -274,6 +289,11 @@ class RuntimeExecutor:
             new_memory = list(context.memory)
             if node_result.memory_append:
                 new_memory.append(node_result.memory_append)
+            resume_to_node_id = None
+            if node_result.status == NodeExecutionStatus.NEEDS_INPUT and isinstance(
+                config, dict
+            ):
+                resume_to_node_id = config.get("resume_to_node_id")
 
             if self.hook:
                 await self.hook.on_node_complete(
@@ -317,9 +337,27 @@ class RuntimeExecutor:
                     "current_node_id": context.current_node_id,
                     "state": new_state,
                     "memory": new_memory,
+                    "resume_to_node_id": resume_to_node_id,
                 },
                 last_node_run_id=node_run_id,
             )
+
+            if node_result.status == NodeExecutionStatus.NEEDS_INPUT:
+                await self.repository.set_flow_run_output(
+                    flow_run_id=flow_run_id,
+                    output=node_result.payload or {},
+                )
+                await self.repository.set_current_interaction_result_for_flow_run(
+                    flow_run_id=flow_run_id,
+                    output=node_result.payload or {},
+                    result_node_run_id=node_run_id,
+                )
+                await self.repository.set_flow_run_status(
+                    flow_run_id=flow_run_id,
+                    status=RunStatus.WAITING_INPUT,
+                    canonical_status=FlowRunStatus.WAITING,
+                )
+                return
 
             if node_type in TERMINAL_NODE_TYPES:
                 with self.tracer.observe(
@@ -332,6 +370,11 @@ class RuntimeExecutor:
                         flow_run_id=flow_run_id,
                         status=FlowRunStatus.COMPLETED,
                         output=node_result.payload,
+                    )
+                    await self.repository.set_current_interaction_result_for_flow_run(
+                        flow_run_id=flow_run_id,
+                        output=node_result.payload or {},
+                        result_node_run_id=node_run_id,
                     )
                     if self.hook:
                         await self.hook.on_flow_complete(

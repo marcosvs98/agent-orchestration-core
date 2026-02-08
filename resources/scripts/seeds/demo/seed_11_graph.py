@@ -34,6 +34,7 @@ from seeds.demo.ids import (
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_EXEC_ID,
+    NODE_CLARIFICATION_ID,
     PRINCIPAL_SYSTEM,
 )
 
@@ -86,7 +87,12 @@ async def seed_graph() -> None:
                                 "input_schema": {},
                                 "output_schema": {
                                     "type": "object",
-                                    "required": ["payload", "missing_fields"],
+                                "required": [
+                                    "payload",
+                                    "missing_fields",
+                                    "missing_fields_count",
+                                    "execution_ready",
+                                ],
                                     "properties": {
                                         "payload": {
                                         "type": "object"
@@ -94,12 +100,38 @@ async def seed_graph() -> None:
                                         "missing_fields": {
                                         "type": "array",
                                         "items": { "type": "string" }
+                                    },
+                                    "missing_fields_count": {
+                                    "type": "integer"
+                                    },
+                                    "execution_ready": {
+                                    "type": "boolean"
                                         }
                                     }
                                 },
                             }
                         },
                     ),
+                str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
+                    type="ClarificationNode",
+                    config={
+                        "resume_to_node_id": str(NODE_SLOT_ID),
+                        "llm": {
+                            "task_type": "CLARIFICATION",
+                            "provider": "OPENAI",
+                            "model_alias": "fake-model",
+                            "input": {},
+                            "input_schema": {},
+                            "output_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "system_output": {"type": "string"},
+                                },
+                                "required": ["system_output"],
+                            },
+                        },
+                    },
+                ),
                 str(NODE_TOOL_EXEC_ID): FlowGraphNodeSpec(
                     type="ToolExecutionNode", config={}
                 ),
@@ -133,6 +165,18 @@ async def seed_graph() -> None:
                 FlowGraphEdge(
                     from_node=str(NODE_SLOT_ID),
                     to_node=str(NODE_TOOL_EXEC_ID),
+                    condition="missing_fields_count == 0",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_SLOT_ID),
+                    to_node=str(NODE_CLARIFICATION_ID),
+                    condition="missing_fields_count > 0",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_CLARIFICATION_ID),
+                    to_node=str(NODE_RESPONSE_ID),
                     condition="true",
                     edge_kind=EdgeKind.NORMAL,
                 ),

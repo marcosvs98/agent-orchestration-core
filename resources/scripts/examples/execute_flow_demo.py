@@ -85,6 +85,9 @@ def get_auth_token() -> str:
 
 
 def execute_flow_demo() -> None:
+
+    user_input = input("Enter a user input: ") or "Gastei 1000 reais no mercado na categoria compras para casa, pago com cartão, usando a conta PF do banco XP, no cartão XP, no dia 01/01/2026"
+
     conn = http.client.HTTPConnection("localhost", 8000)
 
     session_id = str(uuid.uuid4())
@@ -98,7 +101,7 @@ def execute_flow_demo() -> None:
             "flow_version_id": str(FLOW_VERSION_V1_ID),
             "origin_flow_run_id": None,
             "correlation_id": correlation_id,
-            "input": {"user_input": "Gastei 1000 reais no mercado na categoria compras para casa, pago com cartão, usando a conta PF do banco XP, no cartão XP, no dia 01/01/2026"},
+            "input": {"user_input": user_input},
         }
     )
 
@@ -130,7 +133,8 @@ def execute_flow_demo() -> None:
         if res.status == 201:
             response_json = json.loads(response_text)
             flow_run_id = response_json.get("id")
-            print(f"\nFlow run created successfully!")
+            print(f"\nSystem Output: {response_json.get('output').get('system_output')}")
+            print(f"Flow run created successfully!")
             print(f"Flow Run ID: {flow_run_id}")
             print(f"\nYou can check the flow run status with:")
             print(f"  GET /core/v1/executions/flow-runs/{flow_run_id}")
