@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from typing import Iterator, Protocol, Dict, Any
 from uuid import UUID
 
@@ -61,7 +62,7 @@ class RuntimeTracerPort(Protocol):
         input: Dict[str, Any],
         metadata: Dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> Iterator[ObservationHandle]: ...
+    ) -> AbstractContextManager[ObservationHandle]: ...
 
     def flush(self) -> None: ...
 

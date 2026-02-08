@@ -12,7 +12,6 @@ from langfuse import Langfuse, propagate_attributes
 from settings import (
     APPLICATION_VERSION,
     ENVIRONMENT,
-    TRACING_ENABLE,
     LANGFUSE_HOST,
     LANGFUSE_PUBLIC_KEY,
     LANGFUSE_SECRET_KEY,

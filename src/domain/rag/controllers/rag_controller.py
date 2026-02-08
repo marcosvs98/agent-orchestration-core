@@ -1,16 +1,27 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query, status
 
 from domain.common.schemas.change import ChangeRequest
-from domain.rag.schemas.rag import RagConfig, RagConfigCreate, VectorStore
+from domain.rag.schemas.rag import (
+    RagChunk,
+    RagConfig,
+    RagConfigCreate,
+    RagDocument,
+    RagDocumentCreate,
+    VectorStore,
+)
 from domain.rag.services.rag_service import RagService
+from domain.rag.services.rag_runtime_service import RagRuntimeService
 from utils.auth import AuthContext, get_auth_context
 
 
 class RagController:
     """HTTP controller for RAG configuration."""
 
-    def __init__(self, service: RagService) -> None:
+    def __init__(self, service: RagService, runtime_service: RagRuntimeService) -> None:
         self.service = service
+        self.runtime_service = runtime_service
         self.router = APIRouter(
             prefix="/core/v1",
             tags=["rag"],
@@ -56,6 +67,25 @@ class RagController:
             self.list_vector_stores,
             methods=["GET"],
             response_model=list[VectorStore],
+        )
+        r(
+            "/rag-configs/{rag_config_id}/documents:ingest",
+            self.ingest_document,
+            methods=["POST"],
+            response_model=RagDocument,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/rag-documents",
+            self.list_documents,
+            methods=["GET"],
+            response_model=list[RagDocument],
+        )
+        r(
+            "/rag-documents/{document_id}/chunks",
+            self.list_chunks,
+            methods=["GET"],
+            response_model=list[RagChunk],
         )
 
     async def list_rag_configs(
@@ -122,3 +152,34 @@ class RagController:
         self, auth: AuthContext = Depends(get_auth_context)
     ) -> list[VectorStore]:
         return await self.service.list_vector_stores()
+
+    async def ingest_document(
+        self,
+        rag_config_id: str,
+        payload: RagDocumentCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagDocument:
+        return await self.runtime_service.ingest_document(
+            tenant_id=auth.tenant_id,
+            rag_config_id=UUID(rag_config_id),
+            document=payload,
+        )
+
+    async def list_documents(
+        self,
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[RagDocument]:
+        return await self.runtime_service.list_documents(
+            tenant_id=auth.tenant_id, limit=limit
+        )
+
+    async def list_chunks(
+        self,
+        document_id: str,
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[RagChunk]:
+        return await self.runtime_service.list_chunks(
+            document_id=UUID(document_id), limit=limit
+        )

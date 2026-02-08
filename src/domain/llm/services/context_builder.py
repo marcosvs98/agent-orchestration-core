@@ -12,6 +12,8 @@ from domain.llm.schemas.contexts import (
     ResponseFormattingContext,
     SlotFillingContext,
 )
+from domain.rag.schemas.rag import RagContext
+from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.tools.repositories.tools_repository import ToolsRepository
 
 
@@ -21,9 +23,11 @@ class ContextBuilder:
         agents_repository: AgentsRepository,
         tools_repository: ToolsRepository,
         tracer: RuntimeTracerPort,
+        rag_runtime_service: RagRuntimeService | None = None,
     ):
         self.agents_repository = agents_repository
         self.tools_repository = tools_repository
+        self.rag_runtime_service = rag_runtime_service
         self.tracer = tracer
 
     async def build_intent_context(
@@ -100,6 +104,7 @@ class ContextBuilder:
         agent_version_id: UUID,
         tool_response: dict,
         original_intent: str,
+        user_input: str,
     ) -> ResponseFormattingContext:
         with self.tracer.observe(
             as_type="retriever",
@@ -117,10 +122,24 @@ class ContextBuilder:
                 if agent_version.persona_config
                 else PersonaConfig()
             )
+        rag_context: RagContext | None = None
+        if (
+            self.rag_runtime_service
+            and agent_version
+            and agent_version.rag_config_id
+            and user_input
+        ):
+            rag_context = await self.rag_runtime_service.get_context(
+                tenant_id=agent_version.tenant_id,
+                rag_config_id=agent_version.rag_config_id,
+                user_input=user_input,
+            )
         return ResponseFormattingContext(
             persona=persona,
             tool_response=tool_response,
             original_intent=original_intent,
+            user_input=user_input,
+            rag_context=rag_context,
         )
 
     async def build_clarification_context(

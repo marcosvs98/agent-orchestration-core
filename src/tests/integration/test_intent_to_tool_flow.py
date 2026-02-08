@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import pytest
 from uuid import uuid4
 
@@ -14,12 +15,19 @@ from domain.llm.schemas.contexts import (
 from domain.tools.repositories.tools_repository import ToolsRepository
 
 
+class _FakeTracer:
+    def observe(self, *, as_type, name, input, metadata=None):
+        return contextlib.nullcontext()
+
+
 @pytest.mark.asyncio
 async def test_context_builder_builds_intent_context(
     agents_repository: AgentsRepository,
     tools_repository: ToolsRepository,
 ):
-    context_builder = ContextBuilder(agents_repository, tools_repository)
+    context_builder = ContextBuilder(
+        agents_repository, tools_repository, tracer=_FakeTracer()
+    )
 
     agent_version_id = uuid4()
     user_input = "Quero consultar meu saldo"
@@ -39,7 +47,9 @@ async def test_context_builder_builds_slot_filling_context(
     agents_repository: AgentsRepository,
     tools_repository: ToolsRepository,
 ):
-    context_builder = ContextBuilder(agents_repository, tools_repository)
+    context_builder = ContextBuilder(
+        agents_repository, tools_repository, tracer=_FakeTracer()
+    )
 
     agent_version_id = uuid4()
     intent = "consult_balance"
@@ -63,7 +73,9 @@ async def test_context_builder_builds_response_formatting_context(
     agents_repository: AgentsRepository,
     tools_repository: ToolsRepository,
 ):
-    context_builder = ContextBuilder(agents_repository, tools_repository)
+    context_builder = ContextBuilder(
+        agents_repository, tools_repository, tracer=_FakeTracer()
+    )
 
     agent_version_id = uuid4()
     tool_response = {"balance": 1000.0}
@@ -73,9 +85,11 @@ async def test_context_builder_builds_response_formatting_context(
         agent_version_id=agent_version_id,
         tool_response=tool_response,
         original_intent=original_intent,
+        user_input="user input",
     )
 
     assert isinstance(context, ResponseFormattingContext)
     assert context.tool_response == tool_response
     assert context.original_intent == original_intent
+    assert context.user_input == "user input"
     assert isinstance(context.persona, PersonaConfig)

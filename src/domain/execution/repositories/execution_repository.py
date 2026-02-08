@@ -251,7 +251,6 @@ class ExecutionRepository:
                 )
                 await session.commit()
 
-
     async def get_session(self, session_id: UUID) -> SessionModel | None:
         with self.tracer.observe(
             as_type="retriever",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from domain.prompts.schemas.prompt import (
     ResolvedPrompt,
 )
 from domain.llm.schemas.contexts import IntentDetectionContext
+from domain.rag.schemas.rag import RagGenerationContract
 from domain.prompts.services.prompt_service import PromptService
 from exceptions.service_exceptions import DomainValidationException
 from pydantic import BaseModel
@@ -136,10 +138,72 @@ class PromptResolver:
                 agent_version_id=agent_version_id,
                 tool_response=input_payload.get("tool_response", {}),
                 original_intent=input_payload.get("original_intent", ""),
+                user_input=input_payload.get("user_input", ""),
             )
-            return self._render_simple(template, context)
+            rendered = self._render_simple(template, context)
+            if context.rag_context:
+                rendered = self._append_rag_contract(
+                    rendered, context.rag_context, context.user_input
+                )
+            return rendered
 
         return template
+
+    def _format_no_context_instruction(self, behavior: str) -> str:
+        if behavior == "ASK_CLARIFICATION":
+            return (
+                "If the context is insufficient, ask a concise clarification question "
+                "and do not answer."
+            )
+        return (
+            'If the context is insufficient, answer with: "I do not have enough '
+            'information to answer this question."'
+        )
+
+    def _append_rag_contract(
+        self, prompt: str, rag_context: Any, user_input: str
+    ) -> str:
+        context_items = rag_context.context_items if rag_context else []
+        context_payload = [
+            {
+                "content": item.content,
+                "score": item.score,
+                "metadata": item.metadata or {},
+            }
+            for item in context_items
+        ]
+        generation_contract = (
+            rag_context.generation_contract
+            if rag_context and rag_context.generation_contract
+            else RagGenerationContract()
+        )
+        retrieval_status = {
+            "eligible": bool(getattr(rag_context, "eligible", False)),
+            "reason": getattr(rag_context, "reason", "UNKNOWN"),
+        }
+        extrapolation_instruction = (
+            "You may extrapolate beyond the retrieved context, but explicitly label "
+            "assumptions."
+            if generation_contract.allow_extrapolation
+            else "Do not extrapolate beyond the retrieved context."
+        )
+        contract = (
+            "\n\n## Retrieved Context\n"
+            f"{json.dumps(context_payload, ensure_ascii=True)}\n\n"
+            "## Retrieval Status\n"
+            f"{json.dumps(retrieval_status, ensure_ascii=True)}\n\n"
+            "## Contract\n"
+            f"{extrapolation_instruction} "
+            f"{self._format_no_context_instruction(generation_contract.no_context_behavior)}"
+        )
+        if user_input:
+            contract = (
+                contract
+                + "\n\n"
+                + "## User Input\n"
+                + json.dumps({"user_input": user_input}, ensure_ascii=True)
+            )
+        return prompt + contract
 
     def _load_schema_from_prompt(self, schema_id: str) -> Dict[str, Any] | None:
         return None
@@ -203,6 +267,7 @@ class PromptResolver:
                 input_payload = {
                     "tool_response": tool_response,
                     "original_intent": original_intent,
+                    "user_input": (context.input_payload or {}).get("user_input", ""),
                 }
 
             rendered_prompt = prompt.template_text

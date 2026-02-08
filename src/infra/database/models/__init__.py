@@ -43,7 +43,13 @@ from infra.database.models.ai_policy import (
     NodeAIExecutionPolicyBinding,
 )
 from infra.database.models.tool import AgentVersionToolBinding, Tool, ToolConfig
-from infra.database.models.rag import RagConfig, VectorStore
+from infra.database.models.rag import (
+    RagConfig,
+    VectorStore,
+    RagDocument,
+    RagChunk,
+    RagQueryCache,
+)
 from infra.database.models.execution import (
     AgentRun,
     FlowRun,
@@ -100,6 +106,9 @@ __all__ = [
     "AgentVersionToolBinding",
     "VectorStore",
     "RagConfig",
+    "RagDocument",
+    "RagChunk",
+    "RagQueryCache",
     "FlowRun",
     "NodeRun",
     "AgentRun",

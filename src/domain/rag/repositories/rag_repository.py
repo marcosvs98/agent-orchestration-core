@@ -1,11 +1,17 @@
 from uuid import UUID
 
-from sqlalchemy import select
+import sqlalchemy as sa
+from sqlalchemy import select, update
 
 from domain.common.schemas.versioning import VersionStatus
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
 from infra.database.models.rag.rag_config import RagConfig as RagConfigModel
+from infra.database.models.rag.rag_document import RagDocument as RagDocumentModel
+from infra.database.models.rag.rag_chunk import RagChunk as RagChunkModel
+from infra.database.models.rag.rag_query_cache import (
+    RagQueryCache as RagQueryCacheModel,
+)
 from infra.database.models.rag.vector_store import VectorStore as VectorStoreModel
 
 
@@ -152,3 +158,142 @@ class RagRepository:
                 raise NotFoundServiceException(message="rag_config_not_found")
             instance.status = str(status)
             await session.commit()
+
+    async def get_document_by_hash(
+        self, *, tenant_id: UUID, content_hash: str
+    ) -> RagDocumentModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(RagDocumentModel).where(
+                    RagDocumentModel.tenant_id == tenant_id,
+                    RagDocumentModel.content_hash == content_hash,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def create_document(
+        self,
+        *,
+        tenant_id: UUID,
+        source: str | None,
+        doc_type: str | None,
+        content_hash: str,
+        content: str | None,
+        version: str | None,
+        metadata: dict[str, object] | None,
+    ) -> RagDocumentModel:
+        async with self.db.get_session() as session:
+            instance = RagDocumentModel(
+                tenant_id=tenant_id,
+                source=source,
+                doc_type=doc_type,
+                content_hash=content_hash,
+                content=content,
+                version=version,
+                doc_metadata=metadata,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def list_documents(
+        self, *, tenant_id: UUID, limit: int
+    ) -> list[RagDocumentModel]:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(RagDocumentModel)
+                .where(RagDocumentModel.tenant_id == tenant_id)
+                .order_by(RagDocumentModel.created_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def list_chunks(
+        self, *, document_id: UUID, limit: int
+    ) -> list[RagChunkModel]:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(RagChunkModel)
+                .where(RagChunkModel.document_id == document_id)
+                .order_by(RagChunkModel.chunk_index.asc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def create_chunks(self, *, chunks: list[RagChunkModel]) -> None:
+        async with self.db.get_session() as session:
+            session.add_all(chunks)
+            await session.commit()
+
+    async def get_query_cache(
+        self, *, tenant_id: UUID, query_hash: str
+    ) -> RagQueryCacheModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(RagQueryCacheModel).where(
+                    RagQueryCacheModel.tenant_id == tenant_id,
+                    RagQueryCacheModel.query_hash == query_hash,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def save_query_cache(
+        self, *, cache_entry: RagQueryCacheModel
+    ) -> RagQueryCacheModel:
+        async with self.db.get_session() as session:
+            session.add(cache_entry)
+            await session.commit()
+            await session.refresh(cache_entry)
+            return cache_entry
+
+    async def update_query_cache_usage(self, *, cache_id: UUID) -> None:
+        async with self.db.get_session() as session:
+            await session.execute(
+                update(RagQueryCacheModel)
+                .where(RagQueryCacheModel.query_cache_id == cache_id)
+                .values(
+                    use_count=RagQueryCacheModel.use_count + 1,
+                    last_used_at=sa.func.now(),
+                )
+            )
+            await session.commit()
+
+    async def search_similar_chunks(
+        self,
+        *,
+        tenant_id: UUID,
+        query_embedding: list[float],
+        top_k: int,
+        similarity_threshold: float,
+        filters: dict[str, object] | None,
+    ) -> list[tuple[RagChunkModel, float]]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(
+                    RagChunkModel,
+                    RagChunkModel.embedding.cosine_distance(query_embedding).label(
+                        "distance"
+                    ),
+                )
+                .join(
+                    RagDocumentModel,
+                    RagChunkModel.document_id == RagDocumentModel.document_id,
+                )
+                .where(RagDocumentModel.tenant_id == tenant_id)
+            )
+            if filters:
+                if filters.get("source"):
+                    stmt = stmt.where(RagDocumentModel.source == filters["source"])
+                if filters.get("doc_type"):
+                    stmt = stmt.where(RagDocumentModel.doc_type == filters["doc_type"])
+            stmt = stmt.order_by(sa.text("distance asc")).limit(top_k)
+            result = await session.execute(stmt)
+            rows = result.all()
+            items: list[tuple[RagChunkModel, float]] = []
+            for chunk, distance in rows:
+                score = 1.0 - float(distance)
+                if score < similarity_threshold:
+                    continue
+                items.append((chunk, score))
+            return items

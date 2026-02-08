@@ -4,6 +4,8 @@ import json
 from uuid import UUID, uuid4
 from typing import Any
 
+import settings
+
 from domain.execution.services.graph_runtime.execution_plan import ExecutionPlan
 from domain.execution.schemas.trace import TraceContext
 from pydantic import BaseModel, ValidationError
@@ -66,6 +68,7 @@ from domain.governance.repositories.llm_model_mapping_repository import (
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from domain.governance.services.execution_limit_service import ExecutionLimitService
 from adapters.http.hardened_http_client import HardenedHttpClient
+from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.cache.redis_adapter import RedisAdapter
 from domain.prompts.services.prompt_service import PromptService
@@ -75,6 +78,8 @@ from domain.agents.schemas.agents import PersonaConfig
 from application.prompts.prompt_resolver import PromptResolver
 from application.prompts.system_prompt_compiler import SystemPromptCompiler
 from domain.llm.services.context_builder import ContextBuilder
+from domain.rag.repositories.rag_repository import RagRepository
+from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
@@ -148,8 +153,23 @@ class ExecutionService(ExecutionServicePort):
             guardrail_engine=guardrail_engine,
             tracer=self.tracer,
         )
+        rag_repository = RagRepository(repository.db)
+        embedding_adapter = OpenAIEmbeddingAdapter(
+            api_key=settings.OPENAI_API_KEY,
+            model="text-embedding-3-small",
+            dimension=1536,
+            tracer=tracer,
+        )
+        rag_runtime_service = RagRuntimeService(
+            repository=rag_repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+        )
         context_builder = ContextBuilder(
-            agents_repository, self.tools_repository, tracer=tracer
+            agents_repository,
+            self.tools_repository,
+            rag_runtime_service=rag_runtime_service,
+            tracer=tracer,
         )
         system_prompt_compiler = SystemPromptCompiler(tracer)
         prompt_resolver = PromptResolver(
@@ -1223,9 +1243,7 @@ class ExecutionService(ExecutionServicePort):
                 )
                 raise
 
-        tool_config = await self.repository.get_tool_config(
-            payloadtool_run.tool_config_id
-        )
+        tool_config = await self.repository.get_tool_config(tool_run.tool_config_id)
         if tool_config is None:
             raise NotFoundServiceException(message="tool_config_not_found")
         if tool_config.status != VersionStatus.PUBLISHED:

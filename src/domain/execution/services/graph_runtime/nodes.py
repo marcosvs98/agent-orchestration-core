@@ -285,7 +285,9 @@ class ParamExtractionNode(NodeExecutor):
             execution_ready = missing_fields_count == 0
             node_payload = {
                 "payload": payload,
-                "missing_fields": missing_fields if isinstance(missing_fields, list) else [],
+                "missing_fields": missing_fields
+                if isinstance(missing_fields, list)
+                else [],
                 "missing_fields_count": missing_fields_count,
                 "execution_ready": execution_ready,
             }
@@ -314,7 +316,9 @@ class ParamExtractionNode(NodeExecutor):
         execution_ready = missing_fields_count == 0
         node_payload = {
             "payload": payload.get("extracted_params", {}),
-            "missing_fields": missing_fields if isinstance(missing_fields, list) else [],
+            "missing_fields": missing_fields
+            if isinstance(missing_fields, list)
+            else [],
             "missing_fields_count": missing_fields_count,
             "execution_ready": execution_ready,
         }
@@ -347,7 +351,6 @@ class ToolExecutionNode(NodeExecutor):
         self.tool_orchestrator = tool_orchestrator
         self.execution_repository = execution_repository
         self.tracer = tracer
-
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None

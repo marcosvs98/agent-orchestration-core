@@ -4,11 +4,107 @@ from pydantic import BaseModel
 
 
 class VectorStore(BaseModel):
+    """Represent an available vector store entry."""
+
     id: UUID
     name: str | None = None
 
 
+class RagEmbeddingOptions(BaseModel):
+    """Define embedding provider and model defaults for RAG."""
+
+    provider: str = "OPENAI"
+    model_alias: str = "text-embedding-3-small"
+    dimension: int = 1536
+
+
+class RagChunkingOptions(BaseModel):
+    """Define chunking limits and overlap for ingestion."""
+
+    target_tokens: int = 500
+    overlap_tokens: int = 50
+    max_chunks_per_document: int = 100
+    max_document_chars: int = 100000
+
+
+class RagRetrievalOptions(BaseModel):
+    """Define retrieval limits and filters for similarity search."""
+
+    top_k: int = 5
+    similarity_threshold: float = 0.85
+    filters: dict[str, object] | None = None
+
+
+class RagGenerationContract(BaseModel):
+    """Define how generation should behave when context is insufficient."""
+
+    allow_extrapolation: bool = False
+    no_context_behavior: str = "FALLBACK_MESSAGE"
+
+
+class RagConfigOptions(BaseModel):
+    """Define the full RAG options contract."""
+
+    embedding: RagEmbeddingOptions = RagEmbeddingOptions()
+    chunking: RagChunkingOptions = RagChunkingOptions()
+    retrieval: RagRetrievalOptions = RagRetrievalOptions()
+    generation_contract: RagGenerationContract = RagGenerationContract()
+
+
+class RagContextItem(BaseModel):
+    """Represent a retrieved context item used for generation."""
+
+    document_id: UUID
+    chunk_id: UUID
+    content: str
+    score: float
+    metadata: dict[str, object] | None = None
+
+
+class RagContext(BaseModel):
+    """Represent the retrieval outcome used by the generator."""
+
+    context_items: list[RagContextItem]
+    context_summary: str | None = None
+    eligible: bool
+    reason: str
+    generation_contract: RagGenerationContract | None = None
+
+
+class RagDocumentCreate(BaseModel):
+    """Define the payload to ingest a document into the RAG store."""
+
+    source: str
+    doc_type: str
+    content: str
+    version: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+class RagDocument(BaseModel):
+    """Represent a document stored in the RAG repository."""
+
+    id: UUID
+    source: str | None = None
+    doc_type: str | None = None
+    content_hash: str
+    metadata: dict[str, object] | None = None
+
+
+class RagChunk(BaseModel):
+    """Represent a chunk stored in the RAG repository."""
+
+    id: UUID
+    document_id: UUID
+    chunk_index: int
+    content: str
+    score: float | None = None
+    metadata: dict[str, object] | None = None
+
+
 class RagConfig(BaseModel):
+    """Represent a RAG configuration instance."""
+
     id: UUID
     vector_store_id: UUID
     options: dict[str, object] | None = None
@@ -20,6 +116,8 @@ class RagConfig(BaseModel):
 
 
 class RagConfigCreate(BaseModel):
+    """Define the payload to create a RAG configuration."""
+
     vector_store_id: UUID
     options: dict[str, object] | None = None
     source_version_id: UUID | None = None

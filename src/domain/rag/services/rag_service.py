@@ -12,7 +12,12 @@ from domain.governance.schemas.authoring_events import (
 )
 from domain.rag.ports.service import RagServicePort
 from domain.rag.repositories.rag_repository import RagRepository
-from domain.rag.schemas.rag import RagConfig, RagConfigCreate, VectorStore
+from domain.rag.schemas.rag import (
+    RagConfig,
+    RagConfigCreate,
+    RagConfigOptions,
+    VectorStore,
+)
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
@@ -66,6 +71,9 @@ class RagService(RagServicePort):
         rag_config_create: RagConfigCreate,
         principal_id: str,
     ) -> RagConfig:
+        options = RagConfigOptions.model_validate(
+            rag_config_create.options or {}
+        ).model_dump(mode="json")
         vector_store = await self.repository.get_vector_store(
             rag_config_create.vector_store_id
         )
@@ -75,7 +83,7 @@ class RagService(RagServicePort):
             tenant_id=tenant_id,
             source_version_id=rag_config_create.source_version_id,
             vector_store_id=rag_config_create.vector_store_id,
-            options=rag_config_create.options,
+            options=options,
             version_major=rag_config_create.version_major,
             version_minor=rag_config_create.version_minor,
             version_patch=rag_config_create.version_patch,

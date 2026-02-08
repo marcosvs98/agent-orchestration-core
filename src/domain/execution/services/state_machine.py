@@ -36,16 +36,11 @@ class ExecutionStateMachine:
         self.tracer = tracer
 
     def validate_transition(self, current: str, target: str) -> None:
-        cm = (
-            self.tracer.observe(
-                as_type="guardrail",
-                name="domain.execution.state_machine.validate_transition",
-                input={"current": current, "target": target},
-            )
-            if self.tracer
-            else contextlib.nullcontext()
-        )
-        with cm:
+        with self.tracer.observe(
+            as_type="guardrail",
+            name="domain.execution.state_machine.validate_transition",
+            input={"current": current, "target": target},
+        ):
             allowed = ALLOWED_TRANSITIONS.get(str(current), set())
             if target not in allowed:
                 raise InvalidTransitionException(
@@ -149,9 +144,10 @@ class RunLifecycleStateMachine:
         return self.tracer.observe(as_type="guardrail", name=name, input=input_dict)
 
     def validate_flow(self, current: FlowRunStatus, target: FlowRunStatus) -> None:
-        with self._guardrail(
-            "domain.execution.state_machine.validate_flow",
-            {"current": str(current), "target": str(target)},
+        with self.tracer.observe(
+            as_type="guardrail",
+            name="domain.execution.state_machine.validate_flow",
+            input={"current": str(current), "target": str(target)},
         ):
             if target not in self.flow_transitions.get(current, set()):
                 raise InvalidTransitionException(
@@ -159,9 +155,10 @@ class RunLifecycleStateMachine:
                 )
 
     def validate_node(self, current: NodeRunStatus, target: NodeRunStatus) -> None:
-        with self._guardrail(
-            "domain.execution.state_machine.validate_node",
-            {"current": str(current), "target": str(target)},
+        with self.tracer.observe(
+            as_type="guardrail",
+            name="domain.execution.state_machine.validate_node",
+            input={"current": str(current), "target": str(target)},
         ):
             if target not in self.node_transitions.get(current, set()):
                 raise InvalidTransitionException(
@@ -169,9 +166,10 @@ class RunLifecycleStateMachine:
                 )
 
     def validate_agent(self, current: AgentRunStatus, target: AgentRunStatus) -> None:
-        with self._guardrail(
-            "domain.execution.state_machine.validate_agent",
-            {"current": str(current), "target": str(target)},
+        with self.tracer.observe(
+            as_type="guardrail",
+            name="domain.execution.state_machine.validate_agent",
+            input={"current": str(current), "target": str(target)},
         ):
             if target not in self.agent_transitions.get(current, set()):
                 raise InvalidTransitionException(
@@ -179,9 +177,10 @@ class RunLifecycleStateMachine:
                 )
 
     def validate_tool(self, current: ToolRunStatus, target: ToolRunStatus) -> None:
-        with self._guardrail(
-            "domain.execution.state_machine.validate_tool",
-            {"current": str(current), "target": str(target)},
+        with self.tracer.observe(
+            as_type="guardrail",
+            name="domain.execution.state_machine.validate_tool",
+            input={"current": str(current), "target": str(target)},
         ):
             if target not in self.tool_transitions.get(current, set()):
                 raise InvalidTransitionException(

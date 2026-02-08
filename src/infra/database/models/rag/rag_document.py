@@ -1,0 +1,38 @@
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.sql import func
+
+from infra.database.models.base import ORMBaseModel, uuid_pk
+
+
+class RagDocument(ORMBaseModel):
+    """Store documents ingested into the RAG pipeline."""
+
+    __tablename__ = "rag_document"
+
+    document_id = uuid_pk()
+    tenant_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tenant.tenant_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    source = Column(String(length=255), nullable=True)
+    doc_type = Column(String(length=128), nullable=True)
+    content_hash = Column(String(length=128), nullable=False)
+    content = Column(Text(), nullable=True)
+    version = Column(String(length=64), nullable=True)
+    doc_metadata = Column("metadata", JSONB, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "content_hash",
+            name="uq_rag_document_tenant_id_content_hash",
+        ),
+    )

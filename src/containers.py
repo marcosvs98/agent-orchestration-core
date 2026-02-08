@@ -4,6 +4,7 @@ import settings
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
+from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from infra.database import DatabaseConnection, async_session, engine
 
 from domain.tenants.controllers.tenants_controller import TenantsController
@@ -24,6 +25,7 @@ from domain.ai_policy.services.ai_service import AIService
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.rag.controllers.rag_controller import RagController
 from domain.rag.services.rag_service import RagService
+from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.execution.controllers.execution_controller import ExecutionController
 from domain.execution.controllers.execution_plane_controller import (
@@ -195,6 +197,7 @@ class AIPolicyContainer(containers.DeclarativeContainer):
 
 class RAGContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
 
     rag_repository = providers.Factory(
         RagRepository,
@@ -209,7 +212,22 @@ class RAGContainer(containers.DeclarativeContainer):
         repository=rag_repository,
         authoring_events=authoring_event_repository,
     )
-    rag_controller = providers.Factory(RagController, service=rag_service)
+    embedding_adapter = providers.Factory(
+        OpenAIEmbeddingAdapter,
+        api_key=settings.OPENAI_API_KEY,
+        model="text-embedding-3-small",
+        dimension=1536,
+        tracer=adapters.tracer,
+    )
+    rag_runtime_service = providers.Factory(
+        RagRuntimeService,
+        repository=rag_repository,
+        embedding_adapter=embedding_adapter,
+        tracer=adapters.tracer,
+    )
+    rag_controller = providers.Factory(
+        RagController, service=rag_service, runtime_service=rag_runtime_service
+    )
 
 
 class ExecutionContainer(containers.DeclarativeContainer):
@@ -352,7 +370,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     agents = providers.Container(AgentsContainer, core=core, adapters=adapters)
     tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
     ai_policy = providers.Container(AIPolicyContainer, core=core, adapters=adapters)
-    rag = providers.Container(RAGContainer, core=core)
+    rag = providers.Container(RAGContainer, core=core, adapters=adapters)
     execution = providers.Container(
         ExecutionContainer, core=core, adapters=adapters, tools=tools
     )
