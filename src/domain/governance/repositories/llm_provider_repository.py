@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
 from infra.database.models.governance.llm_provider_config import (
     LLMProviderConfig as LLMProviderConfigModel,
@@ -24,20 +25,38 @@ class LLMProviderRepository:
     async def get_active_config(
         self, *, tenant_id: UUID, provider: str
     ) -> Optional[LLMProviderConfigModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.governance.llm_provider_repository.get_active_config",
-            input={"tenant_id": str(tenant_id), "provider": provider},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(LLMProviderConfigModel).where(
-                        LLMProviderConfigModel.tenant_id == tenant_id,
-                        LLMProviderConfigModel.provider == provider,
-                        LLMProviderConfigModel.status == "ACTIVE",
+        async with self.db.get_session() as session:
+            stmt = select(LLMProviderConfigModel).where(
+                LLMProviderConfigModel.tenant_id == tenant_id,
+                LLMProviderConfigModel.provider == provider,
+                LLMProviderConfigModel.status == "ACTIVE",
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.llm_provider_repository.get_active_config",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "provider": provider,
+                    },
+                },
+                metadata={"retriever_name": "get_active_config"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                config = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if config else 0,
+                            "found": config is not None,
+                        }
                     )
-                )
-                return result.scalar_one_or_none()
+
+                return config
 
     async def upsert_config(
         self,
@@ -50,21 +69,41 @@ class LLMProviderRepository:
         created_by: str,
     ) -> LLMProviderConfigModel:
         async with self.db.get_session() as session:
+            stmt = (
+                select(LLMProviderConfigModel)
+                .where(
+                    LLMProviderConfigModel.tenant_id == tenant_id,
+                    LLMProviderConfigModel.provider == provider,
+                    LLMProviderConfigModel.status == status,
+                )
+                .with_for_update()
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.governance.llm_provider_repository.get_existing_config",
-                input={"tenant_id": str(tenant_id), "provider": provider},
-            ):
-                result = await session.execute(
-                    select(LLMProviderConfigModel)
-                    .where(
-                        LLMProviderConfigModel.tenant_id == tenant_id,
-                        LLMProviderConfigModel.provider == provider,
-                        LLMProviderConfigModel.status == status,
-                    )
-                    .with_for_update()
-                )
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "provider": provider,
+                        "status": status,
+                    },
+                },
+                metadata={"retriever_name": "get_existing_config"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance:
                 with self.tracer.observe(
                     as_type="tool",

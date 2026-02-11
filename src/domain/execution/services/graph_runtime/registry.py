@@ -10,6 +10,7 @@ from domain.execution.services.graph_runtime.nodes import (
     ParamExtractionNode,
     ResponseNode,
     ToolExecutionNode,
+    UserContextEnrichmentNode,
 )
 from domain.execution.services.graph_runtime.types import NodeExecutor
 from domain.llm.ports.llm_executor import LLMExecutorPort
@@ -37,6 +38,7 @@ class NodeRegistry:
             ToolExecutionNode.node_type: ToolExecutionNode,
             ClarificationNode.node_type: ClarificationNode,
             ResponseNode.node_type: ResponseNode,
+            UserContextEnrichmentNode.node_type: UserContextEnrichmentNode,
             FallbackNode.node_type: FallbackNode,
         }
 
@@ -49,7 +51,7 @@ class NodeRegistry:
             as_type="agent",
             name="domain.execution.node_registry.resolve",
             input={"node_type": node_type},
-        ):
+        ) as agent_handle:
             node_cls = self._registry.get(node_type)
             if node_type == IntentToolSelectionNode.node_type:
                 base_cls = node_cls or IntentToolSelectionNode
@@ -126,4 +128,15 @@ class NodeRegistry:
                         )
 
                 return _ResponseNode
+            if node_type == UserContextEnrichmentNode.node_type:
+                base_cls = node_cls or UserContextEnrichmentNode
+                tracer = self.tracer
+
+                class _UserContextEnrichmentNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(tracer=tracer)
+
+                return _UserContextEnrichmentNode
+            if agent_handle:
+                agent_handle.success(output={"node_cls": node_cls.__name__})
             return node_cls

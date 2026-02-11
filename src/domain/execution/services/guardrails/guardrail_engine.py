@@ -42,20 +42,25 @@ class GuardrailEngine:
             as_type="retriever",
             name="domain.execution.guardrail_engine.get_cost",
             input={"key": key},
-        ):
+        ) as retriever_handle:
             data = await self.redis.get(key) or {}
             try:
-                return float(data.get("usd", 0))
+                cost = float(data.get("usd", 0))
             except (TypeError, ValueError):
-                return 0.0
+                cost = 0.0
+            if retriever_handle:
+                retriever_handle.success(output={"key": key, "cost": cost})
+            return cost
 
     async def _set_cost(self, key: str, value: float, ttl: int | None = None) -> None:
         with self.tracer.observe(
             as_type="tool",
             name="domain.execution.guardrail_engine.set_cost",
             input={"key": key},
-        ):
+        ) as tool_handle:
             await self.redis.set(key, {"usd": value}, ttl=ttl or 0)
+            if tool_handle:
+                tool_handle.success(output={"key": key, "value": value})
 
     async def check_and_reserve(
         self,
@@ -123,19 +128,22 @@ class GuardrailEngine:
             as_type="tool",
             name="domain.execution.guardrail_engine.incr_flow_calls",
             input={"key": flow_calls_key},
-        ):
+        ) as tool_handle:
             flow_calls = await self.redis.incr_with_ttl(
                 flow_calls_key, ttl=tenant_calls_ttl
             )
+            if tool_handle:
+                tool_handle.success(output={"flow_calls": flow_calls})
         with self.tracer.observe(
             as_type="tool",
             name="domain.execution.guardrail_engine.incr_tenant_calls",
             input={"key": tenant_calls_key},
-        ):
+        ) as tool_handle:
             tenant_calls = await self.redis.incr_with_ttl(
                 tenant_calls_key, ttl=tenant_calls_ttl
             )
-
+            if tool_handle:
+                tool_handle.success(output={"tenant_calls": tenant_calls})
         if max_calls_flow is not None and flow_calls > int(max_calls_flow):
             return GuardrailDecision(
                 decision=GuardrailDecisionType.BLOCK,

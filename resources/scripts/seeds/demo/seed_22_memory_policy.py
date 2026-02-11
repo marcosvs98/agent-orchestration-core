@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parents[3]
+src_path = project_root / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
+from sqlalchemy import select
+
+from domain.common.schemas.versioning import VersionStatus
+from infra.database import get_db
+from infra.database.models.governance.active_memory_policy_version import (
+    ActiveMemoryPolicyVersion,
+)
+from infra.database.models.governance.memory_policy import MemoryPolicy
+from infra.database.models.governance.memory_policy_version import MemoryPolicyVersion
+from seeds.demo.ids import (
+    MEMORY_POLICY_DEMO_ID,
+    MEMORY_POLICY_VERSION_V1_ID,
+    PRINCIPAL_SYSTEM,
+    TENANT_DEMO_ID,
+)
+
+
+async def seed_memory_policy() -> None:
+    async with get_db() as session:
+        result = await session.execute(
+            select(MemoryPolicy).where(
+                MemoryPolicy.memory_policy_id == MEMORY_POLICY_DEMO_ID
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing is None:
+            policy = MemoryPolicy(
+                memory_policy_id=MEMORY_POLICY_DEMO_ID,
+                tenant_id=TENANT_DEMO_ID,
+                name="Demo Memory Policy",
+            )
+            session.add(policy)
+            await session.commit()
+
+        result = await session.execute(
+            select(MemoryPolicyVersion).where(
+                MemoryPolicyVersion.memory_policy_version_id == MEMORY_POLICY_VERSION_V1_ID
+            )
+        )
+        existing_version = result.scalar_one_or_none()
+        if existing_version is None:
+            policy_version = MemoryPolicyVersion(
+                memory_policy_version_id=MEMORY_POLICY_VERSION_V1_ID,
+                memory_policy_id=MEMORY_POLICY_DEMO_ID,
+                status=VersionStatus.PUBLISHED.value,
+                version_major=1,
+                version_minor=0,
+                version_patch=0,
+                retention_ttl_seconds=2_592_000,
+                consent_definition={
+                    "required": False,
+                    "preference_key": "memory.consent",
+                    "required_for_sources": ["inferred_llm", "tool_output"],
+                },
+                allowed_sources=[
+                    "explicit_user",
+                    "inferred_llm",
+                    "tool_output",
+                    "admin_seed",
+                ],
+                allowed_schemas=[
+                    {"schema_id": "user.preference.v1", "max_item_bytes": 4096},
+                    {"schema_id": "user.profile_signal.v1", "max_item_bytes": 4096},
+                ],
+            )
+            session.add(policy_version)
+            await session.commit()
+
+        result = await session.execute(
+            select(ActiveMemoryPolicyVersion).where(
+                ActiveMemoryPolicyVersion.tenant_id == TENANT_DEMO_ID
+            )
+        )
+        active_version = result.scalar_one_or_none()
+        if active_version is None:
+            active_version = ActiveMemoryPolicyVersion(
+                tenant_id=TENANT_DEMO_ID,
+                memory_policy_version_id=MEMORY_POLICY_VERSION_V1_ID,
+                activated_by_principal_id=PRINCIPAL_SYSTEM,
+                justification="bootstrap memory policy",
+            )
+        else:
+            active_version.memory_policy_version_id = MEMORY_POLICY_VERSION_V1_ID
+            active_version.activated_by_principal_id = PRINCIPAL_SYSTEM
+            active_version.justification = "bootstrap memory policy"
+        session.add(active_version)
+        await session.commit()

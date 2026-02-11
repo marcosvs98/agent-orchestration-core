@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
 from infra.database.models.governance.llm_model_mapping import (
     LLMModelMapping as LLMModelMappingModel,
@@ -22,25 +23,40 @@ class LLMModelMappingRepository:
     async def get_active_mapping(
         self, *, tenant_id: UUID, provider: str, model_alias: str
     ) -> Optional[LLMModelMappingModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.governance.llm_model_mapping_repository.get_active_mapping",
-            input={
-                "tenant_id": str(tenant_id),
-                "provider": provider,
-                "model_alias": model_alias,
-            },
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(LLMModelMappingModel).where(
-                        LLMModelMappingModel.tenant_id == tenant_id,
-                        LLMModelMappingModel.provider == provider,
-                        LLMModelMappingModel.model_alias == model_alias,
-                        LLMModelMappingModel.status == "ACTIVE",
+        async with self.db.get_session() as session:
+            stmt = select(LLMModelMappingModel).where(
+                LLMModelMappingModel.tenant_id == tenant_id,
+                LLMModelMappingModel.provider == provider,
+                LLMModelMappingModel.model_alias == model_alias,
+                LLMModelMappingModel.status == "ACTIVE",
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.llm_model_mapping_repository.get_active_mapping",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "provider": provider,
+                        "model_alias": model_alias,
+                    },
+                },
+                metadata={"retriever_name": "get_active_mapping"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                mapping = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if mapping else 0,
+                            "found": mapping is not None,
+                        }
                     )
-                )
-                return result.scalar_one_or_none()
+
+                return mapping
 
     async def upsert_mapping(
         self,
@@ -53,26 +69,43 @@ class LLMModelMappingRepository:
         created_by: str,
     ) -> LLMModelMappingModel:
         async with self.db.get_session() as session:
+            stmt = (
+                select(LLMModelMappingModel)
+                .where(
+                    LLMModelMappingModel.tenant_id == tenant_id,
+                    LLMModelMappingModel.provider == provider,
+                    LLMModelMappingModel.model_alias == model_alias,
+                    LLMModelMappingModel.status == status,
+                )
+                .with_for_update()
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.governance.llm_model_mapping_repository.get_existing_mapping",
                 input={
-                    "tenant_id": str(tenant_id),
-                    "provider": provider,
-                    "model_alias": model_alias,
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "provider": provider,
+                        "model_alias": model_alias,
+                        "status": status,
+                    },
                 },
-            ):
-                result = await session.execute(
-                    select(LLMModelMappingModel)
-                    .where(
-                        LLMModelMappingModel.tenant_id == tenant_id,
-                        LLMModelMappingModel.provider == provider,
-                        LLMModelMappingModel.model_alias == model_alias,
-                        LLMModelMappingModel.status == status,
-                    )
-                    .with_for_update()
-                )
+                metadata={"retriever_name": "get_existing_mapping"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance:
                 with self.tracer.observe(
                     as_type="tool",

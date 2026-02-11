@@ -10,6 +10,7 @@ from domain.execution.schemas.execution import (
     AgentRunCreate,
     FlowRunCreate,
     FlowRunInput,
+    FlowRunResumeInput,
     ToolRunCreate,
 )
 from domain.execution.services.execution_service import ExecutionService

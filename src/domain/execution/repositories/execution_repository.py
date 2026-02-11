@@ -1,17 +1,28 @@
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
+from dataclasses import dataclass
 import sqlalchemy as sa
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 
 from domain.execution.schemas.execution import FlowRunInput
 from infra.database.models.conversation.session import Session as SessionModel
+from infra.database.models.conversation.user import User as UserModel
+from infra.database.models.conversation.user_memory_profile import (
+    UserMemoryProfile as UserMemoryProfileModel,
+)
+from infra.database.models.conversation.user_preference import (
+    UserPreference as UserPreferenceModel,
+)
 from exceptions.service_exceptions import (
+    DomainConflictException,
     DomainValidationException,
     NotFoundServiceException,
 )
 from infra.database import DatabaseConnection
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.execution.services.state_machine import RunStatus, FlowRunStatus
 from utils.query_compiler import compile_query
 from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
 from infra.database.models.execution.tool_run import ToolRun as ToolRunModel
@@ -56,10 +67,31 @@ from infra.database.models.governance.active_billing_policy_version import (
 from infra.database.models.governance.billing_policy_version import (
     BillingPolicyVersion as BillingPolicyVersionModel,
 )
+from infra.database.models.governance.active_memory_policy_version import (
+    ActiveMemoryPolicyVersion as ActiveMemoryPolicyVersionModel,
+)
+from infra.database.models.governance.memory_policy_version import (
+    MemoryPolicyVersion as MemoryPolicyVersionModel,
+)
+from infra.database.models.governance.active_rag_policy_version import (
+    ActiveRagPolicyVersion as ActiveRagPolicyVersionModel,
+)
+from infra.database.models.governance.rag_policy_version import (
+    RagPolicyVersion as RagPolicyVersionModel,
+)
 from infra.database.models.execution.graph_state import GraphState as GraphStateModel
 
 
-class ExecutionRepository:
+# Todo: Do not use dataclass (User BaseModel or TypedDict)
+@dataclass(frozen=True)
+class UserPreferenceUpsertResult:
+    updated: bool
+    version: int
+    previous_source: str | None
+    reason: str | None = None
+
+
+class ExecutionRepository:  # Todo: Any method should be instrumented with tracer
     def __init__(
         self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
     ) -> None:
@@ -73,6 +105,7 @@ class ExecutionRepository:
         flow_version_id: UUID,
         correlation_id: UUID,
         origin_flow_run_id: UUID | None,
+        user_id: str,
         input_payload: FlowRunInput,
         interaction_id: UUID | None = None,
         flow_graph_snapshot_id: UUID | None = None,
@@ -91,8 +124,14 @@ class ExecutionRepository:
                 "flow_run_id": str(flow_run_id),
                 "flow_version_id": str(flow_version_id),
                 "session_id": str(session_id),
+                "interaction_id": str(interaction_id),
+                "flow_graph_snapshot_id": str(flow_graph_snapshot_id),
+                "execution_plan_hash": execution_plan_hash,
+                "runtime_policy_hash": runtime_policy_hash,
+                "tool_catalog_hash": tool_catalog_hash,
+                "llm_provider_config_hash": llm_provider_config_hash,
             },
-        ):
+        ) as tool_handle:
             async with self.db.get_session() as session:
                 session.add(
                     FlowRunModel(
@@ -101,6 +140,7 @@ class ExecutionRepository:
                         flow_version_id=flow_version_id,
                         correlation_id=correlation_id,
                         origin_flow_run_id=origin_flow_run_id,
+                        user_id=user_id,
                         input=input_payload.model_dump(mode="json"),
                         interaction_id=interaction_id,
                         flow_graph_snapshot_id=flow_graph_snapshot_id,
@@ -121,6 +161,8 @@ class ExecutionRepository:
                     )
                 )
                 await session.commit()
+                if tool_handle:
+                    tool_handle.success(output={"flow_run_id": str(flow_run_id)})
         return flow_run_id
 
     async def set_root_observation_id(
@@ -130,7 +172,7 @@ class ExecutionRepository:
             as_type="tool",
             name="domain.execution.repository.set_root_observation_id",
             input={"flow_run_id": str(flow_run_id)},
-        ):
+        ) as tool_handle:
             async with self.db.get_session() as session:
                 await session.execute(
                     sa.update(FlowRunModel)
@@ -138,6 +180,13 @@ class ExecutionRepository:
                     .values(root_observation_id=root_observation_id)
                 )
                 await session.commit()
+                if tool_handle:
+                    tool_handle.success(
+                        output={
+                            "flow_run_id": str(flow_run_id),
+                            "root_observation_id": root_observation_id,
+                        }
+                    )
 
     async def complete_flow_run(
         self,
@@ -232,43 +281,95 @@ class ExecutionRepository:
                 await session.commit()
 
     async def get_session(self, session_id: UUID) -> SessionModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_session",
-            input={"session_id": str(session_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(SessionModel).where(SessionModel.session_id == session_id)
-                )
+        async with self.db.get_session() as session:
+            stmt = select(SessionModel).where(SessionModel.session_id == session_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_session",
+                input={
+                    "query": query_sql,
+                    "params": {"session_id": str(session_id)},
+                },
+                metadata={"retriever_name": "get_session"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 session_record = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": session_record is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if session_record else 0,
+                            "found": session_record is not None,
+                        }
+                    )
+
                 return session_record
 
-    async def create_session(self, *, session_id: UUID, tenant_id: UUID) -> None:
+    async def create_session(
+        self, *, session_id: UUID, tenant_id: UUID, user_id: str
+    ) -> None:
         async with self.db.get_session() as session:
+            user_result = await session.execute(
+                select(UserModel).where(
+                    UserModel.tenant_id == tenant_id,
+                    UserModel.user_id == user_id,
+                )
+            )
+            user_record = user_result.scalar_one_or_none()
+            if user_record is None:
+                session.add(UserModel(tenant_id=tenant_id, user_id=user_id))
+            stmt_session = select(SessionModel).where(
+                SessionModel.session_id == session_id
+            )
+            query_sql_session = compile_query(stmt_session)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_session_for_create",
-                input={"session_id": str(session_id)},
-            ) as handle:
-                existing = await session.execute(
-                    select(SessionModel).where(SessionModel.session_id == session_id)
-                )
+                input={
+                    "query": query_sql_session,
+                    "params": {"session_id": str(session_id)},
+                },
+                metadata={"retriever_name": "get_session_for_create"},
+            ) as retriever_handle:
+                existing = await session.execute(stmt_session)
                 existing_record = existing.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": existing_record is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if existing_record else 0,
+                            "found": existing_record is not None,
+                        }
+                    )
+
             if existing_record is None:
                 with self.tracer.observe(
                     as_type="tool",
                     name="domain.execution.repository.create_session",
-                    input={"session_id": str(session_id), "tenant_id": str(tenant_id)},
-                ):
+                    input={
+                        "session_id": str(session_id),
+                        "tenant_id": str(tenant_id),
+                        "user_id": user_id,
+                    },
+                ) as tool_handle:
                     session.add(
-                        SessionModel(session_id=session_id, tenant_id=tenant_id)
+                        SessionModel(
+                            session_id=session_id, tenant_id=tenant_id, user_id=user_id
+                        )
                     )
                     await session.commit()
+                    if tool_handle:
+                        tool_handle.success(output={"session_id": str(session_id)})
+            else:
+                if (
+                    existing_record.tenant_id != tenant_id
+                    or existing_record.user_id != user_id
+                ):
+                    raise DomainConflictException(message="session_user_mismatch")
+                await session.commit()
 
     async def get_flow_context(self, flow_run_id: UUID) -> tuple[UUID, UUID]:
         with self.tracer.observe(
@@ -285,11 +386,197 @@ class ExecutionRepository:
             if handle:
                 handle.success(
                     output={
+                        "result_count": 1,
+                        "found": True,
                         "session_id": str(flow_run.session_id),
                         "tenant_id": str(session_record.tenant_id),
                     }
                 )
             return flow_run.session_id, session_record.tenant_id
+
+    async def get_user_preferences(self, *, tenant_id: UUID, user_id: str) -> dict:
+        async with self.db.get_session() as session:
+            stmt = select(UserPreferenceModel).where(
+                UserPreferenceModel.tenant_id == tenant_id,
+                UserPreferenceModel.user_id == user_id,
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            return {
+                row.preference_key: row.preference_value
+                for row in rows
+                if row.preference_key
+            }
+
+    async def get_user_preference(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: str,
+        preference_key: str,
+    ) -> UserPreferenceModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(UserPreferenceModel).where(
+                UserPreferenceModel.tenant_id == tenant_id,
+                UserPreferenceModel.user_id == user_id,
+                UserPreferenceModel.preference_key == preference_key,
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def get_user_memory_profile(self, *, tenant_id: UUID, user_id: str) -> dict:
+        async with self.db.get_session() as session:
+            stmt = select(UserMemoryProfileModel).where(
+                UserMemoryProfileModel.tenant_id == tenant_id,
+                UserMemoryProfileModel.user_id == user_id,
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row is None:
+                return {}
+            return row.profile or {}
+
+    async def upsert_user_preference(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: str,
+        preference_key: str,
+        preference_value: object,
+        source: str,
+    ) -> int:
+        result = await self.upsert_user_preference_deterministic(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            preference_key=preference_key,
+            preference_value=preference_value,
+            source=source,
+            source_priority_map={source: 0},
+            ignore_if_unchanged=False,
+        )
+        return result.version
+
+    async def upsert_user_preference_deterministic(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: str,
+        preference_key: str,
+        preference_value: object,
+        source: str,
+        source_priority_map: dict[str, int],
+        ignore_if_unchanged: bool = True,
+    ) -> UserPreferenceUpsertResult:
+        incoming_priority = int(source_priority_map.get(source, 0))
+        async with self.db.get_session() as session:
+            lock_stmt = (
+                select(UserPreferenceModel)
+                .where(
+                    UserPreferenceModel.tenant_id == tenant_id,
+                    UserPreferenceModel.user_id == user_id,
+                    UserPreferenceModel.preference_key == preference_key,
+                )
+                .with_for_update()
+            )
+            existing_result = await session.execute(lock_stmt)
+            existing = existing_result.scalar_one_or_none()
+
+            if existing is None:
+                insert_stmt = (
+                    pg_insert(UserPreferenceModel)
+                    .values(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        preference_key=preference_key,
+                        preference_value=preference_value,
+                        source=source,
+                        version=1,
+                    )
+                    .returning(UserPreferenceModel.version)
+                )
+                insert_result = await session.execute(insert_stmt)
+                version = int(insert_result.scalar_one())
+                await session.commit()
+                return UserPreferenceUpsertResult(
+                    updated=True,
+                    version=version,
+                    previous_source=None,
+                    reason="inserted",
+                )
+
+            previous_source = existing.source
+            previous_priority = int(source_priority_map.get(previous_source, 0))
+            if ignore_if_unchanged and existing.preference_value == preference_value:
+                await session.commit()
+                return UserPreferenceUpsertResult(
+                    updated=False,
+                    version=int(existing.version),
+                    previous_source=previous_source,
+                    reason="unchanged",
+                )
+            if incoming_priority < previous_priority:
+                await session.commit()
+                return UserPreferenceUpsertResult(
+                    updated=False,
+                    version=int(existing.version),
+                    previous_source=previous_source,
+                    reason="source_priority_denied",
+                )
+            update_stmt = (
+                sa.update(UserPreferenceModel)
+                .where(
+                    UserPreferenceModel.tenant_id == tenant_id,
+                    UserPreferenceModel.user_id == user_id,
+                    UserPreferenceModel.preference_key == preference_key,
+                )
+                .values(
+                    preference_value=preference_value,
+                    source=source,
+                    version=UserPreferenceModel.version + 1,
+                    updated_at=sa.func.now(),
+                )
+                .returning(UserPreferenceModel.version)
+            )
+            update_result = await session.execute(update_stmt)
+            version = int(update_result.scalar_one())
+            await session.commit()
+            return UserPreferenceUpsertResult(
+                updated=True,
+                version=version,
+                previous_source=previous_source,
+                reason="updated",
+            )
+
+    async def upsert_user_memory_profile(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: str,
+        profile: dict[str, object],
+    ) -> int:
+        async with self.db.get_session() as session:
+            stmt = (
+                pg_insert(UserMemoryProfileModel)
+                .values(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    profile=profile,
+                    profile_version=1,
+                )
+                .on_conflict_do_update(
+                    constraint="uq_user_memory_profile_user",
+                    set_={
+                        "profile": profile,
+                        "profile_version": UserMemoryProfileModel.profile_version + 1,
+                        "updated_at": sa.func.now(),
+                    },
+                )
+                .returning(UserMemoryProfileModel.profile_version)
+            )
+            result = await session.execute(stmt)
+            profile_version = int(result.scalar_one())
+            await session.commit()
+            return profile_version
 
     async def next_event_sequence(self, flow_run_id: UUID) -> int:
         async with self.db.get_session() as session:
@@ -303,28 +590,40 @@ class ExecutionRepository:
                     .where(FlowRunLockModel.flow_run_id == flow_run_id)
                     .with_for_update()
                 )
+            stmt_seq = select(
+                sa.func.coalesce(sa.func.max(ExecutionEventModel.event_sequence), 0)
+            ).where(ExecutionEventModel.flow_run_id == flow_run_id)
+            query_sql_seq = compile_query(stmt_seq)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_event_sequence",
-                input={"flow_run_id": str(flow_run_id)},
-            ) as handle:
-                result = await session.execute(
-                    select(
-                        sa.func.coalesce(
-                            sa.func.max(ExecutionEventModel.event_sequence), 0
-                        )
-                    ).where(ExecutionEventModel.flow_run_id == flow_run_id)
-                )
+                input={
+                    "query": query_sql_seq,
+                    "params": {"flow_run_id": str(flow_run_id)},
+                },
+                metadata={"retriever_name": "get_event_sequence"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_seq)
                 current = result.scalar_one()
                 next_seq = int(current) + 1
-                if handle:
-                    handle.success(output={"next_sequence": next_seq})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1,
+                            "found": True,
+                            "next_sequence": next_seq,
+                        }
+                    )
+
                 return next_seq
 
     async def append_execution_event(
         self,
         *,
         tenant_id: UUID,
+        user_id: str | None = None,
         session_id: UUID,
         flow_run_id: UUID,
         event_type: str,
@@ -344,8 +643,17 @@ class ExecutionRepository:
                 "event_type": event_type,
                 "correlation_id": str(correlation_id),
             },
-        ):
+        ) as tool_handle:
             async with self.db.get_session() as session:
+                if user_id is None:
+                    flow_run_result = await session.execute(
+                        select(FlowRunModel.user_id).where(
+                            FlowRunModel.flow_run_id == flow_run_id
+                        )
+                    )
+                    user_id = flow_run_result.scalar_one_or_none()
+                if user_id is None:
+                    raise NotFoundServiceException(message="flow_run_user_not_found")
                 await session.execute(
                     select(FlowRunLockModel)
                     .where(FlowRunLockModel.flow_run_id == flow_run_id)
@@ -363,6 +671,7 @@ class ExecutionRepository:
                     ExecutionEventModel(
                         execution_event_id=event_id,
                         tenant_id=tenant_id,
+                        user_id=user_id,
                         session_id=session_id,
                         flow_run_id=flow_run_id,
                         correlation_id=correlation_id,
@@ -376,6 +685,8 @@ class ExecutionRepository:
                     )
                 )
                 await session.commit()
+                if tool_handle:
+                    tool_handle.success(output={"event_id": str(event_id)})
         return event_id
 
     async def create_interaction(
@@ -398,7 +709,7 @@ class ExecutionRepository:
                 "interaction_id": str(interaction_id),
                 "session_id": str(session_id),
             },
-        ):
+        ) as tool_handle:
             async with self.db.get_session() as session:
                 session.add(
                     InteractionModel(
@@ -416,25 +727,39 @@ class ExecutionRepository:
                     )
                 )
                 await session.commit()
+                if tool_handle:
+                    tool_handle.success(output={"interaction_id": str(interaction_id)})
         return interaction_id
 
     async def link_interaction_to_flow_run(
         self, *, interaction_id: UUID, flow_run_id: UUID
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_int = select(InteractionModel).where(
+                InteractionModel.interaction_id == interaction_id
+            )
+            query_sql_int = compile_query(stmt_int)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_interaction_for_link",
-                input={"interaction_id": str(interaction_id)},
-            ) as handle:
-                result = await session.execute(
-                    select(InteractionModel).where(
-                        InteractionModel.interaction_id == interaction_id
-                    )
-                )
+                input={
+                    "query": query_sql_int,
+                    "params": {"interaction_id": str(interaction_id)},
+                },
+                metadata={"retriever_name": "get_interaction_for_link"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_int)
                 instance = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="interaction_not_found")
             instance.flow_run_id = flow_run_id
@@ -450,8 +775,15 @@ class ExecutionRepository:
                     "interaction_id": str(interaction_id),
                     "flow_run_id": str(flow_run_id),
                 },
-            ):
+            ) as tool_handle:
                 await session.commit()
+                if tool_handle:
+                    tool_handle.success(
+                        output={
+                            "interaction_id": str(interaction_id),
+                            "flow_run_id": str(flow_run_id),
+                        }
+                    )
 
     async def set_current_interaction_result_for_flow_run(
         self,
@@ -464,7 +796,7 @@ class ExecutionRepository:
             as_type="tool",
             name="domain.execution.repository.set_current_interaction_result_for_flow_run",
             input={"flow_run_id": str(flow_run_id)},
-        ):
+        ) as tool_handle:
             async with self.db.get_session() as session:
                 interaction_id_subq = (
                     select(FlowRunModel.interaction_id)
@@ -479,6 +811,14 @@ class ExecutionRepository:
                         result_node_run_id=result_node_run_id,
                     )
                 )
+                if tool_handle:
+                    tool_handle.success(
+                        output={
+                            "flow_run_id": str(flow_run_id),
+                            "output": output,
+                            "result_node_run_id": str(result_node_run_id),
+                        }
+                    )
                 await session.commit()
 
     async def get_flow_run(self, flow_run_id: UUID) -> FlowRunModel | None:
@@ -508,77 +848,315 @@ class ExecutionRepository:
 
                 return flow_run
 
-    async def get_tool_run(self, tool_run_id: UUID) -> ToolRunModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_tool_run",
-            input={"tool_run_id": str(tool_run_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ToolRunModel).where(ToolRunModel.tool_run_id == tool_run_id)
+    async def get_latest_waiting_flow_run_id(
+        self,
+        *,
+        session_id: UUID,
+        correlation_id: UUID,
+        flow_version_id: UUID,
+        user_id: str,
+    ) -> tuple[UUID | None, list[UUID]]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(FlowRunModel.flow_run_id)
+                .where(FlowRunModel.session_id == session_id)
+                .where(FlowRunModel.correlation_id == correlation_id)
+                .where(FlowRunModel.flow_version_id == flow_version_id)
+                .where(FlowRunModel.user_id == user_id)
+                .where(
+                    sa.or_(
+                        FlowRunModel.status == RunStatus.WAITING_INPUT,
+                        FlowRunModel.canonical_status == FlowRunStatus.WAITING,
+                    )
                 )
+                .order_by(
+                    FlowRunModel.created_at.desc(),
+                    FlowRunModel.flow_run_id.desc(),
+                )
+                .limit(2)
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_latest_waiting_flow_run_id",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "session_id": str(session_id),
+                        "correlation_id": str(correlation_id),
+                        "flow_version_id": str(flow_version_id),
+                        "user_id": user_id,
+                    },
+                },
+                metadata={"retriever_name": "get_latest_waiting_flow_run_id"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                candidates = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(candidates),
+                            "found": len(candidates) > 0,
+                        }
+                    )
+
+                origin_id = candidates[0] if candidates else None
+                return origin_id, candidates
+
+    async def get_tool_run(self, tool_run_id: UUID) -> ToolRunModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(ToolRunModel).where(ToolRunModel.tool_run_id == tool_run_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_tool_run",
+                input={
+                    "query": query_sql,
+                    "params": {"tool_run_id": str(tool_run_id)},
+                },
+                metadata={"retriever_name": "get_tool_run"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 tool_run = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": tool_run is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if tool_run else 0,
+                            "found": tool_run is not None,
+                        }
+                    )
+
                 return tool_run
 
     async def get_active_billing_policy_version_id(
         self, tenant_id: UUID
     ) -> UUID | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_active_billing_policy_version_id",
-            input={"tenant_id": str(tenant_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(
-                        ActiveBillingPolicyVersionModel.billing_policy_version_id
-                    ).where(ActiveBillingPolicyVersionModel.tenant_id == tenant_id)
-                )
+        async with self.db.get_session() as session:
+            stmt = select(
+                ActiveBillingPolicyVersionModel.billing_policy_version_id
+            ).where(ActiveBillingPolicyVersionModel.tenant_id == tenant_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_active_billing_policy_version_id",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id)},
+                },
+                metadata={
+                    "retriever_name": "get_active_billing_policy_version_id",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 row = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": row is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if row else 0,
+                            "found": row is not None,
+                        }
+                    )
+
                 return row
 
     async def get_billing_policy_version(
         self, billing_policy_version_id: UUID
     ) -> BillingPolicyVersionModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_billing_policy_version",
-            input={"billing_policy_version_id": str(billing_policy_version_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(BillingPolicyVersionModel).where(
-                        BillingPolicyVersionModel.billing_policy_version_id
-                        == billing_policy_version_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(BillingPolicyVersionModel).where(
+                BillingPolicyVersionModel.billing_policy_version_id
+                == billing_policy_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_billing_policy_version",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "billing_policy_version_id": str(billing_policy_version_id),
+                    },
+                },
+                metadata={"retriever_name": "get_billing_policy_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 policy = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": policy is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if policy else 0,
+                            "found": policy is not None,
+                        }
+                    )
+
+                return policy
+
+    async def get_active_memory_policy_version_id(self, tenant_id: UUID) -> UUID | None:
+        async with self.db.get_session() as session:
+            stmt = select(
+                ActiveMemoryPolicyVersionModel.memory_policy_version_id
+            ).where(ActiveMemoryPolicyVersionModel.tenant_id == tenant_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_active_memory_policy_version_id",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id)},
+                },
+                metadata={
+                    "retriever_name": "get_active_memory_policy_version_id",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                row = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if row else 0,
+                            "found": row is not None,
+                        }
+                    )
+
+                return row
+
+    async def get_memory_policy_version(
+        self, memory_policy_version_id: UUID
+    ) -> MemoryPolicyVersionModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(MemoryPolicyVersionModel).where(
+                MemoryPolicyVersionModel.memory_policy_version_id
+                == memory_policy_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_memory_policy_version",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "memory_policy_version_id": str(memory_policy_version_id),
+                    },
+                },
+                metadata={"retriever_name": "get_memory_policy_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                policy = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if policy else 0,
+                            "found": policy is not None,
+                        }
+                    )
+
+                return policy
+
+    async def get_active_rag_policy_version_id(self, tenant_id: UUID) -> UUID | None:
+        async with self.db.get_session() as session:
+            stmt = select(ActiveRagPolicyVersionModel.rag_policy_version_id).where(
+                ActiveRagPolicyVersionModel.tenant_id == tenant_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_active_rag_policy_version_id",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id)},
+                },
+                metadata={
+                    "retriever_name": "get_active_rag_policy_version_id",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                row = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if row else 0,
+                            "found": row is not None,
+                        }
+                    )
+
+                return row
+
+    async def get_rag_policy_version(
+        self, rag_policy_version_id: UUID
+    ) -> RagPolicyVersionModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RagPolicyVersionModel).where(
+                RagPolicyVersionModel.rag_policy_version_id == rag_policy_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_rag_policy_version",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "rag_policy_version_id": str(rag_policy_version_id),
+                    },
+                },
+                metadata={"retriever_name": "get_rag_policy_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                policy = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if policy else 0,
+                            "found": policy is not None,
+                        }
+                    )
+
                 return policy
 
     async def stamp_agent_run_billing_policy(
         self, *, agent_run_id: UUID, billing_policy_version_id: UUID
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_ar = select(AgentRunModel).where(
+                AgentRunModel.agent_run_id == agent_run_id
+            )
+            query_sql_ar = compile_query(stmt_ar)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_agent_run_for_billing",
-                input={"agent_run_id": str(agent_run_id)},
-            ) as h:
-                result = await session.execute(
-                    select(AgentRunModel).where(
-                        AgentRunModel.agent_run_id == agent_run_id
-                    )
-                )
+                input={
+                    "query": query_sql_ar,
+                    "params": {"agent_run_id": str(agent_run_id)},
+                },
+                metadata={"retriever_name": "get_agent_run_for_billing"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_ar)
                 instance = result.scalar_one_or_none()
-                if h:
-                    h.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="agent_run_not_found")
             instance.billing_policy_version_id = billing_policy_version_id
@@ -600,17 +1178,31 @@ class ExecutionRepository:
         estimated_cost: float | None = None,
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_tr = select(ToolRunModel).where(
+                ToolRunModel.tool_run_id == tool_run_id
+            )
+            query_sql_tr = compile_query(stmt_tr)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_tool_run_for_billing",
-                input={"tool_run_id": str(tool_run_id)},
-            ) as h:
-                result = await session.execute(
-                    select(ToolRunModel).where(ToolRunModel.tool_run_id == tool_run_id)
-                )
+                input={
+                    "query": query_sql_tr,
+                    "params": {"tool_run_id": str(tool_run_id)},
+                },
+                metadata={"retriever_name": "get_tool_run_for_billing"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_tr)
                 instance = result.scalar_one_or_none()
-                if h:
-                    h.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="tool_run_not_found")
             instance.billing_policy_version_id = billing_policy_version_id
@@ -633,90 +1225,131 @@ class ExecutionRepository:
         correlation_id: UUID | None = None,
         limit: int = 200,
     ) -> list[ExecutionEventModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.list_execution_events",
-            input={
-                "flow_run_id": str(flow_run_id) if flow_run_id else None,
-                "correlation_id": str(correlation_id) if correlation_id else None,
-                "limit": limit,
-            },
-        ) as handle:
-            async with self.db.get_session() as session:
-                stmt = select(ExecutionEventModel)
-                if flow_run_id is not None:
-                    stmt = stmt.where(ExecutionEventModel.flow_run_id == flow_run_id)
-                if correlation_id is not None:
-                    stmt = stmt.where(
-                        ExecutionEventModel.correlation_id == correlation_id
-                    )
-                stmt = stmt.order_by(
-                    ExecutionEventModel.flow_run_id,
-                    ExecutionEventModel.event_sequence,
-                ).limit(limit)
+        async with self.db.get_session() as session:
+            stmt = select(ExecutionEventModel)
+            if flow_run_id is not None:
+                stmt = stmt.where(ExecutionEventModel.flow_run_id == flow_run_id)
+            if correlation_id is not None:
+                stmt = stmt.where(ExecutionEventModel.correlation_id == correlation_id)
+            stmt = stmt.order_by(
+                ExecutionEventModel.flow_run_id,
+                ExecutionEventModel.event_sequence,
+            ).limit(limit)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.list_execution_events",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "flow_run_id": str(flow_run_id) if flow_run_id else None,
+                        "correlation_id": (
+                            str(correlation_id) if correlation_id else None
+                        ),
+                        "limit": limit,
+                    },
+                },
+                metadata={"retriever_name": "list_execution_events"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 events = list(result.scalars().all())
-                if handle:
-                    handle.success(output={"count": len(events)})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(events),
+                            "found": len(events) > 0,
+                        }
+                    )
+
                 return events
 
     async def count_tool_runs_for_flow_run(self, flow_run_id: UUID) -> int:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.count_tool_runs_for_flow_run",
-            input={"flow_run_id": str(flow_run_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                node_run_direct = aliased(NodeRunModel)
-                node_run_via_agent = aliased(NodeRunModel)
-                stmt = (
-                    select(sa.func.count(sa.distinct(ToolRunModel.tool_run_id)))
-                    .select_from(ToolRunModel)
-                    .outerjoin(
-                        node_run_direct,
-                        ToolRunModel.node_run_id == node_run_direct.node_run_id,
-                    )
-                    .outerjoin(
-                        AgentRunModel,
-                        ToolRunModel.agent_run_id == AgentRunModel.agent_run_id,
-                    )
-                    .outerjoin(
-                        node_run_via_agent,
-                        AgentRunModel.node_run_id == node_run_via_agent.node_run_id,
-                    )
-                    .where(
-                        sa.or_(
-                            node_run_direct.flow_run_id == flow_run_id,
-                            node_run_via_agent.flow_run_id == flow_run_id,
-                        )
+        async with self.db.get_session() as session:
+            node_run_direct = aliased(NodeRunModel)
+            node_run_via_agent = aliased(NodeRunModel)
+            stmt = (
+                select(sa.func.count(sa.distinct(ToolRunModel.tool_run_id)))
+                .select_from(ToolRunModel)
+                .outerjoin(
+                    node_run_direct,
+                    ToolRunModel.node_run_id == node_run_direct.node_run_id,
+                )
+                .outerjoin(
+                    AgentRunModel,
+                    ToolRunModel.agent_run_id == AgentRunModel.agent_run_id,
+                )
+                .outerjoin(
+                    node_run_via_agent,
+                    AgentRunModel.node_run_id == node_run_via_agent.node_run_id,
+                )
+                .where(
+                    sa.or_(
+                        node_run_direct.flow_run_id == flow_run_id,
+                        node_run_via_agent.flow_run_id == flow_run_id,
                     )
                 )
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.count_tool_runs_for_flow_run",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_run_id": str(flow_run_id)},
+                },
+                metadata={"retriever_name": "count_tool_runs_for_flow_run"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 count = int(result.scalar_one() or 0)
-                if handle:
-                    handle.success(output={"count": count})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1,
+                            "found": count > 0,
+                            "count": count,
+                        }
+                    )
+
                 return count
 
     async def count_agent_runs_for_flow_run(self, flow_run_id: UUID) -> int:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.count_agent_runs_for_flow_run",
-            input={"flow_run_id": str(flow_run_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(sa.func.count(sa.distinct(AgentRunModel.agent_run_id)))
-                    .select_from(AgentRunModel)
-                    .join(
-                        NodeRunModel,
-                        AgentRunModel.node_run_id == NodeRunModel.node_run_id,
-                    )
-                    .where(NodeRunModel.flow_run_id == flow_run_id)
+        async with self.db.get_session() as session:
+            stmt = (
+                select(sa.func.count(sa.distinct(AgentRunModel.agent_run_id)))
+                .select_from(AgentRunModel)
+                .join(
+                    NodeRunModel,
+                    AgentRunModel.node_run_id == NodeRunModel.node_run_id,
                 )
+                .where(NodeRunModel.flow_run_id == flow_run_id)
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.count_agent_runs_for_flow_run",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_run_id": str(flow_run_id)},
+                },
+                metadata={"retriever_name": "count_agent_runs_for_flow_run"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 count = int(result.scalar_one() or 0)
-                if handle:
-                    handle.success(output={"count": count})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1,
+                            "found": count > 0,
+                            "count": count,
+                        }
+                    )
+
                 return count
 
     async def update_tool_run_result(
@@ -729,31 +1362,61 @@ class ExecutionRepository:
         error: dict | None,
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_tr = select(ToolRunModel).where(
+                ToolRunModel.tool_run_id == tool_run_id
+            )
+            query_sql_tr = compile_query(stmt_tr)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_tool_run_for_result",
-                input={"tool_run_id": str(tool_run_id)},
-            ) as h:
-                result = await session.execute(
-                    select(ToolRunModel).where(ToolRunModel.tool_run_id == tool_run_id)
-                )
+                input={
+                    "query": query_sql_tr,
+                    "params": {"tool_run_id": str(tool_run_id)},
+                },
+                metadata={"retriever_name": "get_tool_run_for_result"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_tr)
                 instance = result.scalar_one_or_none()
-                if h:
-                    h.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="tool_run_not_found")
             instance.status = status
             instance.canonical_status = str(canonical_status)
             instance.output = output or {}
             instance.error = error or {}
-            if status in {"COMPLETED", "FAILED"}:
+            if status in {"COMPLETED", "FAILED"}:  # Todo: To use StrEnum here
                 instance.finished_at = sa.func.now()
             with self.tracer.observe(
                 as_type="tool",
                 name="domain.execution.repository.update_tool_run_result",
-                input={"tool_run_id": str(tool_run_id), "status": status},
-            ):
+                input={
+                    "tool_run_id": str(tool_run_id),
+                    "status": status,
+                    "canonical_status": canonical_status,
+                    "output": output,
+                    "error": error,
+                },
+            ) as tool_handle:
                 await session.commit()
+                if tool_handle:
+                    tool_handle.success(
+                        output={
+                            "tool_run_id": str(tool_run_id),
+                            "status": status,
+                            "canonical_status": canonical_status,
+                            "output": output,
+                            "error": error,
+                        }
+                    )
 
     async def get_flow_run_id_for_tool_run(self, tool_run_id: UUID) -> UUID:
         with self.tracer.observe(
@@ -826,8 +1489,9 @@ class ExecutionRepository:
             if handle:
                 handle.success(
                     output={
-                        "flow_run_id": str(flow_run_id),
+                        "result_count": 1,
                         "found": flow_run is not None,
+                        "flow_run_id": str(flow_run_id),
                     }
                 )
         if flow_run is None or flow_run.interaction_id is None:
@@ -842,7 +1506,7 @@ class ExecutionRepository:
                     "tool_run_id": str(tool_run_id),
                     "flow_run_id": str(flow_run_id),
                 },
-            ):
+            ) as tool_handle:
                 session.add(
                     ResponseArtifactModel(
                         response_artifact_id=response_artifact_id,
@@ -853,6 +1517,10 @@ class ExecutionRepository:
                     )
                 )
             await session.commit()
+            if tool_handle:
+                tool_handle.success(
+                    output={"response_artifact_id": str(response_artifact_id)}
+                )
         return response_artifact_id
 
     async def create_tool_run(
@@ -877,7 +1545,7 @@ class ExecutionRepository:
                     "tool_config_id": str(tool_config_id),
                     "correlation_id": str(correlation_id),
                 },
-            ):
+            ) as tool_handle:
                 session.add(
                     ToolRunModel(
                         tool_run_id=tool_run_id,
@@ -893,6 +1561,8 @@ class ExecutionRepository:
                     )
                 )
             await session.commit()
+            if tool_handle:
+                tool_handle.success(output={"tool_run_id": str(tool_run_id)})
         return tool_run_id
 
     async def create_node_run(
@@ -916,7 +1586,7 @@ class ExecutionRepository:
                     "node_id": str(node_id),
                     "correlation_id": str(correlation_id),
                 },
-            ):
+            ) as tool_handle:
                 session.add(
                     NodeRunModel(
                         node_run_id=node_run_id,
@@ -930,7 +1600,10 @@ class ExecutionRepository:
                     )
                 )
             await session.commit()
-        return node_run_id
+            if tool_handle:
+                tool_handle.success(output={"node_run_id": str(node_run_id)})
+                return node_run_id
+            raise DomainValidationException(message="node_run_not_created")
 
     async def update_node_run_result(
         self,
@@ -941,17 +1614,31 @@ class ExecutionRepository:
         canonical_status: str,
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_nr = select(NodeRunModel).where(
+                NodeRunModel.node_run_id == node_run_id
+            )
+            query_sql_nr = compile_query(stmt_nr)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_node_run_for_result",
-                input={"node_run_id": str(node_run_id)},
-            ) as h:
-                result = await session.execute(
-                    select(NodeRunModel).where(NodeRunModel.node_run_id == node_run_id)
-                )
+                input={
+                    "query": query_sql_nr,
+                    "params": {"node_run_id": str(node_run_id)},
+                },
+                metadata={"retriever_name": "get_node_run_for_result"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_nr)
                 instance = result.scalar_one_or_none()
-                if h:
-                    h.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="node_run_not_found")
             instance.output = output_payload
@@ -962,24 +1649,40 @@ class ExecutionRepository:
                 as_type="tool",
                 name="domain.execution.repository.update_node_run_result",
                 input={"node_run_id": str(node_run_id), "status": status},
-            ):
+            ) as tool_handle:
                 await session.commit()
+            if tool_handle:
+                tool_handle.success(
+                    output={"node_run_id": str(node_run_id), "status": status}
+                )
 
     async def get_graph_state(self, flow_run_id: UUID) -> GraphStateModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_graph_state",
-            input={"flow_run_id": str(flow_run_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(GraphStateModel).where(
-                        GraphStateModel.flow_run_id == flow_run_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(GraphStateModel).where(
+                GraphStateModel.flow_run_id == flow_run_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_graph_state",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_run_id": str(flow_run_id)},
+                },
+                metadata={"retriever_name": "get_graph_state"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 state = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": state is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if state else 0,
+                            "found": state is not None,
+                        }
+                    )
+
                 return state
 
     async def upsert_graph_state(
@@ -990,19 +1693,31 @@ class ExecutionRepository:
         last_node_run_id: UUID | None,
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_gs = select(GraphStateModel).where(
+                GraphStateModel.flow_run_id == flow_run_id
+            )
+            query_sql_gs = compile_query(stmt_gs)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_graph_state_for_upsert",
-                input={"flow_run_id": str(flow_run_id)},
-            ) as h:
-                result = await session.execute(
-                    select(GraphStateModel).where(
-                        GraphStateModel.flow_run_id == flow_run_id
-                    )
-                )
+                input={
+                    "query": query_sql_gs,
+                    "params": {"flow_run_id": str(flow_run_id)},
+                },
+                metadata={"retriever_name": "get_graph_state_for_upsert"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_gs)
                 instance = result.scalar_one_or_none()
-                if h:
-                    h.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 session.add(
                     GraphStateModel(
@@ -1018,24 +1733,44 @@ class ExecutionRepository:
                 as_type="tool",
                 name="domain.execution.repository.upsert_graph_state",
                 input={"flow_run_id": str(flow_run_id)},
-            ):
+            ) as tool_handle:
+                if tool_handle:
+                    tool_handle.success(
+                        output={
+                            "flow_run_id": str(flow_run_id),
+                            "state": state,
+                            "last_node_run_id": last_node_run_id,
+                        }
+                    )
                 await session.commit()
 
     async def get_flow_version(self, flow_version_id: UUID) -> FlowVersionModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_flow_version",
-            input={"flow_version_id": str(flow_version_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(FlowVersionModel).where(
-                        FlowVersionModel.flow_version_id == flow_version_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(FlowVersionModel).where(
+                FlowVersionModel.flow_version_id == flow_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_flow_version",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_version_id": str(flow_version_id)},
+                },
+                metadata={"retriever_name": "get_flow_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 version = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": version is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if version else 0,
+                            "found": version is not None,
+                        }
+                    )
+
                 return version
 
     async def get_flow(self, flow_id: UUID) -> FlowModel | None:
@@ -1063,58 +1798,91 @@ class ExecutionRepository:
                 return flow
 
     async def get_active_flow_version_id(self, flow_id: UUID) -> UUID | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_active_flow_version_id",
-            input={"flow_id": str(flow_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ActiveFlowVersionModel).where(
-                        ActiveFlowVersionModel.flow_id == flow_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(ActiveFlowVersionModel).where(
+                ActiveFlowVersionModel.flow_id == flow_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_active_flow_version_id",
+                input={"query": query_sql, "params": {"flow_id": str(flow_id)}},
+                metadata={"retriever_name": "get_active_flow_version_id"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 row = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": row is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if row else 0,
+                            "found": row is not None,
+                        }
+                    )
+
                 return row.flow_version_id if row else None
 
     async def get_flow_graph_by_flow_version(
         self, flow_version_id: UUID
     ) -> FlowGraphModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_flow_graph_by_flow_version",
-            input={"flow_version_id": str(flow_version_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(FlowGraphModel).where(
-                        FlowGraphModel.flow_version_id == flow_version_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(FlowGraphModel).where(
+                FlowGraphModel.flow_version_id == flow_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_flow_graph_by_flow_version",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_version_id": str(flow_version_id)},
+                },
+                metadata={"retriever_name": "get_flow_graph_by_flow_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 graph = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": graph is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if graph else 0,
+                            "found": graph is not None,
+                        }
+                    )
+
                 return graph
 
     async def get_flow_graph_snapshot_by_flow_version(
         self, flow_version_id: UUID
     ) -> FlowGraphSnapshotModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_flow_graph_snapshot",
-            input={"flow_version_id": str(flow_version_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(FlowGraphSnapshotModel).where(
-                        FlowGraphSnapshotModel.flow_version_id == flow_version_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(FlowGraphSnapshotModel).where(
+                FlowGraphSnapshotModel.flow_version_id == flow_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_flow_graph_snapshot",
+                input={
+                    "query": query_sql,
+                    "params": {"flow_version_id": str(flow_version_id)},
+                },
+                metadata={"retriever_name": "get_flow_graph_snapshot"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 snapshot = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": snapshot is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if snapshot else 0,
+                            "found": snapshot is not None,
+                        }
+                    )
+
                 return snapshot
 
     async def get_tool_config(self, tool_config_id: UUID) -> ToolConfigModel | None:
@@ -1147,137 +1915,223 @@ class ExecutionRepository:
                 return tool_config
 
     async def get_agent_run(self, agent_run_id: UUID) -> AgentRunModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_agent_run",
-            input={"agent_run_id": str(agent_run_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AgentRunModel).where(
-                        AgentRunModel.agent_run_id == agent_run_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(AgentRunModel).where(
+                AgentRunModel.agent_run_id == agent_run_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_agent_run",
+                input={
+                    "query": query_sql,
+                    "params": {"agent_run_id": str(agent_run_id)},
+                },
+                metadata={"retriever_name": "get_agent_run"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 run = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": run is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if run else 0,
+                            "found": run is not None,
+                        }
+                    )
+
                 return run
 
     async def get_agent_run_by_agent_version_and_flow(
         self, agent_version_id: UUID, flow_run_id: UUID
     ) -> AgentRunModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_agent_run_by_version_and_flow",
-            input={
-                "agent_version_id": str(agent_version_id),
-                "flow_run_id": str(flow_run_id),
-            },
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AgentRunModel)
-                    .join(
-                        NodeRunModel,
-                        AgentRunModel.node_run_id == NodeRunModel.node_run_id,
-                    )
-                    .where(
-                        AgentRunModel.agent_version_id == agent_version_id,
-                        NodeRunModel.flow_run_id == flow_run_id,
-                    )
-                    .order_by(AgentRunModel.created_at.desc())
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AgentRunModel)
+                .join(
+                    NodeRunModel,
+                    AgentRunModel.node_run_id == NodeRunModel.node_run_id,
                 )
+                .where(
+                    AgentRunModel.agent_version_id == agent_version_id,
+                    NodeRunModel.flow_run_id == flow_run_id,
+                )
+                .order_by(AgentRunModel.created_at.desc())
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_agent_run_by_version_and_flow",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "agent_version_id": str(agent_version_id),
+                        "flow_run_id": str(flow_run_id),
+                    },
+                },
+                metadata={
+                    "retriever_name": "get_agent_run_by_agent_version_and_flow",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 run = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": run is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if run else 0,
+                            "found": run is not None,
+                        }
+                    )
+
                 return run
 
     async def get_agent_version(
         self, agent_version_id: UUID
     ) -> AgentVersionModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_agent_version",
-            input={"agent_version_id": str(agent_version_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AgentVersionModel).where(
-                        AgentVersionModel.agent_version_id == agent_version_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(AgentVersionModel).where(
+                AgentVersionModel.agent_version_id == agent_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_agent_version",
+                input={
+                    "query": query_sql,
+                    "params": {"agent_version_id": str(agent_version_id)},
+                },
+                metadata={"retriever_name": "get_agent_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 version = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": version is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if version else 0,
+                            "found": version is not None,
+                        }
+                    )
+
                 return version
 
     async def get_active_agent_version_id(self, agent_id: UUID) -> UUID | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_active_agent_version_id",
-            input={"agent_id": str(agent_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ActiveAgentVersionModel).where(
-                        ActiveAgentVersionModel.agent_id == agent_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(ActiveAgentVersionModel).where(
+                ActiveAgentVersionModel.agent_id == agent_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_active_agent_version_id",
+                input={"query": query_sql, "params": {"agent_id": str(agent_id)}},
+                metadata={"retriever_name": "get_active_agent_version_id"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 row = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": row is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if row else 0,
+                            "found": row is not None,
+                        }
+                    )
+
                 return row.agent_version_id if row else None
 
     async def get_ai_execution_policy_version(
         self, ai_execution_policy_version_id: UUID
     ) -> AIExecutionPolicyVersionModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_ai_execution_policy_version",
-            input={
-                "ai_execution_policy_version_id": str(ai_execution_policy_version_id),
-            },
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AIExecutionPolicyVersionModel).where(
-                        AIExecutionPolicyVersionModel.ai_execution_policy_version_id
-                        == ai_execution_policy_version_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(AIExecutionPolicyVersionModel).where(
+                AIExecutionPolicyVersionModel.ai_execution_policy_version_id
+                == ai_execution_policy_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_ai_execution_policy_version",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "ai_execution_policy_version_id": str(
+                            ai_execution_policy_version_id
+                        ),
+                    },
+                },
+                metadata={
+                    "retriever_name": "get_ai_execution_policy_version",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 policy = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": policy is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if policy else 0,
+                            "found": policy is not None,
+                        }
+                    )
+
                 return policy
 
     async def get_model(self, model_id: UUID) -> ModelModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_model",
-            input={"model_id": str(model_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ModelModel).where(ModelModel.model_id == model_id)
-                )
+        async with self.db.get_session() as session:
+            stmt = select(ModelModel).where(ModelModel.model_id == model_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_model",
+                input={"query": query_sql, "params": {"model_id": str(model_id)}},
+                metadata={"retriever_name": "get_model"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": model is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+
                 return model
 
     async def get_node_run(self, node_run_id: UUID) -> NodeRunModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.get_node_run",
-            input={"node_run_id": str(node_run_id)},
-        ) as handle:
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(NodeRunModel).where(NodeRunModel.node_run_id == node_run_id)
-                )
+        async with self.db.get_session() as session:
+            stmt = select(NodeRunModel).where(NodeRunModel.node_run_id == node_run_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_node_run",
+                input={
+                    "query": query_sql,
+                    "params": {"node_run_id": str(node_run_id)},
+                },
+                metadata={"retriever_name": "get_node_run"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 run = result.scalar_one_or_none()
-                if handle:
-                    handle.success(output={"found": run is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if run else 0,
+                            "found": run is not None,
+                        }
+                    )
+
                 return run
 
     async def get_node(self, node_id: UUID) -> NodeModel | None:
@@ -1385,19 +2239,31 @@ class ExecutionRepository:
         estimated_cost: float | None,
     ) -> None:
         async with self.db.get_session() as session:
+            stmt_ar = select(AgentRunModel).where(
+                AgentRunModel.agent_run_id == agent_run_id
+            )
+            query_sql_ar = compile_query(stmt_ar)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.repository.get_agent_run_for_result",
-                input={"agent_run_id": str(agent_run_id)},
-            ) as h:
-                result = await session.execute(
-                    select(AgentRunModel).where(
-                        AgentRunModel.agent_run_id == agent_run_id
-                    )
-                )
+                input={
+                    "query": query_sql_ar,
+                    "params": {"agent_run_id": str(agent_run_id)},
+                },
+                metadata={"retriever_name": "get_agent_run_for_result"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_ar)
                 instance = result.scalar_one_or_none()
-                if h:
-                    h.success(output={"found": instance is not None})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="agent_run_not_found")
             instance.status = status
@@ -1454,35 +2320,48 @@ class ExecutionRepository:
         flow_run_id: UUID | None = None,
         limit: int = 200,
     ) -> list[NodeRunModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.list_node_runs",
-            input={
-                "tenant_id": str(tenant_id),
-                "flow_run_id": str(flow_run_id) if flow_run_id else None,
-                "limit": limit,
-            },
-        ) as handle:
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(NodeRunModel)
-                    .join(
-                        FlowRunModel,
-                        NodeRunModel.flow_run_id == FlowRunModel.flow_run_id,
-                    )
-                    .join(
-                        SessionModel,
-                        FlowRunModel.session_id == SessionModel.session_id,
-                    )
-                    .where(SessionModel.tenant_id == tenant_id)
+        async with self.db.get_session() as session:
+            stmt = (
+                select(NodeRunModel)
+                .join(
+                    FlowRunModel,
+                    NodeRunModel.flow_run_id == FlowRunModel.flow_run_id,
                 )
-                if flow_run_id is not None:
-                    stmt = stmt.where(NodeRunModel.flow_run_id == flow_run_id)
-                stmt = stmt.order_by(NodeRunModel.created_at.desc()).limit(limit)
+                .join(
+                    SessionModel,
+                    FlowRunModel.session_id == SessionModel.session_id,
+                )
+                .where(SessionModel.tenant_id == tenant_id)
+            )
+            if flow_run_id is not None:
+                stmt = stmt.where(NodeRunModel.flow_run_id == flow_run_id)
+            stmt = stmt.order_by(NodeRunModel.created_at.desc()).limit(limit)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.list_node_runs",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "flow_run_id": str(flow_run_id) if flow_run_id else None,
+                        "limit": limit,
+                    },
+                },
+                metadata={"retriever_name": "list_node_runs"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 runs = list(result.scalars().all())
-                if handle:
-                    handle.success(output={"count": len(runs)})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(runs),
+                            "found": len(runs) > 0,
+                        }
+                    )
+
                 return runs
 
     async def list_agent_runs(
@@ -1492,37 +2371,50 @@ class ExecutionRepository:
         flow_run_id: UUID | None = None,
         limit: int = 200,
     ) -> list[AgentRunModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.repository.list_agent_runs",
-            input={
-                "tenant_id": str(tenant_id),
-                "flow_run_id": str(flow_run_id) if flow_run_id else None,
-                "limit": limit,
-            },
-        ) as handle:
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(AgentRunModel)
-                    .join(
-                        NodeRunModel,
-                        AgentRunModel.node_run_id == NodeRunModel.node_run_id,
-                    )
-                    .join(
-                        FlowRunModel,
-                        NodeRunModel.flow_run_id == FlowRunModel.flow_run_id,
-                    )
-                    .join(
-                        SessionModel,
-                        FlowRunModel.session_id == SessionModel.session_id,
-                    )
-                    .where(SessionModel.tenant_id == tenant_id)
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AgentRunModel)
+                .join(
+                    NodeRunModel,
+                    AgentRunModel.node_run_id == NodeRunModel.node_run_id,
                 )
-                if flow_run_id is not None:
-                    stmt = stmt.where(FlowRunModel.flow_run_id == flow_run_id)
-                stmt = stmt.order_by(AgentRunModel.created_at.desc()).limit(limit)
+                .join(
+                    FlowRunModel,
+                    NodeRunModel.flow_run_id == FlowRunModel.flow_run_id,
+                )
+                .join(
+                    SessionModel,
+                    FlowRunModel.session_id == SessionModel.session_id,
+                )
+                .where(SessionModel.tenant_id == tenant_id)
+            )
+            if flow_run_id is not None:
+                stmt = stmt.where(FlowRunModel.flow_run_id == flow_run_id)
+            stmt = stmt.order_by(AgentRunModel.created_at.desc()).limit(limit)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.list_agent_runs",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "flow_run_id": str(flow_run_id) if flow_run_id else None,
+                        "limit": limit,
+                    },
+                },
+                metadata={"retriever_name": "list_agent_runs"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
                 runs = list(result.scalars().all())
-                if handle:
-                    handle.success(output={"count": len(runs)})
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(runs),
+                            "found": len(runs) > 0,
+                        }
+                    )
+
                 return runs

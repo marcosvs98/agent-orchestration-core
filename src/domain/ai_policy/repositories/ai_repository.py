@@ -54,33 +54,110 @@ class AIRepository:
     async def list_ai_tasks(self) -> list[AITaskModel]:
         async with self.db.get_session() as session:
             stmt = select(AITaskModel).order_by(AITaskModel.name.asc())
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.list_ai_tasks",
+                input={"query": query_sql, "params": {}},
+                metadata={"retriever_name": "list_ai_tasks"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def get_model(self, model_id: UUID) -> ModelModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(ModelModel).where(ModelModel.model_id == model_id)
-            )
-            return result.scalar_one_or_none()
+            stmt = select(ModelModel).where(ModelModel.model_id == model_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.get_model",
+                input={
+                    "query": query_sql,
+                    "params": {"model_id": str(model_id)},
+                },
+                metadata={"retriever_name": "get_model"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+
+                return model
 
     async def list_models(self) -> list[ModelModel]:
         async with self.db.get_session() as session:
             stmt = select(ModelModel).order_by(ModelModel.name.asc())
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.list_models",
+                input={"query": query_sql, "params": {}},
+                metadata={"retriever_name": "list_models"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def get_ai_execution_policy(
         self, ai_execution_policy_id: UUID
     ) -> AIExecutionPolicyModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(AIExecutionPolicyModel).where(
-                    AIExecutionPolicyModel.ai_execution_policy_id
-                    == ai_execution_policy_id
-                )
+            stmt = select(AIExecutionPolicyModel).where(
+                AIExecutionPolicyModel.ai_execution_policy_id == ai_execution_policy_id
             )
-            return result.scalar_one_or_none()
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.get_ai_execution_policy",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "ai_execution_policy_id": str(ai_execution_policy_id),
+                    },
+                },
+                metadata={"retriever_name": "get_ai_execution_policy"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                policy = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if policy else 0,
+                            "found": policy is not None,
+                        }
+                    )
+
+                return policy
 
     async def list_ai_execution_policies(
         self, *, tenant_id: UUID, limit: int
@@ -92,8 +169,29 @@ class AIRepository:
                 .order_by(AIExecutionPolicyModel.created_at.desc())
                 .limit(limit)
             )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.list_ai_execution_policies",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id), "limit": limit},
+                },
+                metadata={"retriever_name": "list_ai_execution_policies"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def create_ai_execution_policy(
         self, *, tenant_id: UUID, description: str | None, created_by: str
@@ -111,13 +209,37 @@ class AIRepository:
         self, ai_execution_policy_version_id: UUID
     ) -> AIExecutionPolicyVersionModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(AIExecutionPolicyVersionModel).where(
-                    AIExecutionPolicyVersionModel.ai_execution_policy_version_id
-                    == ai_execution_policy_version_id
-                )
+            stmt = select(AIExecutionPolicyVersionModel).where(
+                AIExecutionPolicyVersionModel.ai_execution_policy_version_id
+                == ai_execution_policy_version_id
             )
-            return result.scalar_one_or_none()
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.get_ai_execution_policy_version",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "ai_execution_policy_version_id": str(
+                            ai_execution_policy_version_id
+                        ),
+                    },
+                },
+                metadata={"retriever_name": "get_ai_execution_policy_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                version = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if version else 0,
+                            "found": version is not None,
+                        }
+                    )
+
+                return version
 
     async def list_ai_execution_policy_versions(
         self,
@@ -151,8 +273,40 @@ class AIRepository:
                 AIExecutionPolicyVersionModel.version_minor.desc(),
                 AIExecutionPolicyVersionModel.version_patch.desc(),
             ).limit(limit)
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.list_ai_execution_policy_versions",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "ai_execution_policy_id": (
+                            str(ai_execution_policy_id)
+                            if ai_execution_policy_id is not None
+                            else None
+                        ),
+                        "status_filter": status_filter,
+                        "limit": limit,
+                    },
+                },
+                metadata={
+                    "retriever_name": "list_ai_execution_policy_versions",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def create_ai_execution_policy_version(
         self,
@@ -168,13 +322,34 @@ class AIRepository:
     ) -> AIExecutionPolicyVersionModel:
         async with self.db.get_session() as session:
             if source_version_id is not None:
-                source_version = await session.execute(
-                    select(AIExecutionPolicyVersionModel).where(
-                        AIExecutionPolicyVersionModel.ai_execution_policy_version_id
-                        == source_version_id
-                    )
+                stmt_source = select(AIExecutionPolicyVersionModel).where(
+                    AIExecutionPolicyVersionModel.ai_execution_policy_version_id
+                    == source_version_id
                 )
-                source = source_version.scalar_one_or_none()
+                query_sql_source = compile_query(stmt_source)
+
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.ai_policy.repository.get_source_version",
+                    input={
+                        "query": query_sql_source,
+                        "params": {
+                            "source_version_id": str(source_version_id),
+                        },
+                    },
+                    metadata={"retriever_name": "get_source_version"},
+                ) as retriever_handle:
+                    source_version = await session.execute(stmt_source)
+                    source = source_version.scalar_one_or_none()
+
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if source else 0,
+                                "found": source is not None,
+                            }
+                        )
+
                 if source is None:
                     raise NotFoundServiceException(message="source_version_not_found")
                 if version_major is None:
@@ -191,7 +366,7 @@ class AIRepository:
                     or version_minor is None
                     or version_patch is None
                 ):
-                    last_version = await session.execute(
+                    stmt_last = (
                         select(AIExecutionPolicyVersionModel)
                         .where(
                             AIExecutionPolicyVersionModel.ai_execution_policy_id
@@ -204,7 +379,30 @@ class AIRepository:
                         )
                         .limit(1)
                     )
-                    last = last_version.scalar_one_or_none()
+                    query_sql_last = compile_query(stmt_last)
+
+                    with self.tracer.observe(
+                        as_type="retriever",
+                        name="domain.ai_policy.repository.get_last_version",
+                        input={
+                            "query": query_sql_last,
+                            "params": {
+                                "ai_execution_policy_id": str(ai_execution_policy_id),
+                            },
+                        },
+                        metadata={"retriever_name": "get_last_version"},
+                    ) as retriever_handle:
+                        last_version = await session.execute(stmt_last)
+                        last = last_version.scalar_one_or_none()
+
+                        if retriever_handle:
+                            retriever_handle.success(
+                                output={
+                                    "result_count": 1 if last else 0,
+                                    "found": last is not None,
+                                }
+                            )
+
                     if last is None:
                         version_major = 1
                         version_minor = 0
@@ -235,13 +433,38 @@ class AIRepository:
         self, *, ai_execution_policy_version_id: UUID, status: VersionStatus
     ) -> None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(AIExecutionPolicyVersionModel).where(
-                    AIExecutionPolicyVersionModel.ai_execution_policy_version_id
-                    == ai_execution_policy_version_id
-                )
+            stmt = select(AIExecutionPolicyVersionModel).where(
+                AIExecutionPolicyVersionModel.ai_execution_policy_version_id
+                == ai_execution_policy_version_id
             )
-            instance = result.scalar_one_or_none()
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.get_ai_execution_policy_version_status",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "ai_execution_policy_version_id": str(
+                            ai_execution_policy_version_id
+                        ),
+                    },
+                },
+                metadata={
+                    "retriever_name": "get_ai_execution_policy_version_status",
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(
                     message="ai_execution_policy_version_not_found"

@@ -74,8 +74,8 @@ class LLMExecutor(LLMExecutorPort):
                 as_type="evaluator",
                 name="evaluator.schema_validation",
                 input={
-                    "payload_keys": list(payload.keys()),
-                    "schema_keys": list(schema.keys()),
+                    "payload": payload,
+                    "schema": schema,
                 },
                 metadata={"evaluator_name": "schema_validation"},
             ) as evaluator_handle:
@@ -110,12 +110,6 @@ class LLMExecutor(LLMExecutorPort):
                     message="internal_schema_validation_error",
                     detail=str(validation_exc),
                 ) from validation_exc
-            if evaluator_handle:
-                evaluator_handle.error(
-                    error_type=type(cm_exc).__name__,
-                    error_message=str(cm_exc),
-                    output={"passed": False, "errors": [str(cm_exc)]},
-                )
             raise DomainValidationException(
                 message="internal_schema_validation_error", detail=str(cm_exc)
             ) from cm_exc
@@ -170,7 +164,7 @@ class LLMExecutor(LLMExecutorPort):
                     "provider": provider,
                     "model_alias": request.model_alias,
                 },
-            ):
+            ) as selection_handle:
                 selection: LLMProviderSelection = await self.provider_selector.select(
                     tenant_id=tenant_id,
                     provider=provider,
@@ -179,6 +173,13 @@ class LLMExecutor(LLMExecutorPort):
                 provider_model = selection.provider_model
                 provider_instance = self.provider_factory(selection)
                 request = request.model_copy(update={"model_alias": provider_model})
+                if selection_handle:
+                    selection_handle.success(
+                        output={
+                            "provider_model": provider_model,
+                            "provider": provider,
+                        }
+                    )
 
         if provider_instance is None:
             raise DomainValidationException(
@@ -190,8 +191,10 @@ class LLMExecutor(LLMExecutorPort):
                 as_type="guardrail",
                 name="domain.llm.llm_executor.circuit_breaker_check",
                 input={"scope": scope},
-            ):
+            ) as circuit_handle:
                 await self.circuit_breaker.ensure_closed(scope)
+                if circuit_handle:
+                    circuit_handle.success(output={"status": "closed"})
 
         guardrail_decision = None
 
@@ -229,75 +232,97 @@ class LLMExecutor(LLMExecutorPort):
             if policy_llm.get("top_p") is not None:
                 model_parameters["top_p"] = policy_llm.get("top_p")
 
-        generation_metadata = {}
+        execution_metadata = {}
         if prompt_id:
-            generation_metadata["prompt_id"] = prompt_id
+            execution_metadata["prompt_id"] = prompt_id
         if prompt_version is not None:
-            generation_metadata["prompt_version"] = prompt_version
+            execution_metadata["prompt_version"] = prompt_version
         if prompt_frozen_hash:
-            generation_metadata["prompt_frozen_hash"] = prompt_frozen_hash
-            generation_metadata["prompt_hash"] = prompt_frozen_hash
+            execution_metadata["prompt_frozen_hash"] = prompt_frozen_hash
+            execution_metadata["prompt_hash"] = prompt_frozen_hash
         if task_type_value:
-            generation_metadata["llm_task"] = task_type_value
+            execution_metadata["llm_task"] = task_type_value
+        if request.user_id:
+            execution_metadata["user_id"] = request.user_id
 
-        generation_handle = None
+        llm_input: Dict[str, Any] = {
+            "prompt": request.prompt,
+            "system_prompt": request.system_prompt,
+            "provider_model": provider_model,
+            "provider": provider,
+        }
+        if task_type_value:
+            llm_input["task_type"] = task_type_value
+        if request.user_id:
+            llm_input["user_id"] = request.user_id
+        if request.max_tokens is not None:
+            llm_input["max_tokens"] = request.max_tokens
+        if request.temperature is not None:
+            llm_input["temperature"] = request.temperature
+        if request.available_tools:
+            llm_input["tools_count"] = len(request.available_tools)
+        if prompt_id:
+            llm_input["prompt_id"] = prompt_id
+        if prompt_version is not None:
+            llm_input["prompt_version"] = prompt_version
+
+        chain_handler = None
         try:
             with self.tracer.observe(
-                as_type="generation",
-                name=f"llm.{task_type_value}" if task_type_value else "llm.call",
-                input={
-                    "prompt": request.prompt,
-                    "system_prompt": request.system_prompt,
-                },
-                metadata=generation_metadata,
+                as_type="chain",
+                name=f"domain.llm.llm_executor.{task_type_value.lower()}",
+                input=llm_input,
+                metadata=execution_metadata,
                 model=provider_model,
                 model_parameters=model_parameters or None,
                 completion_start_time=datetime.utcnow(),
-            ) as generation_handle:
-                self._validate_schema(
-                    {"prompt": request.prompt},
-                    request.input_schema,
-                    error_code="llm_input_invalid",
-                )
-                guardrail_decision = None
-                if self.guardrail_engine and policy_llm is not None:
-                    with self.tracer.observe(
-                        as_type="guardrail",
-                        name="guardrail.llm",
-                        input={
-                            "provider": provider,
-                            "provider_model": provider_model,
-                        },
-                        metadata={"guardrail_type": "LLM"},
-                    ) as guardrail_handle:
-                        guardrail_decision = (
-                            await self.guardrail_engine.check_and_reserve(
-                                tenant_id=tenant_id,
-                                flow_run_id=flow_run_id,
-                                request=request,
-                                policy_llm=policy_llm,
-                                provider=provider,
-                                provider_model=provider_model,
-                            )
-                        )
-                        guardrail_output = {
-                            "decision": guardrail_decision.decision.value,
-                            "reason_code": guardrail_decision.reason_code,
-                            "applied_limits": guardrail_decision.applied_limits or {},
-                            "overrides": guardrail_decision.overrides,
-                        }
-                        if guardrail_handle:
-                            if (
-                                guardrail_decision.decision
-                                is GuardrailDecisionType.BLOCK
-                            ):
-                                guardrail_handle.update(
-                                    level="ERROR",
-                                    status_message=f"Guardrail blocked: {guardrail_decision.reason_code}",
-                                    output=guardrail_output,
+            ) as chain_handler:
+                try:
+                    self._validate_schema(
+                        {"prompt": request.prompt},
+                        request.input_schema,
+                        error_code="llm_input_invalid",
+                    )
+                    guardrail_decision = None
+                    if self.guardrail_engine and policy_llm is not None:
+                        with self.tracer.observe(
+                            as_type="guardrail",
+                            name="guardrail.llm",
+                            input={
+                                "provider": provider,
+                                "provider_model": provider_model,
+                            },
+                            metadata={"guardrail_type": "LLM"},
+                        ) as guardrail_handle:
+                            guardrail_decision = (
+                                await self.guardrail_engine.check_and_reserve(
+                                    tenant_id=tenant_id,
+                                    flow_run_id=flow_run_id,
+                                    request=request,
+                                    policy_llm=policy_llm,
+                                    provider=provider,
+                                    provider_model=provider_model,
                                 )
-                            else:
-                                guardrail_handle.success(output=guardrail_output)
+                            )
+                            guardrail_output = {
+                                "decision": guardrail_decision.decision.value,
+                                "reason_code": guardrail_decision.reason_code,
+                                "applied_limits": guardrail_decision.applied_limits
+                                or {},
+                                "overrides": guardrail_decision.overrides,
+                            }
+                            if guardrail_handle:
+                                if (
+                                    guardrail_decision.decision
+                                    is GuardrailDecisionType.BLOCK
+                                ):
+                                    guardrail_handle.update(
+                                        level="ERROR",
+                                        status_message=f"Guardrail blocked: {guardrail_decision.reason_code}",
+                                        output=guardrail_output,
+                                    )
+                                else:
+                                    guardrail_handle.success(output=guardrail_output)
 
                         applied_limits = guardrail_decision.applied_limits or {}
                         limit_label = (
@@ -412,65 +437,139 @@ class LLMExecutor(LLMExecutorPort):
                                 request = request.model_copy(
                                     update={"max_latency_ms": max_latency_override}
                                 )
-                provider_result = await provider_instance.infer(request)
-                result = provider_result
-            if result.latency_ms is None:
-                result = result.model_copy(
-                    update={
-                        "latency_ms": int((time.monotonic() - start_monotonic) * 1000)
-                    }
-                )
-            if self.cost_engine:
-                cost = await self.cost_engine.compute_cost(
-                    provider=provider,
-                    provider_model=provider_model,
-                    token_usage=result.token_usage,
-                )
-                result = result.model_copy(update={"cost_usd": cost})
 
-            output_to_validate = result.output
-            if isinstance(result.output, dict) and "content" in result.output:
-                content_str = result.output.get("content")
-                try:
-                    parsed_content = orjson.loads(content_str)
-                    output_to_validate = parsed_content
-                    result = result.model_copy(update={"output": parsed_content})
-                except orjson.JSONDecodeError as json_exc:
-                    raise DomainValidationException(
-                        message="llm_output_json_parse_error",
-                        detail=f"Failed to parse JSON content: {str(json_exc)}",
-                    ) from json_exc
+                    completion_start = datetime.utcnow()
+                    with self.tracer.observe(
+                        as_type="generation",
+                        name=f"domain.llm.llm_executor.infer.{task_type_value.lower() or 'infer'}".lower(),
+                        input=llm_input,
+                        metadata=execution_metadata,
+                        model=provider_model,
+                        model_parameters=model_parameters or None,
+                        completion_start_time=completion_start,
+                    ) as generation_handle:
+                        try:
+                            provider_result = await provider_instance.infer(request)
+                            result = provider_result
+                            if result.latency_ms is None:
+                                result = result.model_copy(
+                                    update={
+                                        "latency_ms": int(
+                                            (time.monotonic() - start_monotonic) * 1000
+                                        )
+                                    }
+                                )
+                            if self.cost_engine:
+                                cost = await self.cost_engine.compute_cost(
+                                    provider=provider,
+                                    provider_model=provider_model,
+                                    token_usage=result.token_usage,
+                                )
+                                result = result.model_copy(update={"cost_usd": cost})
+                            if generation_handle:
+                                usage_details = {
+                                    "prompt_tokens": result.token_usage.get(
+                                        "prompt_tokens"
+                                    )
+                                    or result.token_usage.get("input_tokens")
+                                    or 0,
+                                    "completion_tokens": result.token_usage.get(
+                                        "completion_tokens"
+                                    )
+                                    or result.token_usage.get("output_tokens")
+                                    or 0,
+                                    "total_tokens": result.token_usage.get(
+                                        "total_tokens"
+                                    )
+                                    or 0,
+                                }
+                                cost_details = (
+                                    {"total_cost": result.cost_usd}
+                                    if result.cost_usd is not None
+                                    else None
+                                )
+                                generation_handle.success(
+                                    output=result.output,
+                                    usage_details=usage_details,
+                                    cost_details=cost_details,
+                                    metadata={
+                                        "latency_ms": result.latency_ms,
+                                        "model_used": result.model_alias
+                                        or provider_model,
+                                        "provider": provider,
+                                        "cost_usd": result.cost_usd,
+                                    },
+                                )
+                        except Exception as infer_exc:
+                            if generation_handle:
+                                generation_handle.error(
+                                    error_type=type(infer_exc).__name__,
+                                    error_message=str(infer_exc),
+                                    output={"status": "error"},
+                                )
+                            raise
 
-            try:
-                self._validate_schema(
-                    output_to_validate,
-                    request.output_schema,
-                    error_code="llm_output_invalid",
-                )
-            except Exception as schema_exc:
-                raise schema_exc from schema_exc
-            self._enforce_policy(request, result)
+                    output_to_validate = result.output
+                    if isinstance(result.output, dict) and "content" in result.output:
+                        content_str = result.output.get("content")
+                        try:
+                            parsed_content = orjson.loads(content_str)
+                            output_to_validate = parsed_content
+                            result = result.model_copy(
+                                update={"output": parsed_content}
+                            )
+                        except orjson.JSONDecodeError as json_exc:
+                            raise DomainValidationException(
+                                message="llm_output_json_parse_error",
+                                detail=f"Failed to parse JSON content: {str(json_exc)}",
+                            ) from json_exc
 
-            if generation_handle:
-                usage_details = {
-                    "prompt_tokens": result.token_usage.get("prompt_tokens")
-                    or result.token_usage.get("input_tokens")
-                    or 0,
-                    "completion_tokens": result.token_usage.get("completion_tokens")
-                    or result.token_usage.get("output_tokens")
-                    or 0,
-                    "total_tokens": result.token_usage.get("total_tokens") or 0,
-                }
-                cost_details = (
-                    {"total_cost": result.cost_usd}
-                    if result.cost_usd is not None
-                    else None
-                )
-                generation_handle.success(
-                    output=result.output,
-                    usage_details=usage_details,
-                    cost_details=cost_details,
-                )
+                    try:
+                        self._validate_schema(
+                            output_to_validate,
+                            request.output_schema,
+                            error_code="llm_output_invalid",
+                        )
+                    except Exception as schema_exc:
+                        raise schema_exc from schema_exc
+                    self._enforce_policy(request, result)
+
+                    if chain_handler:
+                        usage_details = {
+                            "prompt_tokens": result.token_usage.get("prompt_tokens")
+                            or result.token_usage.get("input_tokens")
+                            or 0,
+                            "completion_tokens": result.token_usage.get(
+                                "completion_tokens"
+                            )
+                            or result.token_usage.get("output_tokens")
+                            or 0,
+                            "total_tokens": result.token_usage.get("total_tokens") or 0,
+                        }
+                        cost_details = (
+                            {"total_cost": result.cost_usd}
+                            if result.cost_usd is not None
+                            else None
+                        )
+                        chain_handler.success(
+                            output=result.output,
+                            usage_details=usage_details,
+                            cost_details=cost_details,
+                            metadata={
+                                "latency_ms": result.latency_ms,
+                                "model_used": result.model_alias or provider_model,
+                                "provider": provider,
+                                "cost_usd": result.cost_usd,
+                            },
+                        )
+                except Exception as exc:
+                    if chain_handler:
+                        chain_handler.error(
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                            output={"status": "error"},
+                        )
+                    raise
 
             sanitized_usage: Dict[str, int | float | None] = {}
             for key, value in (result.token_usage or {}).items():
@@ -532,12 +631,6 @@ class LLMExecutor(LLMExecutorPort):
                 await self.circuit_breaker.record_success(scope)
             return result
         except Exception as exc:  # noqa: BLE001
-            if generation_handle:
-                generation_handle.error(
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
-                    output={"status": "error"},
-                )
             if self.circuit_breaker:
                 await self.circuit_breaker.record_failure(scope)
             payload: LLMCallFailedPayload = LLMCallFailedPayload(

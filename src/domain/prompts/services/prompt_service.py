@@ -110,12 +110,7 @@ class PromptService:
         if entry and not entry.is_expired():
             return entry.prompt
 
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.prompts.prompt_service.get_active_prompt",
-            input={"node_type": node_type},
-        ):
-            prompt = await self.repository.get_active_prompt(node_type)
+        prompt = await self.repository.get_active_prompt(node_type)
         if prompt:
             self._cache[node_type] = PromptCacheEntry(
                 prompt, time.time(), self.cache_ttl
@@ -132,12 +127,7 @@ class PromptService:
         ):
             frozen_hash = self._calculate_frozen_hash(create.template_text)
 
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.prompts.prompt_service.get_active_prompt_create",
-                input={"node_type": create.node_type},
-            ):
-                existing = await self.repository.get_active_prompt(create.node_type)
+            existing = await self.repository.get_active_prompt(create.node_type)
             if existing:
                 from domain.prompts.schemas.prompt import NodePromptUpdate
 
@@ -209,12 +199,7 @@ class PromptService:
     async def deactivate_prompt(
         self, node_type: str, tenant_id: UUID | None = None
     ) -> None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.prompts.prompt_service.get_active_prompt_deactivate",
-            input={"node_type": node_type},
-        ):
-            prompt = await self.repository.get_active_prompt(node_type)
+        prompt = await self.repository.get_active_prompt(node_type)
         if prompt:
             with self.tracer.observe(
                 as_type="tool",

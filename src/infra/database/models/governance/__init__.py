@@ -19,3 +19,13 @@ from infra.database.models.governance.billing_policy import BillingPolicy
 from infra.database.models.governance.active_billing_policy_version import (
     ActiveBillingPolicyVersion,
 )
+from infra.database.models.governance.memory_policy import MemoryPolicy
+from infra.database.models.governance.memory_policy_version import MemoryPolicyVersion
+from infra.database.models.governance.active_memory_policy_version import (
+    ActiveMemoryPolicyVersion,
+)
+from infra.database.models.governance.rag_policy import RagPolicy
+from infra.database.models.governance.rag_policy_version import RagPolicyVersion
+from infra.database.models.governance.active_rag_policy_version import (
+    ActiveRagPolicyVersion,
+)

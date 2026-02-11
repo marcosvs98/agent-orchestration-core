@@ -1,6 +1,5 @@
 from uuid import UUID
 
-
 from sqlalchemy import select
 
 from domain.common.schemas.versioning import VersionStatus
@@ -21,6 +20,7 @@ from infra.database.models.agent.node_agent_binding import (
 from infra.database.models.flow.node import Node as NodeModel
 from infra.database.models.flow.flow import Flow as FlowModel
 from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
+from utils.query_compiler import compile_query
 
 
 class AgentsRepository:
@@ -31,48 +31,92 @@ class AgentsRepository:
         self.tracer = tracer
 
     async def get_agent(self, agent_id: UUID) -> AgentModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.agents.agents_repository.get_agent",
-            input={"agent_id": str(agent_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AgentModel).where(AgentModel.agent_id == agent_id)
-                )
-                return result.scalar_one_or_none()
+        async with self.db.get_session() as session:
+            stmt = select(AgentModel).where(AgentModel.agent_id == agent_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.get_agent",
+                input={
+                    "query": query_sql,
+                    "params": {"agent_id": str(agent_id)},
+                },
+                metadata={"retriever_name": "get_agent"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                agent = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if agent else 0,
+                            "found": agent is not None,
+                        }
+                    )
+
+                return agent
 
     async def get_agent_version(
         self, agent_version_id: UUID
     ) -> AgentVersionModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.agents.agents_repository.get_agent_version",
-            input={"agent_version_id": str(agent_version_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AgentVersionModel).where(
-                        AgentVersionModel.agent_version_id == agent_version_id
+        async with self.db.get_session() as session:
+            stmt = select(AgentVersionModel).where(
+                AgentVersionModel.agent_version_id == agent_version_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.get_agent_version",
+                input={
+                    "query": query_sql,
+                    "params": {"agent_version_id": str(agent_version_id)},
+                },
+                metadata={"retriever_name": "get_agent_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                version = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if version else 0,
+                            "found": version is not None,
+                        }
                     )
-                )
-                return result.scalar_one_or_none()
+
+                return version
 
     async def set_agent_version_status(
         self, *, agent_version_id: UUID, status: VersionStatus
     ) -> None:
         async with self.db.get_session() as session:
+            stmt = select(AgentVersionModel).where(
+                AgentVersionModel.agent_version_id == agent_version_id
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_agent_version_status",
-                input={"agent_version_id": str(agent_version_id)},
-            ):
-                result = await session.execute(
-                    select(AgentVersionModel).where(
-                        AgentVersionModel.agent_version_id == agent_version_id
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"agent_version_id": str(agent_version_id)},
+                },
+                metadata={"retriever_name": "get_agent_version_status"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="agent_version_not_found")
             instance.status = str(status)
@@ -87,18 +131,32 @@ class AgentsRepository:
                 await session.commit()
 
     async def get_active_agent_version_id(self, agent_id: UUID) -> UUID | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.agents.agents_repository.get_active_agent_version_id",
-            input={"agent_id": str(agent_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ActiveAgentVersionModel).where(
-                        ActiveAgentVersionModel.agent_id == agent_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(ActiveAgentVersionModel).where(
+                ActiveAgentVersionModel.agent_id == agent_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.get_active_agent_version_id",
+                input={
+                    "query": query_sql,
+                    "params": {"agent_id": str(agent_id)},
+                },
+                metadata={"retriever_name": "get_active_agent_version_id"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 row = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if row else 0,
+                            "found": row is not None,
+                        }
+                    )
+
                 return row.agent_version_id if row else None
 
     async def upsert_active_agent_version(
@@ -110,17 +168,31 @@ class AgentsRepository:
         justification: str,
     ) -> None:
         async with self.db.get_session() as session:
+            stmt = select(ActiveAgentVersionModel).where(
+                ActiveAgentVersionModel.agent_id == agent_id
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_existing_active_version",
-                input={"agent_id": str(agent_id)},
-            ):
-                result = await session.execute(
-                    select(ActiveAgentVersionModel).where(
-                        ActiveAgentVersionModel.agent_id == agent_id
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"agent_id": str(agent_id)},
+                },
+                metadata={"retriever_name": "get_existing_active_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if existing else 0,
+                            "found": existing is not None,
+                        }
+                    )
+
             if existing is None:
                 with self.tracer.observe(
                     as_type="tool",
@@ -152,20 +224,36 @@ class AgentsRepository:
     async def list_agents(
         self, *, tenant_id: UUID, limit: int = 200
     ) -> list[AgentModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.agents.agents_repository.list_agents",
-            input={"tenant_id": str(tenant_id), "limit": limit},
-        ):
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(AgentModel)
-                    .where(AgentModel.tenant_id == tenant_id)
-                    .order_by(AgentModel.created_at.desc())
-                    .limit(limit)
-                )
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AgentModel)
+                .where(AgentModel.tenant_id == tenant_id)
+                .order_by(AgentModel.created_at.desc())
+                .limit(limit)
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.list_agents",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id), "limit": limit},
+                },
+                metadata={"retriever_name": "list_agents"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
-                return list(result.scalars().all())
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def create_agent(
         self, *, tenant_id: UUID, name: str | None, created_by: str
@@ -185,25 +273,44 @@ class AgentsRepository:
     async def list_agent_versions(
         self, *, agent_id: UUID, status_filter: list[str] | None = None
     ) -> list[AgentVersionModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.agents.agents_repository.list_agent_versions",
-            input={"agent_id": str(agent_id)},
-        ):
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(AgentVersionModel)
-                    .where(AgentVersionModel.agent_id == agent_id)
-                    .order_by(
-                        AgentVersionModel.version_major.desc(),
-                        AgentVersionModel.version_minor.desc(),
-                        AgentVersionModel.version_patch.desc(),
-                    )
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AgentVersionModel)
+                .where(AgentVersionModel.agent_id == agent_id)
+                .order_by(
+                    AgentVersionModel.version_major.desc(),
+                    AgentVersionModel.version_minor.desc(),
+                    AgentVersionModel.version_patch.desc(),
                 )
-                if status_filter:
-                    stmt = stmt.where(AgentVersionModel.status.in_(status_filter))
+            )
+            if status_filter:
+                stmt = stmt.where(AgentVersionModel.status.in_(status_filter))
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.list_agent_versions",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "agent_id": str(agent_id),
+                        "status_filter": status_filter,
+                    },
+                },
+                metadata={"retriever_name": "list_agent_versions"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
-                return list(result.scalars().all())
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def create_agent_version(
         self,
@@ -221,17 +328,31 @@ class AgentsRepository:
     ) -> AgentVersionModel:
         async with self.db.get_session() as session:
             if source_version_id is not None:
+                stmt_source = select(AgentVersionModel).where(
+                    AgentVersionModel.agent_version_id == source_version_id
+                )
+                query_sql_source = compile_query(stmt_source)
+
                 with self.tracer.observe(
                     as_type="retriever",
                     name="domain.agents.agents_repository.get_source_version",
-                    input={"source_version_id": str(source_version_id)},
-                ):
-                    source_version = await session.execute(
-                        select(AgentVersionModel).where(
-                            AgentVersionModel.agent_version_id == source_version_id
-                        )
-                    )
+                    input={
+                        "query": query_sql_source,
+                        "params": {"source_version_id": str(source_version_id)},
+                    },
+                    metadata={"retriever_name": "get_source_version"},
+                ) as retriever_handle:
+                    source_version = await session.execute(stmt_source)
                     source = source_version.scalar_one_or_none()
+
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if source else 0,
+                                "found": source is not None,
+                            }
+                        )
+
                 if source is None:
                     raise NotFoundServiceException(message="source_version_not_found")
                 if version_major is None:
@@ -252,22 +373,38 @@ class AgentsRepository:
                     persona_config = source.persona_config
 
             if version_major is None or version_minor is None or version_patch is None:
+                stmt_last = (
+                    select(AgentVersionModel)
+                    .where(AgentVersionModel.agent_id == agent_id)
+                    .order_by(
+                        AgentVersionModel.version_major.desc(),
+                        AgentVersionModel.version_minor.desc(),
+                        AgentVersionModel.version_patch.desc(),
+                    )
+                    .limit(1)
+                )
+                query_sql_last = compile_query(stmt_last)
+
                 with self.tracer.observe(
                     as_type="retriever",
                     name="domain.agents.agents_repository.get_last_version",
-                    input={"agent_id": str(agent_id)},
-                ):
-                    last_version = await session.execute(
-                        select(AgentVersionModel)
-                        .where(AgentVersionModel.agent_id == agent_id)
-                        .order_by(
-                            AgentVersionModel.version_major.desc(),
-                            AgentVersionModel.version_minor.desc(),
-                            AgentVersionModel.version_patch.desc(),
-                        )
-                        .limit(1)
-                    )
+                    input={
+                        "query": query_sql_last,
+                        "params": {"agent_id": str(agent_id)},
+                    },
+                    metadata={"retriever_name": "get_last_version"},
+                ) as retriever_handle:
+                    last_version = await session.execute(stmt_last)
                     last = last_version.scalar_one_or_none()
+
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if last else 0,
+                                "found": last is not None,
+                            }
+                        )
+
                 if last is None:
                     version_major = 1
                     version_minor = 0
@@ -305,72 +442,143 @@ class AgentsRepository:
         self, *, node_id: UUID, agent_version_id: UUID, created_by: str
     ) -> NodeAgentBindingModel:
         async with self.db.get_session() as session:
+            stmt_node = select(NodeModel).where(NodeModel.node_id == node_id)
+            query_sql_node = compile_query(stmt_node)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_node_binding",
-                input={"node_id": str(node_id)},
-            ):
-                node = await session.execute(
-                    select(NodeModel).where(NodeModel.node_id == node_id)
-                )
+                input={
+                    "query": query_sql_node,
+                    "params": {"node_id": str(node_id)},
+                },
+                metadata={"retriever_name": "get_node_binding"},
+            ) as retriever_handle:
+                node = await session.execute(stmt_node)
                 node_instance = node.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if node_instance else 0,
+                            "found": node_instance is not None,
+                        }
+                    )
+
             if node_instance is None:
                 raise NotFoundServiceException(message="node_not_found")
+
+            stmt_av = select(AgentVersionModel).where(
+                AgentVersionModel.agent_version_id == agent_version_id
+            )
+            query_sql_av = compile_query(stmt_av)
 
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_agent_version_binding",
-                input={"agent_version_id": str(agent_version_id)},
-            ):
-                agent_version = await session.execute(
-                    select(AgentVersionModel).where(
-                        AgentVersionModel.agent_version_id == agent_version_id
-                    )
-                )
+                input={
+                    "query": query_sql_av,
+                    "params": {"agent_version_id": str(agent_version_id)},
+                },
+                metadata={"retriever_name": "get_agent_version_binding"},
+            ) as retriever_handle:
+                agent_version = await session.execute(stmt_av)
                 agent_version_instance = agent_version.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if agent_version_instance else 0,
+                            "found": agent_version_instance is not None,
+                        }
+                    )
+
             if agent_version_instance is None:
                 raise NotFoundServiceException(message="agent_version_not_found")
+
+            stmt_fv = select(FlowVersionModel).where(
+                FlowVersionModel.flow_version_id == node_instance.flow_version_id
+            )
+            query_sql_fv = compile_query(stmt_fv)
 
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_flow_version_binding",
-                input={"flow_version_id": str(node_instance.flow_version_id)},
-            ):
-                flow_version = await session.execute(
-                    select(FlowVersionModel).where(
-                        FlowVersionModel.flow_version_id
-                        == node_instance.flow_version_id
-                    )
-                )
+                input={
+                    "query": query_sql_fv,
+                    "params": {
+                        "flow_version_id": str(node_instance.flow_version_id),
+                    },
+                },
+                metadata={"retriever_name": "get_flow_version_binding"},
+            ) as retriever_handle:
+                flow_version = await session.execute(stmt_fv)
                 flow_version_instance = flow_version.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if flow_version_instance else 0,
+                            "found": flow_version_instance is not None,
+                        }
+                    )
+
             if flow_version_instance is None:
                 raise NotFoundServiceException(message="flow_version_not_found")
+
+            stmt_flow = select(FlowModel).where(
+                FlowModel.flow_id == flow_version_instance.flow_id
+            )
+            query_sql_flow = compile_query(stmt_flow)
 
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_flow_binding",
-                input={"flow_id": str(flow_version_instance.flow_id)},
-            ):
-                flow = await session.execute(
-                    select(FlowModel).where(
-                        FlowModel.flow_id == flow_version_instance.flow_id
-                    )
-                )
+                input={
+                    "query": query_sql_flow,
+                    "params": {"flow_id": str(flow_version_instance.flow_id)},
+                },
+                metadata={"retriever_name": "get_flow_binding"},
+            ) as retriever_handle:
+                flow = await session.execute(stmt_flow)
                 flow_instance = flow.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if flow_instance else 0,
+                            "found": flow_instance is not None,
+                        }
+                    )
+
             if flow_instance is None:
                 raise NotFoundServiceException(message="flow_not_found")
+
+            stmt_agent = select(AgentModel).where(
+                AgentModel.agent_id == agent_version_instance.agent_id
+            )
+            query_sql_agent = compile_query(stmt_agent)
 
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_agent_binding",
-                input={"agent_id": str(agent_version_instance.agent_id)},
-            ):
-                agent = await session.execute(
-                    select(AgentModel).where(
-                        AgentModel.agent_id == agent_version_instance.agent_id
-                    )
-                )
+                input={
+                    "query": query_sql_agent,
+                    "params": {"agent_id": str(agent_version_instance.agent_id)},
+                },
+                metadata={"retriever_name": "get_agent_binding"},
+            ) as retriever_handle:
+                agent = await session.execute(stmt_agent)
                 agent_instance = agent.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if agent_instance else 0,
+                            "found": agent_instance is not None,
+                        }
+                    )
+
             if agent_instance is None:
                 raise NotFoundServiceException(message="agent_not_found")
 
@@ -396,16 +604,30 @@ class AgentsRepository:
                 return instance
 
     async def get_agent_version_id_by_node_id(self, node_id: UUID) -> UUID | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.agents.agents_repository.get_agent_version_id_by_node_id",
-            input={"node_id": str(node_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(NodeAgentBindingModel).where(
-                        NodeAgentBindingModel.node_id == node_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(NodeAgentBindingModel).where(
+                NodeAgentBindingModel.node_id == node_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.get_agent_version_id_by_node_id",
+                input={
+                    "query": query_sql,
+                    "params": {"node_id": str(node_id)},
+                },
+                metadata={"retriever_name": "get_agent_version_id_by_node_id"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 binding = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if binding else 0,
+                            "found": binding is not None,
+                        }
+                    )
+
                 return binding.agent_version_id if binding else None

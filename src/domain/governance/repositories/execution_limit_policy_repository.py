@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from domain.common.schemas.versioning import VersionStatus
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from infra.database import DatabaseConnection
 from infra.database.models.governance.execution_limit_policy import (
     ExecutionLimitPolicy as ExecutionLimitPolicyModel,
@@ -10,28 +11,54 @@ from infra.database.models.governance.execution_limit_policy import (
 from infra.database.models.governance.execution_limit_policy_version import (
     ExecutionLimitPolicyVersion as ExecutionLimitPolicyVersionModel,
 )
+from utils.query_compiler import compile_query
 
 
 class ExecutionLimitPolicyRepository:
-    def __init__(self, database_connection: DatabaseConnection) -> None:
+    def __init__(
+        self,
+        database_connection: DatabaseConnection,
+        tracer: RuntimeTracerPort,
+    ) -> None:
         self.db = database_connection
+        self.tracer = tracer
 
     async def get_default_policy_for_tenant(
         self, tenant_id: UUID
     ) -> ExecutionLimitPolicyModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(ExecutionLimitPolicyModel).where(
-                    ExecutionLimitPolicyModel.tenant_id == tenant_id
-                )
+            stmt = select(ExecutionLimitPolicyModel).where(
+                ExecutionLimitPolicyModel.tenant_id == tenant_id
             )
-            return result.scalars().first()
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.execution_limit_policy_repository.get_default_policy",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id)},
+                },
+                metadata={"retriever_name": "get_default_policy"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                policy = result.scalars().first()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if policy else 0,
+                            "found": policy is not None,
+                        }
+                    )
+
+                return policy
 
     async def get_published_policy_version(
         self, execution_limit_policy_id: UUID
     ) -> ExecutionLimitPolicyVersionModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
+            stmt = (
                 select(ExecutionLimitPolicyVersionModel)
                 .where(
                     ExecutionLimitPolicyVersionModel.execution_limit_policy_id
@@ -47,4 +74,28 @@ class ExecutionLimitPolicyRepository:
                     ExecutionLimitPolicyVersionModel.created_at.desc(),
                 )
             )
-            return result.scalars().first()
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.execution_limit_policy_repository.get_published_version",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "execution_limit_policy_id": str(execution_limit_policy_id),
+                    },
+                },
+                metadata={"retriever_name": "get_published_policy_version"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                version = result.scalars().first()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if version else 0,
+                            "found": version is not None,
+                        }
+                    )
+
+                return version

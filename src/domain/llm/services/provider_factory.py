@@ -30,13 +30,17 @@ class LLMProviderFactory:
             as_type="agent",
             name="domain.llm.provider_factory.build",
             input={"provider": selection.provider},
-        ):
+        ) as agent_handle:
             if selection.provider.upper() == LLMProviderType.OPENAI:
-                return OpenAIProviderAdapter(
-                    http_client=self.http_client,
+                provider: LLMProviderPort = OpenAIProviderAdapter(
                     secret_resolver=self.secret_resolver,
-                    base_url=selection.base_url or "https://api.openai.com/v1",
                     credential_secret_ref=selection.credential_secret_ref,
                     cache_adapter=self.cache_adapter,
                 )
+            if provider:
+                if agent_handle:
+                    agent_handle.success(
+                        output={"provider": provider.__class__.__name__}
+                    )
+                return provider
             raise ValueError(f"unsupported_provider:{selection.provider}")

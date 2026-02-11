@@ -61,23 +61,13 @@ class ToolsService(ToolsServicePort):
             raise DomainValidationException(
                 message="tool_name_required_from_openapi_or_request"
             )
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.get_tool_by_name",
-            input={"tool_name": tool_name},
-        ):
-            existing_tool = await self.repository.get_tool_by_name(tool_name)
+        existing_tool = await self.repository.get_tool_by_name(tool_name)
         if existing_tool is not None:
             tool_model = existing_tool
         else:
-            with self.tracer.observe(
-                as_type="tool",
-                name="domain.tools.tools_service.create_tool",
-                input={"tool_name": tool_name},
-            ):
-                tool_model = await self.repository.create_tool(
-                    name=tool_name, created_by=principal_id
-                )
+            tool_model = await self.repository.create_tool(
+                name=tool_name, created_by=principal_id
+            )
 
         operations = self.openapi_parser.extract_operations(parsed_spec)
         base_url = (
@@ -127,12 +117,7 @@ class ToolsService(ToolsServicePort):
         return Tool(id=tool_model.tool_id, name=tool_model.name)
 
     async def list_tools(self, *, tenant_id: UUID, limit: int = 200) -> list[Tool]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.list_tools",
-            input={"tenant_id": str(tenant_id), "limit": limit},
-        ):
-            tools = await self.repository.list_tools(tenant_id=tenant_id, limit=limit)
+        tools = await self.repository.list_tools(tenant_id=tenant_id, limit=limit)
         return [Tool(id=tool.tool_id, name=tool.name) for tool in tools]
 
     async def list_tool_configs(
@@ -142,18 +127,9 @@ class ToolsService(ToolsServicePort):
         status_filter: list[str] | None = None,
         limit: int = 200,
     ) -> list[ToolConfig]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.list_tool_configs",
-            input={
-                "tenant_id": str(tenant_id),
-                "status_filter": status_filter,
-                "limit": limit,
-            },
-        ):
-            configs = await self.repository.list_tool_configs(
-                tenant_id=tenant_id, status_filter=status_filter, limit=limit
-            )
+        configs = await self.repository.list_tool_configs(
+            tenant_id=tenant_id, status_filter=status_filter, limit=limit
+        )
         return [
             ToolConfig(
                 id=config.tool_config_id,
@@ -172,28 +148,19 @@ class ToolsService(ToolsServicePort):
     async def list_available_tools_for_execution(
         self, *, tenant_id: UUID, limit: int = 200
     ) -> list[AvailableTool]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.list_tool_configs_execution",
-            input={"tenant_id": str(tenant_id), "limit": limit},
-        ):
-            tool_configs = await self.list_tool_configs(
-                tenant_id=tenant_id,
-                status_filter=[VersionStatus.PUBLISHED.value],
-                limit=limit,
-            )
+        tool_configs = await self.list_tool_configs(
+            tenant_id=tenant_id,
+            status_filter=[VersionStatus.PUBLISHED.value],
+            limit=limit,
+        )
         if not tool_configs:
             return []
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.list_tools_execution",
-            input={"tenant_id": str(tenant_id), "limit": limit},
-        ):
-            tools = await self.repository.list_tools(
-                tenant_id=tenant_id,
-                status_filter=[VersionStatus.PUBLISHED.value],
-                limit=limit,
-            )
+
+        tools = await self.repository.list_tools(
+            tenant_id=tenant_id,
+            status_filter=[VersionStatus.PUBLISHED.value],
+            limit=limit,
+        )
         tool_map = {tool.tool_id: tool for tool in tools}
         available_tools = []
         for config in tool_configs:
@@ -218,12 +185,7 @@ class ToolsService(ToolsServicePort):
         tool_config_create: ToolConfigCreate,
         principal_id: str,
     ) -> ToolConfig:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.get_tool",
-            input={"tool_id": str(tool_config_create.tool_id)},
-        ):
-            tool = await self.repository.get_tool(tool_config_create.tool_id)
+        tool = await self.repository.get_tool(tool_config_create.tool_id)
         if tool is None:
             raise NotFoundServiceException(message="tool_not_found")
         with self.tracer.observe(
@@ -283,32 +245,18 @@ class ToolsService(ToolsServicePort):
         binding_create: AgentVersionToolBindingCreate,
         principal_id: str,
     ) -> AgentVersionToolBinding:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.get_agent_version",
-            input={"agent_version_id": str(binding_create.agent_version_id)},
-        ):
-            agent_version = await self.agents_repository.get_agent_version(
-                binding_create.agent_version_id
-            )
+        agent_version = await self.agents_repository.get_agent_version(
+            binding_create.agent_version_id
+        )
         if agent_version is None:
             raise NotFoundServiceException(message="agent_version_not_found")
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.get_agent",
-            input={"agent_id": str(agent_version.agent_id)},
-        ):
-            agent = await self.agents_repository.get_agent(agent_version.agent_id)
+        agent = await self.agents_repository.get_agent(agent_version.agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_service.get_tool_config_binding",
-            input={"tool_config_id": str(binding_create.tool_config_id)},
-        ):
-            tool_config = await self.repository.get_tool_config(
-                binding_create.tool_config_id
-            )
+
+        tool_config = await self.repository.get_tool_config(
+            binding_create.tool_config_id
+        )
         if tool_config is None or tool_config.tenant_id != tenant_id:
             raise NotFoundServiceException(message="tool_config_not_found")
         with self.tracer.observe(

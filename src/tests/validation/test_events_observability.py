@@ -38,6 +38,7 @@ async def test_execution_event_contains_correlation_and_channel(mocker):
     payload = FlowRunCreate(
         flow_version_id=flow_version_id,
         session_id=session_id,
+        user_id="test-user",
         correlation_id=correlation_id,
     )
 
@@ -45,7 +46,7 @@ async def test_execution_event_contains_correlation_and_channel(mocker):
         tenant_id=tenant_id,
         endpoint="/core/v1/flow-runs",
         idempotency_key="evt",
-        payload=payload,
+        flow_run=payload,
         channel="http",
         headers={"x-test": "1"},
     )

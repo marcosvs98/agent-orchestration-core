@@ -1,1 +1,36 @@
-# Schemas for RAG domain
+from domain.rag.schemas.embedding_job import EmbeddingJobPayload, EmbeddingStatus
+from domain.rag.schemas.rag import (
+    RagChunk,
+    RagConfig,
+    RagConfigCreate,
+    RagConfigOptions,
+    RagContext,
+    RagContextItem,
+    RagDocument,
+    RagDocumentCreate,
+    RagPreparedDocument,
+    RagEmbeddingOptions,
+    RagGenerationContract,
+    RagRetrievalOptions,
+    RagChunkingOptions,
+    VectorStore,
+)
+
+__all__ = [
+    "EmbeddingJobPayload",
+    "EmbeddingStatus",
+    "RagChunk",
+    "RagChunkingOptions",
+    "RagConfig",
+    "RagConfigCreate",
+    "RagConfigOptions",
+    "RagContext",
+    "RagContextItem",
+    "RagDocument",
+    "RagDocumentCreate",
+    "RagEmbeddingOptions",
+    "RagGenerationContract",
+    "RagPreparedDocument",
+    "RagRetrievalOptions",
+    "VectorStore",
+]

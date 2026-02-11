@@ -35,20 +35,22 @@ async def test_core_ignores_channel_variation(mocker):
     )
     service.llm_executor = mocker.MagicMock()
 
-    payload = FlowRunCreate(flow_version_id=flow_version_id, session_id=session_id)
+    payload = FlowRunCreate(
+        flow_version_id=flow_version_id, session_id=session_id, user_id="test-user"
+    )
 
     await service.create_flow_run(
         tenant_id=tenant_id,
         endpoint="/core/v1/flow-runs",
         idempotency_key="http",
-        payload=payload,
+        flow_run=payload,
         channel="http",
     )
     await service.create_flow_run(
         tenant_id=tenant_id,
         endpoint="/core/v1/flow-runs",
         idempotency_key="whatsapp",
-        payload=payload,
+        flow_run=payload,
         channel="whatsapp",
     )
 

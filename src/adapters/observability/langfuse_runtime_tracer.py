@@ -58,7 +58,7 @@ class ObservationHandle:
         metadata: Dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        update_data: Dict[str, Any] = {"output": output, "level": "INFO"}
+        update_data: Dict[str, Any] = {"output": output}
         if metadata:
             update_data["metadata"] = _merge_metadata(metadata)
         update_data.update(kwargs)
@@ -136,13 +136,15 @@ class LangfuseRuntimeTracer:
         flow_name: str | None = None,
     ) -> TraceContext:
         try:
-            if external_request_id:
+            if trace_id is not None:
+                trace_id_val = trace_id
+            elif external_request_id:
                 deterministic_trace_id = self.langfuse.create_trace_id(
                     seed=external_request_id
                 )
                 trace_id_val = UUID(deterministic_trace_id)
             else:
-                trace_id_val = trace_id or flow_run_id
+                trace_id_val = flow_run_id
 
             trace_context = TraceContext(
                 trace_id=trace_id_val,
@@ -179,13 +181,13 @@ class LangfuseRuntimeTracer:
         self, *, trace: TraceContext, input: Dict[str, Any], name: str | None = None
     ) -> Iterator[ObservationHandle]:
         span_name = name or trace.flow_name or "flow.run"
-        if trace.user_id is None:
-            trace.user_id = str(trace.tenant_id)
         propagate_metadata: Dict[str, Any] = {
             "tenant_id": str(trace.tenant_id),
             "flow_run_id": str(trace.flow_run_id),
             "trace_id": str(trace.trace_id),
         }
+        if trace.user_id:
+            propagate_metadata["user_id"] = trace.user_id
         if trace.flow_id:
             propagate_metadata["flow_id"] = str(trace.flow_id)
         if trace.flow_version_id:
@@ -206,7 +208,7 @@ class LangfuseRuntimeTracer:
         if trace.flow_name:
             propagate_metadata["flow_name"] = trace.flow_name
         if self.environment:
-            propagate_metadata["environment"] = self.environment
+            propagate_metadata["env"] = self.environment
         if self.runtime_version:
             propagate_metadata["runtime_version"] = self.runtime_version
 
@@ -215,7 +217,7 @@ class LangfuseRuntimeTracer:
         try:
             with self.langfuse.start_as_current_observation(
                 as_type="span",
-                name=span_name,
+                name=f"flow:{span_name}",
                 trace_context={"trace_id": trace.trace_id.hex},
                 input=input,
                 metadata=_merge_metadata(
@@ -231,7 +233,7 @@ class LangfuseRuntimeTracer:
                 with propagate_attributes(
                     user_id=trace.user_id,
                     session_id=str(trace.session_id) if trace.session_id else None,
-                    metadata=propagate_metadata,
+                    metadata=_get_contextvars_metadata(),
                     version=str(trace.flow_version_id)
                     if trace.flow_version_id
                     else None,
@@ -255,6 +257,7 @@ class LangfuseRuntimeTracer:
         name: str,
         input: Dict[str, Any],
         metadata: Dict[str, Any] | None = None,
+        trace_context: Dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Iterator[ObservationHandle]:
         handle = ObservationHandle(None)
@@ -267,12 +270,15 @@ class LangfuseRuntimeTracer:
                 )
                 yield handle
                 return
+            obs_kwargs: Dict[str, Any] = dict(kwargs)
+            if trace_context is not None:
+                obs_kwargs["trace_context"] = trace_context
             with self.langfuse.start_as_current_observation(
                 as_type=as_type,
                 name=name,
                 input=input,
                 metadata=_merge_metadata(metadata),
-                **kwargs,
+                **obs_kwargs,
             ) as observation:
                 handle = ObservationHandle(observation)
                 yield handle

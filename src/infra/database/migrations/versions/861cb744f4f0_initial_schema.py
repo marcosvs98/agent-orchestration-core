@@ -25,6 +25,30 @@ def upgrade() -> None:
         sa.Column("ai_task_id", sa.UUID(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column(
+            "allow_rag_tenant",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column(
+            "allow_user_memory",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column(
+            "allow_session_context",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column(
+            "allow_memory_write",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
@@ -212,9 +236,36 @@ def upgrade() -> None:
         postgresql_where=sa.text("external_id IS NOT NULL"),
     )
     op.create_table(
+        "end_user",
+        sa.Column("end_user_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_end_user_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("end_user_id", name=op.f("pk_end_user")),
+        sa.UniqueConstraint("tenant_id", "user_id", name="uq_end_user_tenant_user"),
+    )
+    op.create_table(
         "session",
         sa.Column("session_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -233,7 +284,84 @@ def upgrade() -> None:
             name=op.f("fk_session_tenant_id_tenant"),
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["end_user.tenant_id", "end_user.user_id"],
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint("session_id", name=op.f("pk_session")),
+    )
+    op.create_table(
+        "user_preference",
+        sa.Column("user_preference_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column("preference_key", sa.String(length=128), nullable=False),
+        sa.Column(
+            "preference_value",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+        ),
+        sa.Column("source", sa.String(length=32), nullable=False),
+        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["end_user.tenant_id", "end_user.user_id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("user_preference_id", name=op.f("pk_user_preference")),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "preference_key",
+            name="uq_user_preference_key",
+        ),
+    )
+    op.create_table(
+        "user_memory_profile",
+        sa.Column("user_memory_profile_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column(
+            "profile",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column("profile_version", sa.Integer(), server_default="1", nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["end_user.tenant_id", "end_user.user_id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "user_memory_profile_id", name=op.f("pk_user_memory_profile")
+        ),
+        sa.UniqueConstraint("tenant_id", "user_id", name="uq_user_memory_profile_user"),
     )
     op.create_table(
         "tool",
@@ -411,6 +539,56 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("billing_policy_id", name=op.f("pk_billing_policy")),
+    )
+    op.create_table(
+        "memory_policy",
+        sa.Column("memory_policy_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_memory_policy_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("memory_policy_id", name=op.f("pk_memory_policy")),
+    )
+    op.create_table(
+        "rag_policy",
+        sa.Column("rag_policy_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_rag_policy_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("rag_policy_id", name=op.f("pk_rag_policy")),
     )
     op.create_table(
         "escalation_policy",
@@ -644,6 +822,21 @@ def upgrade() -> None:
         sa.Column("content", sa.Text(), nullable=True),
         sa.Column("version", sa.String(length=64), nullable=True),
         sa.Column(
+            "embedding_status",
+            sa.String(length=32),
+            server_default="PENDING",
+            nullable=False,
+        ),
+        sa.Column(
+            "embedding_attempts",
+            sa.Integer(),
+            server_default="0",
+            nullable=False,
+        ),
+        sa.Column("last_embedding_error_code", sa.String(length=128), nullable=True),
+        sa.Column("embedding_started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("embedding_completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
             "metadata",
             postgresql.JSONB(astext_type=sa.Text()),
             nullable=True,
@@ -708,6 +901,11 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("chunk_id", name=op.f("pk_rag_chunk")),
+        sa.UniqueConstraint(
+            "document_id",
+            "chunk_index",
+            name="uq_rag_chunk_document_id_chunk_index",
+        ),
     )
     op.create_index(
         "ix_rag_chunk_document_id",
@@ -1077,6 +1275,128 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "memory_policy_version",
+        sa.Column("memory_policy_version_id", sa.UUID(), nullable=False),
+        sa.Column("memory_policy_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "status", sa.String(length=16), server_default="DRAFT", nullable=False
+        ),
+        sa.Column("version_major", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("version_minor", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("version_patch", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("config_hash", sa.String(length=128), nullable=True),
+        sa.Column(
+            "retention_ttl_seconds",
+            sa.Integer(),
+            server_default="2592000",
+            nullable=False,
+        ),
+        sa.Column(
+            "consent_definition",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "allowed_sources",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "allowed_schemas",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["memory_policy_id"],
+            ["memory_policy.memory_policy_id"],
+            name=op.f("fk_memory_policy_version_memory_policy_id_memory_policy"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "memory_policy_version_id", name=op.f("pk_memory_policy_version")
+        ),
+        sa.UniqueConstraint(
+            "memory_policy_id",
+            "version_major",
+            "version_minor",
+            "version_patch",
+            name="uq_memory_policy_version_semver",
+        ),
+    )
+    op.create_index(
+        "ix_memory_policy_version_status",
+        "memory_policy_version",
+        ["status"],
+        unique=False,
+    )
+    op.create_table(
+        "rag_policy_version",
+        sa.Column("rag_policy_version_id", sa.UUID(), nullable=False),
+        sa.Column("rag_policy_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "status", sa.String(length=16), server_default="DRAFT", nullable=False
+        ),
+        sa.Column("version_major", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("version_minor", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("version_patch", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("config_hash", sa.String(length=128), nullable=True),
+        sa.Column(
+            "policy_definition",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["rag_policy_id"],
+            ["rag_policy.rag_policy_id"],
+            name=op.f("fk_rag_policy_version_rag_policy_id_rag_policy"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "rag_policy_version_id", name=op.f("pk_rag_policy_version")
+        ),
+        sa.UniqueConstraint(
+            "rag_policy_id",
+            "version_major",
+            "version_minor",
+            "version_patch",
+            name="uq_rag_policy_version_semver",
+        ),
+    )
+    op.create_index(
+        "ix_rag_policy_version_status",
+        "rag_policy_version",
+        ["status"],
+        unique=False,
+    )
+    op.create_table(
         "flow_version",
         sa.Column("flow_version_id", sa.UUID(), nullable=False),
         sa.Column("flow_id", sa.UUID(), nullable=False),
@@ -1227,6 +1547,7 @@ def upgrade() -> None:
         sa.Column("origin_flow_run_id", sa.UUID(), nullable=True),
         sa.Column("flow_version_id", sa.UUID(), nullable=False),
         sa.Column("session_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
         sa.Column("interaction_id", sa.UUID(), nullable=True),
         sa.Column(
             "status", sa.String(length=32), server_default="CREATED", nullable=False
@@ -1420,6 +1741,7 @@ def upgrade() -> None:
         "execution_event",
         sa.Column("execution_event_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
         sa.Column("session_id", sa.UUID(), nullable=False),
         sa.Column("flow_run_id", sa.UUID(), nullable=False),
         sa.Column("correlation_id", sa.UUID(), nullable=False),
@@ -1472,6 +1794,12 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("execution_event_id", name=op.f("pk_execution_event")),
+    )
+    op.create_index(
+        "ix_execution_event_tenant_user_occurred_at",
+        "execution_event",
+        ["tenant_id", "user_id", "occurred_at"],
+        unique=False,
     )
     op.create_table(
         "onboarding_version",
@@ -1654,6 +1982,76 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint(
             "tenant_id", name=op.f("pk_active_billing_policy_version")
         ),
+    )
+    op.create_table(
+        "active_memory_policy_version",
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("memory_policy_version_id", sa.UUID(), nullable=False),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
+        sa.Column("justification", sa.String(length=512), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["memory_policy_version_id"],
+            ["memory_policy_version.memory_policy_version_id"],
+            name=op.f(
+                "fk_active_memory_policy_version_memory_policy_version_id_memory_policy_version"
+            ),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_active_memory_policy_version_tenant_id_tenant"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "tenant_id", name=op.f("pk_active_memory_policy_version")
+        ),
+    )
+    op.create_table(
+        "active_rag_policy_version",
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("rag_policy_version_id", sa.UUID(), nullable=False),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
+        sa.Column("justification", sa.String(length=512), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["rag_policy_version_id"],
+            ["rag_policy_version.rag_policy_version_id"],
+            name=op.f(
+                "fk_active_rag_policy_version_rag_policy_version_id_rag_policy_version"
+            ),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_active_rag_policy_version_tenant_id_tenant"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("tenant_id", name=op.f("pk_active_rag_policy_version")),
     )
     op.create_table(
         "agent_version",
@@ -2546,8 +2944,14 @@ def downgrade() -> None:
     op.drop_table("flow_graph")
     op.drop_index("ix_agent_version_status", table_name="agent_version")
     op.drop_table("agent_version")
+    op.drop_table("active_rag_policy_version")
+    op.drop_table("active_memory_policy_version")
     op.drop_table("active_billing_policy_version")
     op.drop_table("runtime_policy")
+    op.drop_index("ix_rag_policy_version_status", table_name="rag_policy_version")
+    op.drop_table("rag_policy_version")
+    op.drop_index("ix_memory_policy_version_status", table_name="memory_policy_version")
+    op.drop_table("memory_policy_version")
     op.drop_index(
         "ix_rate_limit_policy_version_status", table_name="rate_limit_policy_version"
     )
@@ -2564,6 +2968,9 @@ def downgrade() -> None:
         table_name="execution_limit_policy_version",
     )
     op.drop_table("execution_limit_policy_version")
+    op.drop_index(
+        "ix_execution_event_tenant_user_occurred_at", table_name="execution_event"
+    )
     op.drop_table("execution_event")
     op.drop_table("escalation")
     op.drop_table("billing_policy_version")
@@ -2575,7 +2982,10 @@ def downgrade() -> None:
     op.drop_table("access_policy_version")
     op.drop_index("ix_tool_config_status", table_name="tool_config")
     op.drop_table("tool_config")
+    op.drop_table("user_memory_profile")
+    op.drop_table("user_preference")
     op.drop_table("session")
+    op.drop_table("end_user")
     op.drop_table("response_artifact")
     op.drop_table("rate_limit_policy")
     op.drop_table("rag_query_cache")
@@ -2592,6 +3002,8 @@ def downgrade() -> None:
     op.drop_table("flow_run_lock")
     op.drop_table("flow")
     op.drop_table("execution_limit_policy")
+    op.drop_table("rag_policy")
+    op.drop_table("memory_policy")
     op.drop_table("escalation_policy")
     op.drop_table("billing_policy")
     op.drop_table("authoring_event")

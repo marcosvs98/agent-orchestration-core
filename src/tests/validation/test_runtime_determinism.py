@@ -61,6 +61,7 @@ async def test_replay_produces_same_event_shape(mocker):
     payload = FlowRunCreate(
         flow_version_id=flow_version_id,
         session_id=session_id,
+        user_id="test-user",
         input={"hello": "world"},
         correlation_id=correlation_id,
     )
@@ -69,13 +70,13 @@ async def test_replay_produces_same_event_shape(mocker):
         tenant_id=tenant_id,
         endpoint="/core/v1/flow-runs",
         idempotency_key="first",
-        payload=payload,
+        flow_run=payload,
     )
     await service.create_flow_run(
         tenant_id=tenant_id,
         endpoint="/core/v1/flow-runs",
         idempotency_key="second",
-        payload=payload,
+        flow_run=payload,
     )
 
     calls = repo.append_execution_event.call_args_list
@@ -108,12 +109,14 @@ async def test_flow_run_blocks_without_active_pointer(mocker):
     )
     service.llm_executor = mocker.MagicMock()
 
-    payload = FlowRunCreate(flow_version_id=flow_version_id, session_id=session_id)
+    payload = FlowRunCreate(
+        flow_version_id=flow_version_id, session_id=session_id, user_id="test-user"
+    )
 
     with pytest.raises(ResourceBlockedServiceException, match="flow_not_active"):
         await service.create_flow_run(
             tenant_id=tenant_id,
             endpoint="/core/v1/flow-runs",
             idempotency_key="no-active",
-            payload=payload,
+            flow_run=payload,
         )

@@ -28,8 +28,14 @@ class HttpToolExecutor(ToolExecutorPort):
         with self.tracer.observe(
             as_type="tool",
             name="domain.infra.http_tool_executor.execute_http",
-            input={"method": method.upper(), "url": url},
-        ):
+            input={
+                "method": method.upper(),
+                "url": url,
+                "headers": request_headers,
+                "json_body": json_body,
+                "timeout_seconds": timeout_seconds,
+            },
+        ) as tool_handle:
             async with httpx.AsyncClient(
                 timeout=timeout_seconds,
                 follow_redirects=True,
@@ -46,8 +52,13 @@ class HttpToolExecutor(ToolExecutorPort):
                 except json.JSONDecodeError:
                     body = response.text
 
-                return {
+                result = {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
                     "body": body,
                 }
+
+                if tool_handle:
+                    tool_handle.success(output=result)
+
+                return result

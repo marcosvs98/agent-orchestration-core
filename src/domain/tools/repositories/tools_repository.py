@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from domain.common.schemas.versioning import VersionStatus
+from utils.query_compiler import compile_query
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -27,28 +28,52 @@ class ToolsRepository:
         self.tracer = tracer
 
     async def get_tool(self, tool_id: UUID) -> ToolModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_repository.get_tool",
-            input={"tool_id": str(tool_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ToolModel).where(ToolModel.tool_id == tool_id)
-                )
-                return result.scalar_one_or_none()
+        async with self.db.get_session() as session:
+            stmt = select(ToolModel).where(ToolModel.tool_id == tool_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.get_tool",
+                input={"query": query_sql, "params": {"tool_id": str(tool_id)}},
+                metadata={"retriever_name": "get_tool"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
+                return instance
 
     async def get_tool_by_name(self, name: str) -> ToolModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_repository.get_tool_by_name",
-            input={"name": name},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ToolModel).where(ToolModel.name == name)
-                )
-                return result.scalar_one_or_none()
+        async with self.db.get_session() as session:
+            stmt = select(ToolModel).where(ToolModel.name == name)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.get_tool_by_name",
+                input={"query": query_sql, "params": {"name": name}},
+                metadata={"retriever_name": "get_tool_by_name"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
+                return instance
 
     async def create_tool(self, *, name: str | None, created_by: str) -> ToolModel:
         with self.tracer.observe(
@@ -70,41 +95,70 @@ class ToolsRepository:
         status_filter: list[str] | None = None,
         limit: int = 200,
     ) -> list[ToolModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_repository.list_tools",
-            input={"tenant_id": str(tenant_id), "limit": limit},
-        ):
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(ToolModel)
-                    .join(
-                        ToolConfigModel,
-                        ToolModel.tool_id == ToolConfigModel.tool_id,
-                    )
-                    .where(ToolConfigModel.tenant_id == tenant_id)
+        async with self.db.get_session() as session:
+            stmt = (
+                select(ToolModel)
+                .join(
+                    ToolConfigModel,
+                    ToolModel.tool_id == ToolConfigModel.tool_id,
                 )
-                if status_filter:
-                    stmt = stmt.where(ToolConfigModel.status.in_(status_filter))
-                stmt = (
-                    stmt.distinct().order_by(ToolModel.created_at.desc()).limit(limit)
-                )
+                .where(ToolConfigModel.tenant_id == tenant_id)
+            )
+            if status_filter:
+                stmt = stmt.where(ToolConfigModel.status.in_(status_filter))
+            stmt = stmt.distinct().order_by(ToolModel.created_at.desc()).limit(limit)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.list_tools",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id), "limit": limit},
+                },
+                metadata={"retriever_name": "list_tools"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
-                return list(result.scalars().all())
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def get_tool_config(self, tool_config_id: UUID) -> ToolConfigModel | None:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_repository.get_tool_config",
-            input={"tool_config_id": str(tool_config_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(ToolConfigModel).where(
-                        ToolConfigModel.tool_config_id == tool_config_id
+        async with self.db.get_session() as session:
+            stmt = select(ToolConfigModel).where(
+                ToolConfigModel.tool_config_id == tool_config_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.get_tool_config",
+                input={
+                    "query": query_sql,
+                    "params": {"tool_config_id": str(tool_config_id)},
+                },
+                metadata={"retriever_name": "get_tool_config"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
                     )
-                )
-                return result.scalar_one_or_none()
+
+                return instance
 
     async def list_tool_configs(
         self,
@@ -113,26 +167,42 @@ class ToolsRepository:
         status_filter: list[str] | None = None,
         limit: int = 200,
     ) -> list[ToolConfigModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tools_repository.list_tool_configs",
-            input={"tenant_id": str(tenant_id), "limit": limit},
-        ):
-            async with self.db.get_session() as session:
-                stmt = (
-                    select(ToolConfigModel)
-                    .where(ToolConfigModel.tenant_id == tenant_id)
-                    .order_by(
-                        ToolConfigModel.version_major.desc(),
-                        ToolConfigModel.version_minor.desc(),
-                        ToolConfigModel.version_patch.desc(),
-                    )
+        async with self.db.get_session() as session:
+            stmt = (
+                select(ToolConfigModel)
+                .where(ToolConfigModel.tenant_id == tenant_id)
+                .order_by(
+                    ToolConfigModel.version_major.desc(),
+                    ToolConfigModel.version_minor.desc(),
+                    ToolConfigModel.version_patch.desc(),
                 )
-                if status_filter:
-                    stmt = stmt.where(ToolConfigModel.status.in_(status_filter))
-                stmt = stmt.limit(limit)
+            )
+            if status_filter:
+                stmt = stmt.where(ToolConfigModel.status.in_(status_filter))
+            stmt = stmt.limit(limit)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.list_tool_configs",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id), "limit": limit},
+                },
+                metadata={"retriever_name": "list_tool_configs"},
+            ) as retriever_handle:
                 result = await session.execute(stmt)
-                return list(result.scalars().all())
+                items = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+
+                return items
 
     async def create_tool_config(
         self,
@@ -149,17 +219,31 @@ class ToolsRepository:
     ) -> ToolConfigModel:
         async with self.db.get_session() as session:
             if source_config_id is not None:
+                stmt = select(ToolConfigModel).where(
+                    ToolConfigModel.tool_config_id == source_config_id
+                )
+                query_sql = compile_query(stmt)
+
                 with self.tracer.observe(
                     as_type="retriever",
                     name="domain.tools.tools_repository.get_source_config",
-                    input={"source_config_id": str(source_config_id)},
-                ):
-                    source_config = await session.execute(
-                        select(ToolConfigModel).where(
-                            ToolConfigModel.tool_config_id == source_config_id
-                        )
-                    )
+                    input={
+                        "query": query_sql,
+                        "params": {"source_config_id": str(source_config_id)},
+                    },
+                    metadata={"retriever_name": "get_source_config"},
+                ) as retriever_handle:
+                    source_config = await session.execute(stmt)
                     source = source_config.scalar_one_or_none()
+
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if source else 0,
+                                "found": source is not None,
+                            }
+                        )
+
                 if source is None:
                     raise NotFoundServiceException(message="source_config_not_found")
                 if version_major is None:
@@ -174,25 +258,44 @@ class ToolsRepository:
                     schema_version = source.schema_version
 
             if version_major is None or version_minor is None or version_patch is None:
+                stmt = (
+                    select(ToolConfigModel)
+                    .where(
+                        ToolConfigModel.tool_id == tool_id,
+                        ToolConfigModel.tenant_id == tenant_id,
+                    )
+                    .order_by(
+                        ToolConfigModel.version_major.desc(),
+                        ToolConfigModel.version_minor.desc(),
+                        ToolConfigModel.version_patch.desc(),
+                    )
+                    .limit(1)
+                )
+                query_sql = compile_query(stmt)
+
                 with self.tracer.observe(
                     as_type="retriever",
                     name="domain.tools.tools_repository.get_latest_config",
-                    input={"tool_id": str(tool_id), "tenant_id": str(tenant_id)},
-                ):
-                    last_config = await session.execute(
-                        select(ToolConfigModel)
-                        .where(
-                            ToolConfigModel.tool_id == tool_id,
-                            ToolConfigModel.tenant_id == tenant_id,
-                        )
-                        .order_by(
-                            ToolConfigModel.version_major.desc(),
-                            ToolConfigModel.version_minor.desc(),
-                            ToolConfigModel.version_patch.desc(),
-                        )
-                        .limit(1)
-                    )
+                    input={
+                        "query": query_sql,
+                        "params": {
+                            "tool_id": str(tool_id),
+                            "tenant_id": str(tenant_id),
+                        },
+                    },
+                    metadata={"retriever_name": "get_latest_config"},
+                ) as retriever_handle:
+                    last_config = await session.execute(stmt)
                     last = last_config.scalar_one_or_none()
+
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if last else 0,
+                                "found": last is not None,
+                            }
+                        )
+
                 if last is None:
                     version_major = 1
                     version_minor = 0
@@ -229,17 +332,31 @@ class ToolsRepository:
         self, *, tool_config_id: UUID, status: VersionStatus
     ) -> None:
         async with self.db.get_session() as session:
+            stmt = select(ToolConfigModel).where(
+                ToolConfigModel.tool_config_id == tool_config_id
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.tools.tools_repository.get_tool_config_status",
-                input={"tool_config_id": str(tool_config_id)},
-            ):
-                result = await session.execute(
-                    select(ToolConfigModel).where(
-                        ToolConfigModel.tool_config_id == tool_config_id
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"tool_config_id": str(tool_config_id)},
+                },
+                metadata={"retriever_name": "get_tool_config_status"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance is None:
                 raise NotFoundServiceException(message="tool_config_not_found")
             instance.status = str(status)
@@ -258,45 +375,87 @@ class ToolsRepository:
         created_by: str,
     ) -> AgentVersionToolBindingModel:
         async with self.db.get_session() as session:
+            stmt = select(AgentVersionModel).where(
+                AgentVersionModel.agent_version_id == agent_version_id
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.tools.tools_repository.get_agent_version_binding",
-                input={"agent_version_id": str(agent_version_id)},
-            ):
-                agent_version = await session.execute(
-                    select(AgentVersionModel).where(
-                        AgentVersionModel.agent_version_id == agent_version_id
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"agent_version_id": str(agent_version_id)},
+                },
+                metadata={"retriever_name": "get_agent_version_binding"},
+            ) as retriever_handle:
+                agent_version = await session.execute(stmt)
                 agent_version_instance = agent_version.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if agent_version_instance else 0,
+                            "found": agent_version_instance is not None,
+                        }
+                    )
+
             if agent_version_instance is None:
                 raise NotFoundServiceException(message="agent_version_not_found")
+
+            stmt = select(AgentModel).where(
+                AgentModel.agent_id == agent_version_instance.agent_id
+            )
+            query_sql = compile_query(stmt)
 
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.tools.tools_repository.get_agent_binding",
-                input={"agent_id": str(agent_version_instance.agent_id)},
-            ):
-                agent = await session.execute(
-                    select(AgentModel).where(
-                        AgentModel.agent_id == agent_version_instance.agent_id
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"agent_id": str(agent_version_instance.agent_id)},
+                },
+                metadata={"retriever_name": "get_agent_binding"},
+            ) as retriever_handle:
+                agent = await session.execute(stmt)
                 agent_instance = agent.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if agent_instance else 0,
+                            "found": agent_instance is not None,
+                        }
+                    )
+
             if agent_instance is None:
                 raise NotFoundServiceException(message="agent_not_found")
+
+            stmt = select(ToolConfigModel).where(
+                ToolConfigModel.tool_config_id == tool_config_id
+            )
+            query_sql = compile_query(stmt)
 
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.tools.tools_repository.get_tool_config_binding",
-                input={"tool_config_id": str(tool_config_id)},
-            ):
-                tool_config = await session.execute(
-                    select(ToolConfigModel).where(
-                        ToolConfigModel.tool_config_id == tool_config_id
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"tool_config_id": str(tool_config_id)},
+                },
+                metadata={"retriever_name": "get_tool_config_binding"},
+            ) as retriever_handle:
+                tool_config = await session.execute(stmt)
                 tool_config_instance = tool_config.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if tool_config_instance else 0,
+                            "found": tool_config_instance is not None,
+                        }
+                    )
+
             if tool_config_instance is None:
                 raise NotFoundServiceException(message="tool_config_not_found")
 

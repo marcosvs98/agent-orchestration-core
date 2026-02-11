@@ -239,7 +239,11 @@ O sistema é composto pelos seguintes domínios:
 **Artefatos**:
 - `AIExecutionPolicy`: Política de execução de IA
 - `AIExecutionPolicyVersion`: Versão imutável de política
-- `AITask`: Tipo de tarefa cognitiva (IntentDetection, SlotFilling, etc.)
+- `AITask`: Tipo de tarefa cognitiva com flags estruturais de contexto:
+  - `allow_rag_tenant`
+  - `allow_user_memory`
+  - `allow_session_context`
+  - `allow_memory_write`
 - `Model`: Modelo de LLM disponível
 
 #### RAG
@@ -255,8 +259,48 @@ O sistema é composto pelos seguintes domínios:
 - `VectorStore`: Armazenamento vetorial
 
 **Restrições**:
-- RAG só permitido para AITasks compatíveis (IntentDetection, SlotFilling, ResponseFormatting)
-- Bloqueado para ContentModeration, FlowDecision, ExecutionControl
+- Ativação de contexto é estrutural por `AITask`:
+  - Tenant Knowledge: `allow_rag_tenant=true`
+  - User Memory: `allow_user_memory=true`
+  - Session Context (exposição ao LLM): `allow_session_context=true`
+  - Memory write boundary: `allow_memory_write=true`
+- Sem flag explícita, o comportamento é `false` (default seguro).
+- Ativação dinâmica de RAG é decidida por precedência objetiva:
+  - gate estrutural (`AITask`)
+  - `RagPolicyVersion` ativa por tenant
+  - `ToolConfig.config.rag_activation` (override explícito por escopo)
+  - `RagConfig` válida/publicada
+  - presença obrigatória de `user_id` para escopo `USER_MEMORY_VECTOR`
+  - heurística leve de input (`empty`, `short`, `structured`)
+- Decisões de ativação de RAG são observáveis via evento `domain.rag.activation.decision` com `reason`, `input_len` e `input_kind`, sem logging de conteúdo bruto.
+- Persistência de memória inferida exige `MemoryPolicy` ativa por tenant.
+- `MemoryPolicyVersion` governa retention TTL, consentimento, allowed sources, allowed schemas e write targets por schema.
+- Persistência de memória executa via `MemoryWriteService`, com eventos canônicos `MemoryUpdated` e `MemoryEmbedded` em tracing e execution events.
+- Atualização de preferências em `MemoryWriteService` segue política determinística:
+  - extração de key via `fixed_key` ou `allowed_keys`
+  - sobrescrita apenas por prioridade de source
+  - atualização ignorada quando valor não muda ou source tem prioridade menor
+- Extração pós-execução de memória é acionada no `on_flow_complete` via hook wrapper:
+  - classifica output final em preferência estruturada, patch de perfil e memória vetorial
+  - converte para `UserMemoryItem` com `source=INFERRED_LLM`
+  - persiste exclusivamente via `MemoryWriteService` para manter governança por `MemoryPolicy`
+  - observabilidade expõe apenas chaves/contagens, sem payload bruto do output do flow
+- Pipeline de embedding para `USER_MEMORY_VECTOR` é assíncrono:
+  - produtor (post-flow) valida política, prepara documento e enfileira job (`Redis + Arq`)
+  - worker executa geração de embeddings e persistência de chunks
+  - semântica de entrega: at-least-once com idempotência por hash de documento e conflito `(document_id, chunk_index)`
+  - ciclo de vida do documento: `PENDING -> PROCESSING -> COMPLETED|FAILED`
+  - eventos canônicos adicionais: `MemoryEmbeddingQueued`, `MemoryEmbeddingStarted`, `MemoryEmbeddingCompleted`, `MemoryEmbeddingFailed`
+- Recuperação de memória é centralizada em `MemoryRetrievalService`:
+  - separa responsabilidades entre Tenant RAG, User Memory e Session Context
+  - enforce de User Memory vector por `(tenant_id, user_id)` e TTL via `doc_metadata.expires_at > now`
+  - suporta reranking temporal opcional por decaimento multiplicativo (`score * exp(-age/half_life)`)
+  - observabilidade usa apenas ids/contagens e flags de decisão (sem conteúdo bruto)
+- Enriquecimento de contexto em modo híbrido:
+  - runtime pode semear `state.user_context_enrichment` de forma implícita via `runtime_policy.user_context_enrichment`
+  - `UserContextEnrichmentNode` publica explicitamente quais camadas podem ser usadas por etapas LLM subsequentes
+  - com `gating=true`, `ContextBuilder` bloqueia tenant/user memory até publicação explícita do handle
+  - retrieval real continua on-demand por `MemoryRetrievalService` (sem persistir conteúdo de memória no `graph_state`)
 
 #### Onboarding
 
@@ -297,6 +341,10 @@ O sistema é composto pelos seguintes domínios:
 - `AccessPolicy` / `AccessPolicyVersion`: Políticas de acesso
 - `ExecutionLimitPolicy` / `ExecutionLimitPolicyVersion`: Limites de execução
 - `RateLimitPolicy` / `RateLimitPolicyVersion`: Rate limiting
+- `MemoryPolicy` / `MemoryPolicyVersion`: Governança de persistência de memória
+- `ActiveMemoryPolicyVersion`: Versão ativa de política de memória por tenant
+- `RagPolicy` / `RagPolicyVersion`: Governança de ativação dinâmica de RAG
+- `ActiveRagPolicyVersion`: Versão ativa de política de RAG por tenant
 - `AuthoringEvent`: Eventos de governança (publish/activate/rollback)
 
 #### Prompts

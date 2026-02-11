@@ -1,4 +1,12 @@
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.sql import func
 
@@ -21,6 +29,13 @@ class RagDocument(ORMBaseModel):
     content_hash = Column(String(length=128), nullable=False)
     content = Column(Text(), nullable=True)
     version = Column(String(length=64), nullable=True)
+    embedding_status = Column(
+        String(length=32), nullable=False, server_default="PENDING"
+    )
+    embedding_attempts = Column(Integer, nullable=False, server_default="0")
+    last_embedding_error_code = Column(String(length=128), nullable=True)
+    embedding_started_at = Column(DateTime(timezone=True), nullable=True)
+    embedding_completed_at = Column(DateTime(timezone=True), nullable=True)
     doc_metadata = Column("metadata", JSONB, nullable=True)
     created_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

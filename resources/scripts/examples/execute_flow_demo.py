@@ -102,6 +102,7 @@ def execute_flow_demo() -> None:
             "origin_flow_run_id": None,
             "correlation_id": correlation_id,
             "input": {"user_input": user_input},
+            "user_id": "test_user_id",
         }
     )
 

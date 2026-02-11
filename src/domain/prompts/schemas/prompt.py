@@ -22,6 +22,7 @@ class NodeType(StrEnum):
     ClarificationNode = "ClarificationNode"
     ResponseNode = "ResponseNode"
     ToolExecutionNode = "ToolExecutionNode"
+    UserContextEnrichmentNode = "UserContextEnrichmentNode"
     FallbackNode = "FallbackNode"
 
 

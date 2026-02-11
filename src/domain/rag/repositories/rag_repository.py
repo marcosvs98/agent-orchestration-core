@@ -1,9 +1,12 @@
 from uuid import UUID
+from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from domain.common.schemas.versioning import VersionStatus
+from domain.rag.schemas.embedding_job import EmbeddingStatus
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
 from infra.database.models.rag.rag_config import RagConfig as RagConfigModel
@@ -181,6 +184,7 @@ class RagRepository:
         content: str | None,
         version: str | None,
         metadata: dict[str, object] | None,
+        embedding_status: EmbeddingStatus = EmbeddingStatus.PENDING,
     ) -> RagDocumentModel:
         async with self.db.get_session() as session:
             instance = RagDocumentModel(
@@ -190,12 +194,54 @@ class RagRepository:
                 content_hash=content_hash,
                 content=content,
                 version=version,
+                embedding_status=embedding_status.value,
                 doc_metadata=metadata,
             )
             session.add(instance)
             await session.commit()
             await session.refresh(instance)
             return instance
+
+    async def get_document_by_id(self, *, document_id: UUID) -> RagDocumentModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(RagDocumentModel).where(
+                    RagDocumentModel.document_id == document_id,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def update_document_embedding_status(
+        self,
+        *,
+        document_id: UUID,
+        status: EmbeddingStatus,
+        error_code: str | None = None,
+        increment_attempts: bool = False,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+    ) -> bool:
+        async with self.db.get_session() as session:
+            values: dict[str, object] = {
+                "embedding_status": status.value,
+                "updated_at": sa.func.now(),
+                "last_embedding_error_code": error_code,
+            }
+            if increment_attempts:
+                values["embedding_attempts"] = RagDocumentModel.embedding_attempts + 1
+            if started_at is not None:
+                values["embedding_started_at"] = started_at
+            if completed_at is not None:
+                values["embedding_completed_at"] = completed_at
+            stmt = (
+                update(RagDocumentModel)
+                .where(RagDocumentModel.document_id == document_id)
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0) > 0
 
     async def list_documents(
         self, *, tenant_id: UUID, limit: int
@@ -222,8 +268,33 @@ class RagRepository:
             return list(result.scalars().all())
 
     async def create_chunks(self, *, chunks: list[RagChunkModel]) -> None:
+        if not chunks:
+            return
         async with self.db.get_session() as session:
-            session.add_all(chunks)
+            values: list[dict[str, object]] = []
+            for chunk in chunks:
+                values.append(
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "document_id": chunk.document_id,
+                        "chunk_index": chunk.chunk_index,
+                        "content": chunk.content,
+                        "content_hash": chunk.content_hash,
+                        "token_count": chunk.token_count,
+                        "embedding": chunk.embedding,
+                        "embedding_model": chunk.embedding_model,
+                        "embedding_dimension": chunk.embedding_dimension,
+                        "metadata": chunk.chunk_metadata,
+                    }
+                )
+            stmt = (
+                pg_insert(RagChunkModel)
+                .values(values)
+                .on_conflict_do_nothing(
+                    index_elements=["document_id", "chunk_index"],
+                )
+            )
+            await session.execute(stmt)
             await session.commit()
 
     async def get_query_cache(
@@ -263,17 +334,22 @@ class RagRepository:
         self,
         *,
         tenant_id: UUID,
+        user_id: str | None,
         query_embedding: list[float],
         top_k: int,
         similarity_threshold: float,
         filters: dict[str, object] | None,
-    ) -> list[tuple[RagChunkModel, float]]:
+    ) -> list[tuple[RagChunkModel, float, datetime | None, str | None]]:
         async with self.db.get_session() as session:
             stmt = (
                 select(
                     RagChunkModel,
                     RagChunkModel.embedding.cosine_distance(query_embedding).label(
                         "distance"
+                    ),
+                    RagDocumentModel.created_at.label("document_created_at"),
+                    RagDocumentModel.doc_metadata["observed_at"].astext.label(
+                        "document_observed_at"
                     ),
                 )
                 .join(
@@ -287,13 +363,53 @@ class RagRepository:
                     stmt = stmt.where(RagDocumentModel.source == filters["source"])
                 if filters.get("doc_type"):
                     stmt = stmt.where(RagDocumentModel.doc_type == filters["doc_type"])
+                if filters.get("scope"):
+                    scope_value = str(filters["scope"])
+                    if scope_value == "TENANT_KNOWLEDGE":
+                        stmt = stmt.where(
+                            sa.or_(
+                                RagDocumentModel.doc_metadata["scope"].astext
+                                == scope_value,
+                                RagDocumentModel.doc_metadata["scope"].astext.is_(None),
+                            )
+                        )
+                    else:
+                        stmt = stmt.where(
+                            RagDocumentModel.doc_metadata["scope"].astext == scope_value
+                        )
+                if filters.get("user_id"):
+                    stmt = stmt.where(
+                        RagDocumentModel.doc_metadata["user_id"].astext
+                        == str(filters["user_id"])
+                    )
+                if filters.get("created_after"):
+                    created_after_value = filters["created_after"]
+                    if isinstance(created_after_value, str):
+                        created_after = datetime.fromisoformat(created_after_value)
+                        stmt = stmt.where(RagDocumentModel.created_at >= created_after)
+                if filters.get("expires_after"):
+                    expires_after_value = filters["expires_after"]
+                    if isinstance(expires_after_value, str):
+                        stmt = stmt.where(
+                            RagDocumentModel.doc_metadata["expires_at"].astext.is_not(
+                                None
+                            )
+                        )
+                        stmt = stmt.where(
+                            RagDocumentModel.doc_metadata["expires_at"].astext
+                            > expires_after_value
+                        )
+            if user_id:
+                stmt = stmt.where(
+                    RagDocumentModel.doc_metadata["user_id"].astext == user_id
+                )
             stmt = stmt.order_by(sa.text("distance asc")).limit(top_k)
             result = await session.execute(stmt)
             rows = result.all()
-            items: list[tuple[RagChunkModel, float]] = []
-            for chunk, distance in rows:
+            items: list[tuple[RagChunkModel, float, datetime | None, str | None]] = []
+            for chunk, distance, document_created_at, document_observed_at in rows:
                 score = 1.0 - float(distance)
                 if score < similarity_threshold:
                     continue
-                items.append((chunk, score))
+                items.append((chunk, score, document_created_at, document_observed_at))
             return items

@@ -101,6 +101,7 @@ class TenantsContainer(containers.DeclarativeContainer):
 
 class FlowsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
 
     flows_repository = providers.Factory(
         FlowsRepository,
@@ -109,6 +110,7 @@ class FlowsContainer(containers.DeclarativeContainer):
     execution_limit_policy_repository = providers.Factory(
         ExecutionLimitPolicyRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
@@ -259,6 +261,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
     execution_limit_policy_repository = providers.Factory(
         ExecutionLimitPolicyRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     execution_repository = providers.Factory(
         ExecutionRepository,
@@ -366,7 +369,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     adapters = providers.Container(AdaptersContainer)
 
     tenants = providers.Container(TenantsContainer, core=core)
-    flows = providers.Container(FlowsContainer, core=core)
+    flows = providers.Container(FlowsContainer, core=core, adapters=adapters)
     agents = providers.Container(AgentsContainer, core=core, adapters=adapters)
     tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
     ai_policy = providers.Container(AIPolicyContainer, core=core, adapters=adapters)

@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from utils.query_compiler import compile_query
 from domain.prompts.schemas.prompt import NodePrompt, NodePromptCreate, NodePromptUpdate
 from domain.prompts.schemas.system_prompt_template import SystemPromptTemplate
 from infra.database import DatabaseConnection
@@ -23,38 +24,63 @@ class PromptRepository:
         self.tracer = tracer
 
     async def get_active_prompt(self, node_type: str) -> Optional[NodePrompt]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.prompts.prompt_repository.get_active_prompt",
-            input={"node_type": node_type},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(NodePromptModel)
-                    .where(
-                        NodePromptModel.node_type == node_type,
-                        NodePromptModel.is_active.is_(True),
-                    )
-                    .order_by(NodePromptModel.version.desc())
+        async with self.db.get_session() as session:
+            stmt = (
+                select(NodePromptModel)
+                .where(
+                    NodePromptModel.node_type == node_type,
+                    NodePromptModel.is_active.is_(True),
                 )
+                .order_by(NodePromptModel.version.desc())
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.prompts.prompt_repository.get_active_prompt",
+                input={"query": query_sql, "params": {"node_type": node_type}},
+                metadata={"retriever_name": "get_active_prompt"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+
                 if model:
                     return NodePrompt.model_validate(model.to_dict())
                 return None
 
     async def get_prompt_by_id(self, prompt_id: UUID) -> Optional[NodePrompt]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.prompts.prompt_repository.get_prompt_by_id",
-            input={"prompt_id": str(prompt_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(NodePromptModel).where(
-                        NodePromptModel.prompt_id == prompt_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(NodePromptModel).where(NodePromptModel.prompt_id == prompt_id)
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.prompts.prompt_repository.get_prompt_by_id",
+                input={
+                    "query": query_sql,
+                    "params": {"prompt_id": str(prompt_id)},
+                },
+                metadata={"retriever_name": "get_prompt_by_id"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+
                 if model:
                     return NodePrompt.model_validate(model.to_dict())
                 return None
@@ -63,18 +89,32 @@ class PromptRepository:
         self, prompt: NodePromptCreate, frozen_hash: str
     ) -> NodePrompt:
         async with self.db.get_session() as session:
+            stmt = select(NodePromptModel).where(
+                NodePromptModel.node_type == prompt.node_type,
+                NodePromptModel.is_active.is_(True),
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.prompts.prompt_repository.get_existing_active",
-                input={"node_type": prompt.node_type},
-            ):
-                existing = await session.execute(
-                    select(NodePromptModel).where(
-                        NodePromptModel.node_type == prompt.node_type,
-                        NodePromptModel.is_active.is_(True),
-                    )
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"node_type": prompt.node_type},
+                },
+                metadata={"retriever_name": "get_existing_active"},
+            ) as retriever_handle:
+                existing = await session.execute(stmt)
                 existing_prompt = existing.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if existing_prompt else 0,
+                            "found": existing_prompt is not None,
+                        }
+                    )
+
             next_version = 1
             if existing_prompt:
                 next_version = existing_prompt.version + 1
@@ -106,17 +146,33 @@ class PromptRepository:
         self, prompt_id: UUID, update_data: NodePromptUpdate, frozen_hash: str
     ) -> NodePrompt:
         async with self.db.get_session() as session:
+            stmt = (
+                select(NodePromptModel)
+                .where(NodePromptModel.prompt_id == prompt_id)
+                .with_for_update()
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.prompts.prompt_repository.get_prompt_for_update",
-                input={"prompt_id": str(prompt_id)},
-            ):
-                result = await session.execute(
-                    select(NodePromptModel)
-                    .where(NodePromptModel.prompt_id == prompt_id)
-                    .with_for_update()
-                )
+                input={
+                    "query": query_sql,
+                    "params": {"prompt_id": str(prompt_id)},
+                },
+                metadata={"retriever_name": "get_prompt_for_update"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+
             if not model:
                 raise ValueError(f"Prompt with id {prompt_id} not found")
 
@@ -167,35 +223,65 @@ class PromptRepository:
                 await session.commit()
 
     async def get_prompt_history(self, node_type: str) -> list[NodePrompt]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.prompts.prompt_repository.get_prompt_history",
-            input={"node_type": node_type},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(NodePromptModel)
-                    .where(NodePromptModel.node_type == node_type)
-                    .order_by(NodePromptModel.version.desc())
-                )
+        async with self.db.get_session() as session:
+            stmt = (
+                select(NodePromptModel)
+                .where(NodePromptModel.node_type == node_type)
+                .order_by(NodePromptModel.version.desc())
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.prompts.prompt_repository.get_prompt_history",
+                input={
+                    "query": query_sql,
+                    "params": {"node_type": node_type},
+                },
+                metadata={"retriever_name": "get_prompt_history"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 models = result.scalars().all()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(models),
+                            "found": len(models) > 0,
+                        }
+                    )
+
                 return [NodePrompt.model_validate(model.to_dict()) for model in models]
 
     async def get_system_prompt_template(
         self, template_id: UUID
     ) -> Optional[SystemPromptTemplate]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.prompts.prompt_repository.get_system_prompt_template",
-            input={"template_id": str(template_id)},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(SystemPromptTemplateModel).where(
-                        SystemPromptTemplateModel.template_id == template_id
-                    )
-                )
+        async with self.db.get_session() as session:
+            stmt = select(SystemPromptTemplateModel).where(
+                SystemPromptTemplateModel.template_id == template_id
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.prompts.prompt_repository.get_system_prompt_template",
+                input={
+                    "query": query_sql,
+                    "params": {"template_id": str(template_id)},
+                },
+                metadata={"retriever_name": "get_system_prompt_template"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+
                 if model:
                     return SystemPromptTemplate.model_validate(model.to_dict())
                 return None

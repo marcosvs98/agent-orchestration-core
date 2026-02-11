@@ -61,6 +61,7 @@ class RuntimeTracerPort(Protocol):
         name: str,
         input: Dict[str, Any],
         metadata: Dict[str, Any] | None = None,
+        trace_context: Dict[str, str] | None = None,
         **kwargs: Any,
     ) -> AbstractContextManager[ObservationHandle]: ...
 

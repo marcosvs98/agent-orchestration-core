@@ -24,13 +24,43 @@ from seeds.demo.ids import (
 async def seed_ai_tasks() -> None:
     async with get_db() as session:
         tasks = [
-            (AI_TASK_INTENT_DETECTION_ID, "IntentDetection"),
-            (AI_TASK_SLOT_FILLING_ID, "SlotFilling"),
-            (AI_TASK_RESPONSE_FORMATTING_ID, "ResponseFormatting"),
-            (AI_TASK_CLARIFICATION_ID, "Clarification"),
+            {
+                "id": AI_TASK_INTENT_DETECTION_ID,
+                "name": "IntentDetection",
+                "allow_rag_tenant": False,
+                "allow_user_memory": True,
+                "allow_session_context": True,
+                "allow_memory_write": False,
+            },
+            {
+                "id": AI_TASK_SLOT_FILLING_ID,
+                "name": "SlotFilling",
+                "allow_rag_tenant": False,
+                "allow_user_memory": True,
+                "allow_session_context": True,
+                "allow_memory_write": False,
+            },
+            {
+                "id": AI_TASK_RESPONSE_FORMATTING_ID,
+                "name": "ResponseFormatting",
+                "allow_rag_tenant": True,
+                "allow_user_memory": True,
+                "allow_session_context": True,
+                "allow_memory_write": False,
+            },
+            {
+                "id": AI_TASK_CLARIFICATION_ID,
+                "name": "Clarification",
+                "allow_rag_tenant": False,
+                "allow_user_memory": False,
+                "allow_session_context": True,
+                "allow_memory_write": False,
+            },
         ]
 
-        for task_id, task_name in tasks:
+        for task in tasks:
+            task_id = task["id"]
+            task_name = task["name"]
             result = await session.execute(
                 select(AITask).where(
                     (AITask.ai_task_id == task_id) | (AITask.name == task_name)
@@ -39,10 +69,22 @@ async def seed_ai_tasks() -> None:
             existing = result.scalar_one_or_none()
 
             if existing is None:
-                ai_task = AITask(ai_task_id=task_id, name=task_name)
+                ai_task = AITask(
+                    ai_task_id=task_id,
+                    name=task_name,
+                    allow_rag_tenant=task["allow_rag_tenant"],
+                    allow_user_memory=task["allow_user_memory"],
+                    allow_session_context=task["allow_session_context"],
+                    allow_memory_write=task["allow_memory_write"],
+                )
                 session.add(ai_task)
-            elif existing.ai_task_id != task_id:
-                existing.ai_task_id = task_id
+            else:
+                if existing.ai_task_id != task_id:
+                    existing.ai_task_id = task_id
+                existing.allow_rag_tenant = task["allow_rag_tenant"]
+                existing.allow_user_memory = task["allow_user_memory"]
+                existing.allow_session_context = task["allow_session_context"]
+                existing.allow_memory_write = task["allow_memory_write"]
                 session.add(existing)
 
         await session.commit()

@@ -4,9 +4,11 @@ import json
 from typing import Any, Dict
 from uuid import UUID
 
+from domain.ai_policy.schemas.ai import AITaskContextFlags
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.services.graph_runtime.types import ExecutionContext
+from domain.context.schemas.context_layers import UserMemoryContext
 from domain.llm.services.context_builder import ContextBuilder
 from domain.llm.schemas.llm import LLMTaskType
 from domain.prompts.schemas.prompt import (
@@ -50,14 +52,37 @@ class PromptResolver:
     async def _get_agent_version_id(self, node_id: UUID | None) -> UUID | None:
         if not node_id:
             return None
-        with self.tracer.observe(
-            as_type="retriever",
-            name="application.prompts.prompt_resolver.get_agent_version_id",
-            input={"node_id": str(node_id)},
-        ):
-            return await self.context_builder.agents_repository.get_agent_version_id_by_node_id(
-                node_id
-            )
+
+        return await self.context_builder.agents_repository.get_agent_version_id_by_node_id(
+            node_id
+        )
+
+    async def _get_task_flags(
+        self, node_id: UUID | None
+    ) -> tuple[AITaskContextFlags | None, dict[str, Any]]:
+        if not node_id:
+            return None, {}
+        node = await self.repository.get_node(node_id)
+        if node is None or node.ai_task_id is None:
+            return None, {}
+        ai_task = await self.repository.get_ai_task(node.ai_task_id)
+        if ai_task is None:
+            return None, {}
+        flags = AITaskContextFlags(
+            allow_rag_tenant=bool(ai_task.allow_rag_tenant),
+            allow_user_memory=bool(ai_task.allow_user_memory),
+            allow_session_context=bool(ai_task.allow_session_context),
+            allow_memory_write=bool(ai_task.allow_memory_write),
+        )
+        metadata = {
+            "ai_task_id": str(ai_task.ai_task_id),
+            "ai_task_name": ai_task.name,
+            "allow_rag_tenant": flags.allow_rag_tenant,
+            "allow_user_memory": flags.allow_user_memory,
+            "allow_session_context": flags.allow_session_context,
+            "allow_memory_write": flags.allow_memory_write,
+        }
+        return flags, metadata
 
     def _render_simple(self, template: str, context: BaseModel) -> str:
         ctx: dict = context.model_dump(mode="json")
@@ -81,6 +106,18 @@ class PromptResolver:
         task_type = self._INTENT_TO_TASK_TYPE.get(intent)
         if not task_type:
             return template
+        task_flags, flags_metadata = await self._get_task_flags(node_id)
+        with self.tracer.observe(
+            as_type="event",
+            name="application.prompts.prompt_resolver.context_flags",
+            input={
+                "intent": intent.value,
+                "node_id": str(node_id) if node_id else None,
+                "task_type": task_type.value,
+                **flags_metadata,
+            },
+        ):
+            pass
 
         if intent == PromptIntent.INTENT_TOOL_SELECTION:
             context: IntentDetectionContext = (
@@ -88,6 +125,7 @@ class PromptResolver:
                     agent_version_id=agent_version_id,
                     user_input=input_payload.get("user_input", ""),
                     context=context,
+                    task_flags=task_flags,
                 )
             )
             return self._render_simple(template, context)
@@ -109,6 +147,8 @@ class PromptResolver:
                         intent=intent_str,
                         tool_config_id=tool_config_id,
                         user_input=user_input,
+                        execution_context=context,
+                        task_flags=task_flags,
                     )
                     return self._render_simple(template, context)
                 except (ValueError, TypeError):
@@ -130,6 +170,8 @@ class PromptResolver:
                 agent_version_id=agent_version_id,
                 intent=intent_value,
                 missing_fields=missing_fields,
+                execution_context=context,
+                task_flags=task_flags,
             )
             return self._render_simple(template, context)
 
@@ -139,11 +181,23 @@ class PromptResolver:
                 tool_response=input_payload.get("tool_response", {}),
                 original_intent=input_payload.get("original_intent", ""),
                 user_input=input_payload.get("user_input", ""),
+                user_id=context.user_id,
+                execution_context=context,
+                task_flags=task_flags,
             )
             rendered = self._render_simple(template, context)
-            if context.rag_context:
+            tenant_knowledge_context = (
+                context.tenant_knowledge_context.rag_context
+                if context.tenant_knowledge_context
+                else context.rag_context
+            )
+            if tenant_knowledge_context:
                 rendered = self._append_rag_contract(
-                    rendered, context.rag_context, context.user_input
+                    rendered, tenant_knowledge_context, context.user_input
+                )
+            if context.user_memory_context:
+                rendered = self._append_user_memory_contract(
+                    rendered, context.user_memory_context
                 )
             return rendered
 
@@ -205,6 +259,36 @@ class PromptResolver:
             )
         return prompt + contract
 
+    def _append_user_memory_contract(
+        self, prompt: str, user_memory_context: UserMemoryContext
+    ) -> str:
+        structured_payload = {
+            "preferences": user_memory_context.structured.preferences,
+            "profile": user_memory_context.structured.profile,
+        }
+        payload = (
+            user_memory_context.rag_context.context_items
+            if user_memory_context.rag_context
+            else []
+        )
+        memory_items = [
+            {
+                "document_id": str(item.document_id),
+                "chunk_id": str(item.chunk_id),
+                "content": item.content,
+                "score": item.score,
+                "metadata": item.metadata or {},
+            }
+            for item in payload
+        ]
+        return (
+            prompt
+            + "\n\n## User Memory Structured\n"
+            + json.dumps(structured_payload, ensure_ascii=True)
+            + "\n\n## User Memory Retrieved\n"
+            + json.dumps(memory_items, ensure_ascii=True)
+        )
+
     def _load_schema_from_prompt(self, schema_id: str) -> Dict[str, Any] | None:
         return None
 
@@ -228,12 +312,7 @@ class PromptResolver:
                 )
 
             node_type = node_type_enum.value
-            with self.tracer.observe(
-                as_type="retriever",
-                name="application.prompts.prompt_resolver.get_prompt",
-                input={"node_type": node_type},
-            ):
-                prompt = await self.prompt_service.get_prompt(node_type)
+            prompt = await self.prompt_service.get_prompt(node_type)
 
             if not prompt:
                 raise DomainValidationException(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 from typing import Any, Dict
 from uuid import UUID
@@ -16,6 +17,7 @@ from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.llm.schemas.llm import LLMRequest, LLMResult, LLMTaskType
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
 from exceptions.service_exceptions import DomainValidationException
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
 
 
 def _payload_from_config(
@@ -24,6 +26,42 @@ def _payload_from_config(
     if config is None:
         return default
     return config.get("output", default) or default
+
+
+class _ExtractionResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    payload: dict[str, object] = Field(default_factory=dict)
+    missing_fields: list[str] = Field(default_factory=list)
+
+
+def _is_empty_value(value: object) -> bool:
+    return value is None or value == "" or value == {} or value == []
+
+
+def _merge_extracted_params(
+    previous: dict[str, object], delta: dict[str, object]
+) -> dict[str, object]:
+    merged = dict(previous)
+    for key, value in delta.items():
+        if (
+            _is_empty_value(value)
+            and key in merged
+            and not _is_empty_value(merged[key])
+        ):
+            continue
+        merged[key] = value
+    return merged
+
+
+def _merge_missing_fields(
+    previous: list[str],
+    current: list[str],
+    merged: dict[str, object],
+) -> list[str]:
+    prev_set = set(previous)
+    current_set = set(current)
+    filled = {key for key, value in merged.items() if not _is_empty_value(value)}
+    return sorted((prev_set | current_set) - filled)
 
 
 class IntentToolSelectionNode(NodeExecutor):
@@ -76,12 +114,14 @@ class IntentToolSelectionNode(NodeExecutor):
                 as_type="chain",
                 name="domain.execution.nodes.intent_tool_selection.resolve_prompt",
                 input={"node_id": str(node_uuid) if node_uuid else None},
-            ):
+            ) as chain_handle:
                 resolved_prompt = await self.prompt_resolver.resolve(
                     intent=PromptIntent.INTENT_TOOL_SELECTION,
                     context=context,
                     node_id=node_uuid,
                 )
+                if chain_handle:
+                    chain_handle.success(output=resolved_prompt.model_dump(mode="json"))
 
             task_type = LLMTaskType.INTENT_SELECTION
 
@@ -105,18 +145,21 @@ class IntentToolSelectionNode(NodeExecutor):
                 prompt_version=resolved_prompt.prompt_version,
                 prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
                 task_type=task_type,
+                user_id=context.user_id,
+                conversation_key=f"{context.tenant_id}:{context.session_id}",
             )
             with self.tracer.observe(
-                as_type="generation",
+                as_type="chain",
                 name="domain.execution.nodes.intent_tool_selection.execute_llm",
-                input={"model_alias": model_alias, "provider": provider},
-            ):
+                input=request.model_dump(mode="json"),
+            ) as chain_handle:
                 result: LLMResult = await self.llm_executor.execute_llm(
                     request=request,
                     trace=TraceContext(
                         trace_id=context.trace_id or UUID(int=0),
                         flow_run_id=context.flow_run_id,
                         tenant_id=context.tenant_id,
+                        user_id=context.user_id,
                     ),
                     tenant_id=context.tenant_id,
                     session_id=context.session_id,
@@ -126,6 +169,8 @@ class IntentToolSelectionNode(NodeExecutor):
                     provider=provider,
                     policy_llm=llm_policy,
                 )
+                if chain_handle:
+                    chain_handle.success(output=result.model_dump(mode="json"))
             output_payload = result.output or {}
 
             tool_config_id = output_payload.get("tool_config_id")
@@ -245,20 +290,23 @@ class ParamExtractionNode(NodeExecutor):
                 prompt_version=resolved_prompt.prompt_version,
                 prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
                 task_type=task_type,
+                user_id=context.user_id,
+                conversation_key=f"{context.tenant_id}:{context.session_id}",
             )
 
             try:
                 with self.tracer.observe(
-                    as_type="generation",
+                    as_type="chain",
                     name="domain.execution.nodes.param_extraction.execute_llm",
-                    input={"model_alias": model_alias, "provider": provider},
-                ):
-                    result = await self.llm_executor.execute_llm(
+                    input=request.model_dump(mode="json"),
+                ) as chain_handle:
+                    result: LLMResult = await self.llm_executor.execute_llm(
                         request=request,
                         trace=TraceContext(
                             trace_id=context.trace_id or UUID(int=0),
                             flow_run_id=context.flow_run_id,
                             tenant_id=context.tenant_id,
+                            user_id=context.user_id,
                         ),
                         tenant_id=context.tenant_id,
                         session_id=context.session_id,
@@ -268,34 +316,37 @@ class ParamExtractionNode(NodeExecutor):
                         provider=provider,
                         policy_llm=llm_policy,
                     )
-
+                    if chain_handle:
+                        chain_handle.success(output=result.model_dump(mode="json"))
             except Exception as exc:
                 raise exc from exc  # Todo: Rever isso P0
 
-            extracted_params = result.output or {}
-            if isinstance(extracted_params, dict):
-                payload = extracted_params.get("payload", extracted_params)
-                missing_fields = extracted_params.get("missing_fields", [])
-            else:
-                payload = extracted_params
-                missing_fields = []
-            missing_fields_count = (
-                len(missing_fields) if isinstance(missing_fields, list) else 0
+            raw_output = result.output or {}
+            try:
+                extraction = _ExtractionResult.model_validate(raw_output)
+            except ValidationError as exc:
+                raise DomainValidationException(
+                    message="invalid_extraction_output"
+                ) from exc
+            current_state = context.state or {}
+            previous_params = current_state.get("extracted_params") or {}
+            previous_missing = list(current_state.get("missing_fields") or [])
+            merged_params = _merge_extracted_params(previous_params, extraction.payload)
+            effective_missing = _merge_missing_fields(
+                previous_missing, extraction.missing_fields, merged_params
             )
+            missing_fields_count = len(effective_missing)
             execution_ready = missing_fields_count == 0
             node_payload = {
-                "payload": payload,
-                "missing_fields": missing_fields
-                if isinstance(missing_fields, list)
-                else [],
+                "payload": merged_params,
+                "missing_fields": effective_missing,
                 "missing_fields_count": missing_fields_count,
                 "execution_ready": execution_ready,
             }
-            current_state = context.state or {}
             next_state = {
                 **current_state,
-                "extracted_params": payload,
-                "missing_fields": missing_fields,
+                "extracted_params": merged_params,
+                "missing_fields": effective_missing,
                 "intent_output": current_state.get("intent_output", {}),
             }
 
@@ -306,33 +357,132 @@ class ParamExtractionNode(NodeExecutor):
                 next_state=next_state,
             )
 
-        payload = _payload_from_config(
-            config, {"extracted_params": {}, "validation_status": "VALID"}
+        raw_output = _payload_from_config(config, {"payload": {}, "missing_fields": []})
+        try:
+            extraction = _ExtractionResult.model_validate(raw_output)
+        except ValidationError as exc:
+            raise DomainValidationException(
+                message="invalid_extraction_output"
+            ) from exc
+        current_state = context.state or {}
+        previous_params = current_state.get("extracted_params") or {}
+        previous_missing = list(current_state.get("missing_fields") or [])
+        merged_params = _merge_extracted_params(previous_params, extraction.payload)
+        effective_missing = _merge_missing_fields(
+            previous_missing, extraction.missing_fields, merged_params
         )
-        missing_fields = payload.get("missing_fields", [])
-        missing_fields_count = (
-            len(missing_fields) if isinstance(missing_fields, list) else 0
-        )
+        missing_fields_count = len(effective_missing)
         execution_ready = missing_fields_count == 0
         node_payload = {
-            "payload": payload.get("extracted_params", {}),
-            "missing_fields": missing_fields
-            if isinstance(missing_fields, list)
-            else [],
+            "payload": merged_params,
+            "missing_fields": effective_missing,
             "missing_fields_count": missing_fields_count,
             "execution_ready": execution_ready,
         }
-        current_state = context.state or {}
         next_state = {
             **current_state,
-            "extracted_params": payload.get("extracted_params", {}),
-            "missing_fields": missing_fields,
+            "extracted_params": merged_params,
+            "missing_fields": effective_missing,
             "intent_output": current_state.get("intent_output", {}),
         }
 
         return NodeResult(
             status=NodeExecutionStatus.SUCCESS,
             payload=node_payload,
+            next_state=next_state,
+        )
+
+
+class UserContextEnrichmentNode(NodeExecutor):
+    node_type = NodeType.UserContextEnrichmentNode
+    side_effect = False
+    deterministic = True
+
+    def __init__(self, tracer: RuntimeTracerPort) -> None:
+        self.tracer = tracer
+
+    @staticmethod
+    def _resolve_runtime_policy(context: ExecutionContext) -> dict[str, Any]:
+        if not isinstance(context.metadata, dict):
+            return {}
+        runtime_policy = context.metadata.get("runtime_policy")
+        if not isinstance(runtime_policy, dict):
+            return {}
+        user_context_policy = runtime_policy.get("user_context_enrichment")
+        if not isinstance(user_context_policy, dict):
+            return {}
+        return user_context_policy
+
+    @staticmethod
+    def _resolve_layers(
+        *,
+        config: Dict[str, Any],
+        runtime_policy: dict[str, Any],
+    ) -> dict[str, bool]:
+        candidate = config.get("layers")
+        if not isinstance(candidate, dict):
+            candidate = runtime_policy.get("default_layers_when_published")
+        if not isinstance(candidate, dict):
+            candidate = {}
+        return {
+            "allow_tenant_knowledge": bool(
+                candidate.get("allow_tenant_knowledge", True)
+            ),
+            "allow_user_memory_structured": bool(
+                candidate.get("allow_user_memory_structured", True)
+            ),
+            "allow_user_memory_vector": bool(
+                candidate.get("allow_user_memory_vector", True)
+            ),
+        }
+
+    async def execute(
+        self, context: ExecutionContext, config: Dict[str, Any] | None = None
+    ) -> NodeResult:
+        config = config or {}
+        runtime_policy = self._resolve_runtime_policy(context)
+        handle_state = (
+            context.state.get("user_context_enrichment", {})
+            if isinstance(context.state, dict)
+            else {}
+        )
+        if not isinstance(handle_state, dict):
+            handle_state = {}
+
+        enabled = bool(runtime_policy.get("enabled", False))
+        publish = bool(config.get("publish", True))
+        mode = "GATED" if bool(runtime_policy.get("gating")) else "LEGACY"
+        layers = self._resolve_layers(config=config, runtime_policy=runtime_policy)
+        published = bool(enabled and publish)
+        published_at = datetime.now(UTC).isoformat() if published else None
+        published_by_node_id = context.current_node_id if published else None
+
+        payload = {
+            "enabled": enabled,
+            "published": published,
+            "mode": mode,
+            "layers": layers,
+        }
+        next_state = {
+            **(context.state or {}),
+            "user_context_enrichment": {
+                **handle_state,
+                **payload,
+                "published_by_node_id": published_by_node_id,
+                "published_at": published_at,
+            },
+        }
+
+        with self.tracer.observe(
+            as_type="event",
+            name="domain.context.user_context_enrichment.published",
+            input=payload,
+        ):
+            pass
+
+        return NodeResult(
+            status=NodeExecutionStatus.SUCCESS,
+            payload=payload,
             next_state=next_state,
         )
 
@@ -407,20 +557,15 @@ class ToolExecutionNode(NodeExecutor):
             )
 
         try:
-            with self.tracer.observe(
-                as_type="tool",
-                name="domain.execution.nodes.tool_execution.create_tool_run",
-                input={"tool_config_id": str(tool_config_id)},
-            ):
-                tool_run_id = await self.execution_repository.create_tool_run(
-                    tool_config_id=UUID(str(tool_config_id)),
-                    correlation_id=context.correlation_id,
-                    agent_run_id=None,
-                    node_run_id=context.current_node_run_id,
-                    idempotency_key=None,
-                    has_side_effect=True,
-                    input_payload=extracted_params,
-                )
+            tool_run_id = await self.execution_repository.create_tool_run(
+                tool_config_id=UUID(str(tool_config_id)),
+                correlation_id=context.correlation_id,
+                agent_run_id=None,
+                node_run_id=context.current_node_run_id,
+                idempotency_key=None,
+                has_side_effect=True,
+                input_payload=extracted_params,
+            )
 
             with self.tracer.observe(
                 as_type="tool",
@@ -529,19 +674,22 @@ class ClarificationNode(NodeExecutor):
                 prompt_version=resolved_prompt.prompt_version,
                 prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
                 task_type=LLMTaskType.CLARIFICATION,
+                user_id=context.user_id,
+                conversation_key=f"{context.tenant_id}:{context.session_id}",
             )
 
             with self.tracer.observe(
-                as_type="generation",
+                as_type="chain",
                 name="domain.execution.nodes.clarification.execute_llm",
-                input={"model_alias": model_alias, "provider": provider},
-            ):
-                result = await self.llm_executor.execute_llm(
+                input=request.model_dump(mode="json"),
+            ) as chain_handle:
+                result: LLMResult = await self.llm_executor.execute_llm(
                     request=request,
                     trace=TraceContext(
                         trace_id=context.trace_id or UUID(int=0),
                         flow_run_id=context.flow_run_id,
                         tenant_id=context.tenant_id,
+                        user_id=context.user_id,
                     ),
                     tenant_id=context.tenant_id,
                     session_id=context.session_id,
@@ -551,6 +699,8 @@ class ClarificationNode(NodeExecutor):
                     provider=provider,
                     policy_llm=llm_policy,
                 )
+                if chain_handle:
+                    chain_handle.success(output=result.model_dump(mode="json"))
             payload = result.output or {}
             system_output = (
                 payload.get("system_output")
@@ -659,19 +809,22 @@ class ResponseNode(NodeExecutor):
             prompt_version=resolved_prompt.prompt_version,
             prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
             task_type=task_type,
+            user_id=context.user_id,
+            conversation_key=f"{context.tenant_id}:{context.session_id}",
         )
 
         with self.tracer.observe(
-            as_type="generation",
+            as_type="chain",
             name="domain.execution.nodes.response.execute_llm",
-            input={"model_alias": model_alias, "provider": provider},
-        ):
-            result = await self.llm_executor.execute_llm(
+            input=request.model_dump(mode="json"),
+        ) as chain_handle:
+            result: LLMResult = await self.llm_executor.execute_llm(
                 request=request,
                 trace=TraceContext(
                     trace_id=context.trace_id or UUID(int=0),
                     flow_run_id=context.flow_run_id,
                     tenant_id=context.tenant_id,
+                    user_id=context.user_id,
                 ),
                 tenant_id=context.tenant_id,
                 session_id=context.session_id,
@@ -681,7 +834,8 @@ class ResponseNode(NodeExecutor):
                 provider=provider,
                 policy_llm=llm_policy,
             )
-
+            if chain_handle:
+                chain_handle.success(output=result.model_dump(mode="json"))
         llm_output = result.output or {}
         system_output = (
             llm_output.get("system_output")

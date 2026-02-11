@@ -37,17 +37,16 @@ class RuntimePolicyResolver:
                 "tenant_id": str(tenant_id),
                 "flow_id": str(flow_id) if flow_id else None,
             },
-        ):
+        ) as agent_handle:
             if flow_id:
-                with self.tracer.observe(
-                    as_type="retriever",
-                    name="domain.execution.runtime_policy_resolver.get_flow_policy",
-                    input={"tenant_id": str(tenant_id), "flow_id": str(flow_id)},
-                ):
-                    flow_policy = await self.repository.get_active_flow_policy(
-                        tenant_id=tenant_id, flow_id=flow_id
-                    )
+                flow_policy = await self.repository.get_active_flow_policy(
+                    tenant_id=tenant_id, flow_id=flow_id
+                )
                 if flow_policy:
+                    if agent_handle:
+                        agent_handle.success(
+                            output={"flow_policy": flow_policy.to_dict()}
+                        )
                     return ResolvedRuntimePolicy(
                         source=RuntimePolicySource.FLOW,
                         runtime_policy_id=flow_policy.runtime_policy_id,
@@ -58,14 +57,10 @@ class RuntimePolicyResolver:
                         scope=RuntimePolicyScope.FLOW,
                         flow_id=flow_id,
                     )
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.execution.runtime_policy_resolver.get_tenant_policy",
-                input={"tenant_id": str(tenant_id)},
-            ):
-                tenant_policy = await self.repository.get_active_tenant_policy(
-                    tenant_id=tenant_id
-                )
+
+            tenant_policy = await self.repository.get_active_tenant_policy(
+                tenant_id=tenant_id
+            )
             if tenant_policy:
                 return ResolvedRuntimePolicy(
                     source=RuntimePolicySource.TENANT,

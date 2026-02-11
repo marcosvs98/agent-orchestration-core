@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from domain.execution.schemas.execution import FlowRunCreate, FlowRunInput
 from services.execution_boundary import ExecutionBoundary
 
 
@@ -28,7 +29,12 @@ class TestExecutionBoundary:
             auth=MagicMock(tenant_id=uuid4(), principal_type="machine", principal_id="p", scopes={"execution:flow_run:create"}),
             endpoint="/core/v1/executions/flow-runs",
             idempotency_key="k",
-            payload=MagicMock(),
+            flow_run=FlowRunCreate(
+                flow_version_id=uuid4(),
+                session_id=uuid4(),
+                user_id="test-user",
+                input=FlowRunInput(user_input="hello"),
+            ),
             channel="http",
             headers={},
             external_message_id=None,
@@ -51,6 +57,7 @@ class TestExecutionBoundary:
                 id=uuid4(),
                 flow_version_id=uuid4(),
                 session_id=uuid4(),
+                user_id="test-user",
                 status="COMPLETED",
                 canonical_status="SUCCESS",
                 correlation_id=uuid4(),

@@ -20,6 +20,7 @@ async def create_flow_run(
     session_id: UUID,
     flow_version_id: UUID,
     correlation_id: UUID,
+    user_id: str = "test-user",
     origin_flow_run_id: UUID | None = None,
     payload: dict[str, Any] | None = None,
 ) -> UUID:
@@ -31,6 +32,7 @@ async def create_flow_run(
             session_id=session_id,
             flow_version_id=flow_version_id,
             correlation_id=correlation_id,
+            user_id=user_id,
             origin_flow_run_id=origin_flow_run_id,
             input=payload or {},
         )
@@ -43,6 +45,7 @@ async def append_execution_event(
     session: AsyncSession,
     *,
     tenant_id: UUID,
+    user_id: str = "test-user",
     session_id: UUID,
     flow_run_id: UUID,
     correlation_id: UUID,
@@ -69,6 +72,7 @@ async def append_execution_event(
         ExecutionEvent(
             execution_event_id=event_id,
             tenant_id=tenant_id,
+            user_id=user_id,
             session_id=session_id,
             flow_run_id=flow_run_id,
             correlation_id=correlation_id,

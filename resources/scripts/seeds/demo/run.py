@@ -38,6 +38,8 @@ from seeds.demo.seed_18_access_policy import seed_access_policy
 from seeds.demo.seed_19_rate_limit_policy import seed_rate_limit_policy
 from seeds.demo.seed_20_billing_policy import seed_billing_policy
 from seeds.demo.seed_21_rag import seed_rag
+from seeds.demo.seed_22_memory_policy import seed_memory_policy
+from seeds.demo.seed_23_rag_policy import seed_rag_policy
 
 
 async def main() -> None:
@@ -53,6 +55,7 @@ async def main() -> None:
             ("Model", seed_model),
             ("Policy", seed_policy),
             ("Tool", seed_tool),
+            ("RAG", seed_rag),
             ("Agent", seed_agent),
             ("Flow", seed_flow),
             ("Nodes", seed_nodes),
@@ -68,7 +71,8 @@ async def main() -> None:
             ("Access Policy", seed_access_policy),
             ("Rate Limit Policy", seed_rate_limit_policy),
             ("Billing Policy", seed_billing_policy),
-            ("RAG", seed_rag),
+            ("Memory Policy", seed_memory_policy),
+            ("RAG Policy", seed_rag_policy),
         ]
 
         for name, seed_func in seeds:

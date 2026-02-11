@@ -19,27 +19,37 @@ class IdempotencyService:
             as_type="tool",
             name="domain.execution.idempotency.try_acquire",
             input={"key": key},
-        ):
-            return bool(
+        ) as tool_handle:
+            acquired = bool(
                 await self.redis.set_if_not_exists(
                     key,
                     {"status": "PROCESSING"},
                     ttl=IDEMPOTENCY_TTL_SECONDS,
                 )
             )
+            if acquired:
+                tool_handle.success(output={"acquired": acquired})
+            return acquired
 
     async def get(self, key: str) -> dict | None:
         with self.tracer.observe(
             as_type="retriever",
             name="domain.execution.idempotency.get",
             input={"key": key},
-        ):
-            return await self.redis.get(key)
+        ) as retriever_handle:
+            data = await self.redis.get(key)
+
+            if retriever_handle:
+                retriever_handle.success(output={"key": key, "data": data})
+            return data
 
     async def set_result(self, key: str, data: dict) -> None:
         with self.tracer.observe(
             as_type="tool",
             name="domain.execution.idempotency.set_result",
             input={"key": key},
-        ):
+        ) as tool_handle:
             await self.redis.set(key, data, ttl=IDEMPOTENCY_TTL_SECONDS)
+
+            if tool_handle:
+                tool_handle.success(output={"key": key, "data": data})

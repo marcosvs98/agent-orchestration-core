@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, Header, Query, Request, status
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.execution import (
     AgentRun,
     FlowRun,
     FlowRunCreate,
-    FlowRunInput,
+    FlowRunResumeInput,
     GraphState,
     NodeRun,
     ToolRun,
@@ -111,12 +111,26 @@ class ExecutionPlaneController:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
 
+        trace_id_header = request.headers.get("X-Trace-Id")
+        if trace_id_header:
+            try:
+                trace_uuid = UUID(trace_id_header)
+            except ValueError:
+                trace_uuid = (
+                    UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
+                )
+        else:
+            trace_uuid = uuid4()
+        trace_id_str = str(trace_uuid)
+        trace_id_hex = trace_uuid.hex
+
         with self.tracer.observe(
             as_type="span",
             name="domain.execution.plane_controller.create_flow_run",
-            input={"endpoint": request.url.path},
-        ):
-            return await self.boundary.ingest_interaction_and_create_flow_run(
+            input={"endpoint": request.url.path, "idempotency_key": idempotency_key},
+            trace_context={"trace_id": trace_id_hex},
+        ) as span_handle:
+            flow_run = await self.boundary.ingest_interaction_and_create_flow_run(
                 auth=auth,
                 endpoint=request.url.path,
                 idempotency_key=idempotency_key,
@@ -125,8 +139,11 @@ class ExecutionPlaneController:
                 headers=dict(request.headers),
                 external_message_id=request.headers.get("X-External-Message-Id"),
                 request_id=request.headers.get("X-Request-Id"),
-                trace_id=request.headers.get("X-Trace-Id"),
+                trace_id=trace_id_str,
             )
+            if span_handle:
+                span_handle.success(output=flow_run.model_dump(mode="json"))
+            return flow_run
 
     async def create_tool_run(
         self,
@@ -175,13 +192,27 @@ class ExecutionPlaneController:
         self,
         request: Request,
         flow_run_id: str,
-        payload: FlowRunInput,
+        payload: FlowRunResumeInput,
         auth: AuthContext = Depends(get_auth_context),
     ) -> FlowRun:
+        trace_id_header = request.headers.get("X-Trace-Id")
+        if trace_id_header:
+            try:
+                trace_uuid = UUID(trace_id_header)
+            except ValueError:
+                trace_uuid = (
+                    UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
+                )
+        else:
+            trace_uuid = uuid4()
+        trace_id_str = str(trace_uuid)
+        trace_id_hex = trace_uuid.hex
+
         with self.tracer.observe(
             as_type="span",
             name="domain.execution.plane_controller.resume_flow_run",
             input={"flow_run_id": flow_run_id, "endpoint": request.url.path},
+            trace_context={"trace_id": trace_id_hex},
         ):
             return await self.boundary.resume_flow_run(
                 auth=auth,
@@ -191,7 +222,7 @@ class ExecutionPlaneController:
                 headers=dict(request.headers),
                 external_message_id=request.headers.get("X-External-Message-Id"),
                 request_id=request.headers.get("X-Request-Id"),
-                trace_id=request.headers.get("X-Trace-Id"),
+                trace_id=trace_id_str,
             )
 
     async def get_graph_state(

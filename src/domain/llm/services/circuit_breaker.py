@@ -30,7 +30,7 @@ class CircuitBreaker:
             as_type="guardrail",
             name="domain.llm.circuit_breaker.ensure_closed",
             input={"scope": scope},
-        ):
+        ) as ensure_handle:
             if self.silent_mode:
                 try:
                     data = await self.redis.get(self._key(scope))
@@ -39,12 +39,22 @@ class CircuitBreaker:
                             as_type="event",
                             name="domain.llm.circuit_breaker.breaker_open_block",
                             input={"scope": scope},
-                        ):
+                        ) as block_handle:
+                            if block_handle:
+                                block_handle.success(
+                                    output={"blocked": True, "reason": "circuit_open"}
+                                )
                             raise DomainValidationException(
                                 message="llm_circuit_breaker_open"
                             )
                 except Exception:
+                    if ensure_handle:
+                        ensure_handle.success(
+                            output={"state": "closed", "swallowed": True}
+                        )
                     return
+                if ensure_handle:
+                    ensure_handle.success(output={"state": "closed"})
             else:
                 data = await self.redis.get(self._key(scope))
                 if data and data.get("state") == "open":
@@ -52,33 +62,54 @@ class CircuitBreaker:
                         as_type="event",
                         name="domain.llm.circuit_breaker.breaker_open_block",
                         input={"scope": scope},
-                    ):
+                    ) as block_handle:
+                        if block_handle:
+                            block_handle.success(
+                                output={"blocked": True, "reason": "circuit_open"}
+                            )
                         raise DomainValidationException(
                             message="llm_circuit_breaker_open"
                         )
+            if ensure_handle:
+                ensure_handle.success(output={"state": "closed"})
 
     async def record_failure(self, scope: str) -> None:
         with self.tracer.observe(
             as_type="tool",
             name="domain.llm.circuit_breaker.record_failure",
             input={"scope": scope},
-        ):
+        ) as failure_handle:
             try:
                 count = await self.redis.incr_with_ttl(
                     self._key(scope), self.window_seconds
                 )
-                if count >= self.failure_threshold:
+                transitioned = count >= self.failure_threshold
+                if transitioned:
                     with self.tracer.observe(
                         as_type="event",
                         name="domain.llm.circuit_breaker.breaker_transition_open",
                         input={"scope": scope},
-                    ):
+                    ) as transition_handle:
                         await self.redis.set(
                             self._key(scope),
                             {"state": "open"},
                             ttl=self.window_seconds,
                         )
+                        if transition_handle:
+                            transition_handle.success(
+                                output={"state": "open", "count": int(count)}
+                            )
+                if failure_handle:
+                    failure_handle.success(
+                        output={"count": int(count), "transitioned": transitioned}
+                    )
             except Exception as exc:
+                if failure_handle:
+                    failure_handle.error(
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                        output={"status": "error"},
+                    )
                 if not self.silent_mode:
                     raise exc from exc
 
@@ -87,9 +118,17 @@ class CircuitBreaker:
             as_type="tool",
             name="domain.llm.circuit_breaker.record_success",
             input={"scope": scope},
-        ):
+        ) as success_handle:
             try:
                 await self.redis.delete(self._key(scope))
+                if success_handle:
+                    success_handle.success(output={"state": "cleared"})
             except Exception as exc:
+                if success_handle:
+                    success_handle.error(
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                        output={"status": "error"},
+                    )
                 if not self.silent_mode:
                     raise exc from exc

@@ -23,6 +23,9 @@ class RuntimePolicyDefinition(BaseModel):
     execution: Dict[str, Any] = Field(default_factory=dict)
     tools: Dict[str, Any] = Field(default_factory=dict)
     llm: Dict[str, Any] = Field(default_factory=dict)
+    memory_extraction: Dict[str, Any] = Field(default_factory=dict)
+    memory_retrieval: Dict[str, Any] = Field(default_factory=dict)
+    user_context_enrichment: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ResolvedRuntimePolicy(BaseModel):

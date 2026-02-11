@@ -109,3 +109,33 @@ class NodePromptExecutedPayload(TypedDict):
     token_usage: Dict[str, int | float | None]
     latency_ms: int | None
     cost_usd: float | None
+
+
+class MemoryEmbeddingQueuedPayload(TypedDict):
+    document_id: str
+    rag_config_id: str
+    policy_version_id: str | None
+    schema_id: str
+    schema_version: int
+    source: str
+
+
+class MemoryEmbeddingStartedPayload(TypedDict):
+    document_id: str
+    rag_config_id: str
+    flow_run_id: str
+    attempt: int
+
+
+class MemoryEmbeddingCompletedPayload(TypedDict):
+    document_id: str
+    rag_config_id: str
+    flow_run_id: str
+
+
+class MemoryEmbeddingFailedPayload(TypedDict):
+    document_id: str
+    rag_config_id: str
+    flow_run_id: str
+    attempt: int
+    error_code: str

@@ -26,12 +26,23 @@ REDIS_HOST: str = config("REDIS_HOST", default="localhost")
 REDIS_PASSWORD: str | None = config("REDIS_PASSWORD", default=None)
 REDIS_PORT: int = config("REDIS_PORT", default=6379, cast=int)
 REDIS_SSL: bool = config("REDIS_SSL", default=False, cast=bool)
+REDIS_DB: int = config("REDIS_DB", default=0, cast=int)
 REDIS_DEFAULT_TTL: int = config("REDIS_DEFAULT_TTL", default=3600, cast=int)
 CACHE_SILENT_MODE: bool = config("CACHE_SILENT_MODE", default=True, cast=bool)
 DEFAULT_TTL: int = config("DEFAULT_TTL", default=3600, cast=int)
 TURN_WINDOW_TTL: int = config("TURN_WINDOW_TTL", default=7200, cast=int)
 PERSONA_CACHE_TTL: int = config("PERSONA_CACHE_TTL", default=1800, cast=int)
 DEDUP_TTL: int = config("DEDUP_TTL", default=86400, cast=int)
+EMBEDDING_QUEUE_NAME: str = config(
+    "EMBEDDING_QUEUE_NAME",
+    default="process_embedding_job",
+    cast=str,
+)
+EMBEDDING_QUEUE_MAX_ATTEMPTS: int = config(
+    "EMBEDDING_QUEUE_MAX_ATTEMPTS",
+    default=3,
+    cast=int,
+)
 
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="", cast=str)
 

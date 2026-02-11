@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import select, update
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
 from infra.database.models.governance.llm_pricing import LLMPricing as LLMPricingModel
 
@@ -21,20 +22,38 @@ class LLMPricingRepository:
     async def get_active_pricing(
         self, *, provider: str, provider_model: str
     ) -> Optional[LLMPricingModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.governance.llm_pricing_repository.get_active_pricing",
-            input={"provider": provider, "provider_model": provider_model},
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(LLMPricingModel).where(
-                        LLMPricingModel.provider == provider,
-                        LLMPricingModel.provider_model == provider_model,
-                        LLMPricingModel.status == "ACTIVE",
+        async with self.db.get_session() as session:
+            stmt = select(LLMPricingModel).where(
+                LLMPricingModel.provider == provider,
+                LLMPricingModel.provider_model == provider_model,
+                LLMPricingModel.status == "ACTIVE",
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.llm_pricing_repository.get_active_pricing",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "provider": provider,
+                        "provider_model": provider_model,
+                    },
+                },
+                metadata={"retriever_name": "get_active_pricing"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                pricing = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if pricing else 0,
+                            "found": pricing is not None,
+                        }
                     )
-                )
-                return result.scalar_one_or_none()
+
+                return pricing
 
     async def upsert_pricing(
         self,
@@ -49,21 +68,41 @@ class LLMPricingRepository:
         created_by: str,
     ) -> LLMPricingModel:
         async with self.db.get_session() as session:
+            stmt = (
+                select(LLMPricingModel)
+                .where(
+                    LLMPricingModel.provider == provider,
+                    LLMPricingModel.provider_model == provider_model,
+                    LLMPricingModel.status == status,
+                )
+                .with_for_update()
+            )
+            query_sql = compile_query(stmt)
+
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.governance.llm_pricing_repository.get_existing_pricing",
-                input={"provider": provider, "provider_model": provider_model},
-            ):
-                result = await session.execute(
-                    select(LLMPricingModel)
-                    .where(
-                        LLMPricingModel.provider == provider,
-                        LLMPricingModel.provider_model == provider_model,
-                        LLMPricingModel.status == status,
-                    )
-                    .with_for_update()
-                )
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "provider": provider,
+                        "provider_model": provider_model,
+                        "status": status,
+                    },
+                },
+                metadata={"retriever_name": "get_existing_pricing"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
                 instance = result.scalar_one_or_none()
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+
             if instance:
                 with self.tracer.observe(
                     as_type="tool",

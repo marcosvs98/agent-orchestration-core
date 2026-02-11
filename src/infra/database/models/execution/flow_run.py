@@ -23,6 +23,7 @@ class FlowRun(ORMBaseModel):
         ForeignKey("session.session_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    user_id = Column(String(length=255), nullable=False)
     interaction_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("interaction.interaction_id", ondelete="RESTRICT"),

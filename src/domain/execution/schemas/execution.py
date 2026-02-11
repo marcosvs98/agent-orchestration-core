@@ -35,6 +35,7 @@ class FlowRun(BaseModel):
     origin_flow_run_id: UUID | None = None
     flow_version_id: UUID
     session_id: UUID
+    user_id: str
     interaction_id: UUID | None = None
     status: str
     canonical_status: str
@@ -64,6 +65,7 @@ class FlowRun(BaseModel):
             origin_flow_run_id=model.origin_flow_run_id,
             flow_version_id=model.flow_version_id,
             session_id=model.session_id,
+            user_id=model.user_id,
             interaction_id=model.interaction_id,
             status=model.status,
             canonical_status=model.canonical_status,
@@ -96,6 +98,7 @@ class FlowRunCreate(BaseModel):
     flow_id: UUID | None = None
     flow_version_id: UUID | None = None
     session_id: UUID
+    user_id: str
     origin_flow_run_id: UUID | None = None
     correlation_id: UUID | None = None
     input: FlowRunInput | None = None
@@ -105,6 +108,19 @@ class FlowRunCreate(BaseModel):
     def _validate_selector(self) -> "FlowRunCreate":
         if self.flow_id is None and self.flow_version_id is None:
             raise ValueError("flow_id_or_flow_version_id_required")
+        if not self.user_id.strip():
+            raise ValueError("user_id_required")
+        return self
+
+
+class FlowRunResumeInput(BaseModel):
+    user_id: str
+    user_input: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_user_id(self) -> "FlowRunResumeInput":
+        if not self.user_id.strip():
+            raise ValueError("user_id_required")
         return self
 
 
@@ -181,6 +197,7 @@ class ToolRun(BaseModel):
 class ExecutionEvent(BaseModel):
     id: UUID
     tenant_id: UUID
+    user_id: str
     session_id: UUID
     flow_run_id: UUID
     type: str

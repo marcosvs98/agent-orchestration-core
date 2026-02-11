@@ -30,7 +30,7 @@ class GraphCompiler:
             as_type="chain",
             name="domain.execution.graph_compiler.compile",
             input={"structural_hash": structural_hash},
-        ):
+        ) as chain_handle:
             start_node = snapshot.get("start_node")
             nodes = snapshot.get("nodes", {})
             edges = snapshot.get("edges", [])
@@ -38,59 +38,62 @@ class GraphCompiler:
                 as_type="guardrail",
                 name="domain.execution.graph_compiler.validate_structure",
                 input={"start_node": start_node},
-            ):
+            ) as guardrail_handle:
                 if not start_node or start_node not in nodes:
                     raise DomainValidationException(message="start_node_not_found")
                 if not edges:
                     raise DomainValidationException(message="edges_required")
 
-            adjacency: dict[str, list[CompiledEdge]] = defaultdict(list)
-            ordered_nodes: List[str] = list(nodes.keys())
-            terminal_nodes: Set[str] = set(
-                [
-                    node_id
-                    for node_id, spec in nodes.items()
-                    if spec.get("type")
-                    in {NodeType.ResponseNode, NodeType.FallbackNode}
-                ]
-            )
-            if not terminal_nodes:
-                raise DomainValidationException(message="no_terminal_nodes")
-
-            for order, edge in enumerate(
-                sorted(
-                    edges,
-                    key=lambda e: (
-                        e.get("from_node"),
-                        e.get("to_node"),
-                        e.get("condition", ""),
-                    ),
+                adjacency: dict[str, list[CompiledEdge]] = defaultdict(list)
+                ordered_nodes: List[str] = list(nodes.keys())
+                terminal_nodes: Set[str] = set(
+                    [
+                        node_id
+                        for node_id, spec in nodes.items()
+                        if spec.get("type")
+                        in {NodeType.ResponseNode, NodeType.FallbackNode}
+                    ]
                 )
-            ):
-                compiled = edge.get("compiled_condition")
-                if compiled is None:
-                    raise DomainValidationException(
-                        message="compiled_condition_missing"
+                if not terminal_nodes:
+                    raise DomainValidationException(message="no_terminal_nodes")
+
+                for order, edge in enumerate(
+                    sorted(
+                        edges,
+                        key=lambda e: (
+                            e.get("from_node"),
+                            e.get("to_node"),
+                            e.get("condition", ""),
+                        ),
                     )
-                edge_kind_str = edge.get("edge_kind", EdgeKind.NORMAL.value)
-                edge_kind = (
-                    EdgeKind(edge_kind_str)
-                    if isinstance(edge_kind_str, str)
-                    else edge_kind_str
-                )
-                ce = CompiledEdge(
-                    from_node=edge.get("from_node"),
-                    to_node=edge.get("to_node"),
-                    edge_kind=edge_kind,
-                    compiled_condition=compiled,
-                    order=order,
-                )
-                adjacency[ce.from_node].append(ce)
+                ):
+                    compiled = edge.get("compiled_condition")
+                    if compiled is None:
+                        raise DomainValidationException(
+                            message="compiled_condition_missing"
+                        )
+                    edge_kind_str = edge.get("edge_kind", EdgeKind.NORMAL.value)
+                    edge_kind = (
+                        EdgeKind(edge_kind_str)
+                        if isinstance(edge_kind_str, str)
+                        else edge_kind_str
+                    )
+                    ce = CompiledEdge(
+                        from_node=edge.get("from_node"),
+                        to_node=edge.get("to_node"),
+                        edge_kind=edge_kind,
+                        compiled_condition=compiled,
+                        order=order,
+                    )
+                    adjacency[ce.from_node].append(ce)
 
-            self._validate_reachability(start_node, adjacency, nodes.keys())
-            self._validate_loops(adjacency)
+                self._validate_reachability(start_node, adjacency, nodes.keys())
+                self._validate_loops(adjacency)
 
-            return ExecutionPlan(
+                if guardrail_handle:
+                    guardrail_handle.success(output={"adjacency": dict(adjacency)})
+
+            execution_plan = ExecutionPlan(
                 start_node_id=start_node,
                 ordered_nodes=ordered_nodes,
                 adjacency_map=dict(adjacency),
@@ -100,14 +103,24 @@ class GraphCompiler:
                 available_tools=available_tools or [],
             )
 
+            if chain_handle:
+                chain_handle.success(
+                    output={"execution_plan": execution_plan.model_dump(mode="json")}
+                )
+            return execution_plan
+
     def _validate_reachability(
         self, start_node: str, adjacency: dict[str, list[CompiledEdge]], node_ids: Any
     ) -> None:
         with self.tracer.observe(
             as_type="guardrail",
             name="domain.execution.graph_compiler.validate_reachability",
-            input={"start_node": start_node},
-        ):
+            input={
+                "start_node": start_node,
+                "node_ids": list(node_ids),
+                "adjacency": dict(adjacency),
+            },
+        ) as guardrail_handle:
             visited: Set[str] = set()
 
             def dfs(node_id: str) -> None:
@@ -121,12 +134,15 @@ class GraphCompiler:
             if set(node_ids) != visited:
                 raise DomainValidationException(message="unreachable_nodes")
 
+            if guardrail_handle:
+                guardrail_handle.success(output={"visited": list(visited)})
+
     def _validate_loops(self, adjacency: dict[str, list[CompiledEdge]]) -> None:
         with self.tracer.observe(
             as_type="guardrail",
             name="domain.execution.graph_compiler.validate_loops",
-            input={},
-        ):
+            input={"adjacency": dict(adjacency)},
+        ) as guardrail_handle:
             visiting: Set[str] = set()
             visited_loops: Set[str] = set()
 
@@ -145,3 +161,6 @@ class GraphCompiler:
             for node in adjacency.keys():
                 if node not in visited_loops:
                     dfs(node)
+
+            if guardrail_handle:
+                guardrail_handle.success(output={"visited_loops": list(visited_loops)})

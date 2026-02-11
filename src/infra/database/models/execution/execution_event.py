@@ -14,6 +14,7 @@ class ExecutionEvent(ORMBaseModel):
         ForeignKey("tenant.tenant_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    user_id = Column(String(length=255), nullable=False)
     session_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("session.session_id", ondelete="RESTRICT"),

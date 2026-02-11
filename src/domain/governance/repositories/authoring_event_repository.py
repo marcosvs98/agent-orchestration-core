@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
 from infra.database.models.governance.authoring_event import (
     AuthoringEvent as AuthoringEventModel,
@@ -64,21 +65,38 @@ class AuthoringEventRepository:
     async def list_events_for_resource(
         self, *, tenant_id: UUID, resource_type: str, resource_id: UUID
     ) -> list[AuthoringEventModel]:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.governance.authoring_event_repository.list_events",
-            input={
-                "tenant_id": str(tenant_id),
-                "resource_type": resource_type,
-                "resource_id": str(resource_id),
-            },
-        ):
-            async with self.db.get_session() as session:
-                result = await session.execute(
-                    select(AuthoringEventModel)
-                    .where(AuthoringEventModel.tenant_id == tenant_id)
-                    .where(AuthoringEventModel.resource_type == resource_type)
-                    .where(AuthoringEventModel.resource_id == resource_id)
-                    .order_by(AuthoringEventModel.occurred_at.asc())
-                )
-                return list(result.scalars().all())
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AuthoringEventModel)
+                .where(AuthoringEventModel.tenant_id == tenant_id)
+                .where(AuthoringEventModel.resource_type == resource_type)
+                .where(AuthoringEventModel.resource_id == resource_id)
+                .order_by(AuthoringEventModel.occurred_at.asc())
+            )
+            query_sql = compile_query(stmt)
+
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.authoring_event_repository.list_events",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "resource_type": resource_type,
+                        "resource_id": str(resource_id),
+                    },
+                },
+                metadata={"retriever_name": "list_events_for_resource"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                events = list(result.scalars().all())
+
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(events),
+                            "found": len(events) > 0,
+                        }
+                    )
+
+                return events

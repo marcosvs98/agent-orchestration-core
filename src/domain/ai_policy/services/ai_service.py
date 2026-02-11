@@ -33,7 +33,17 @@ class AIService(AIServicePort):
 
     async def list_ai_tasks(self) -> list[AITask]:
         tasks = await self.repository.list_ai_tasks()
-        return [AITask(id=task.ai_task_id, name=task.name) for task in tasks]
+        return [
+            AITask(
+                id=task.ai_task_id,
+                name=task.name,
+                allow_rag_tenant=bool(task.allow_rag_tenant),
+                allow_user_memory=bool(task.allow_user_memory),
+                allow_session_context=bool(task.allow_session_context),
+                allow_memory_write=bool(task.allow_memory_write),
+            )
+            for task in tasks
+        ]
 
     async def create_ai_execution_policy(
         self,

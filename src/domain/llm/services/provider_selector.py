@@ -40,53 +40,40 @@ class LLMProviderSelector:
                 "provider": provider,
                 "model_alias": model_alias,
             },
-        ):
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.llm.provider_selector.get_active_config",
-                input={"tenant_id": str(tenant_id), "provider": provider},
-            ):
-                config = await self.provider_repository.get_active_config(
-                    tenant_id=tenant_id, provider=provider
-                )
+        ) as agent_handle:
+            config = await self.provider_repository.get_active_config(
+                tenant_id=tenant_id, provider=provider
+            )
 
             if config is None:
                 raise DomainValidationException(message="llm_provider_not_active")
 
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.llm.provider_selector.get_active_mapping",
-                input={
-                    "tenant_id": str(tenant_id),
-                    "provider": provider,
-                    "model_alias": model_alias,
-                },
-            ):
-                mapping: LLMModelMappingModel = (
-                    await self.model_mapping_repository.get_active_mapping(
-                        tenant_id=tenant_id,
-                        provider=provider,
-                        model_alias=model_alias,
-                    )
+            mapping: LLMModelMappingModel = (
+                await self.model_mapping_repository.get_active_mapping(
+                    tenant_id=tenant_id,
+                    provider=provider,
+                    model_alias=model_alias,
                 )
+            )
             if mapping is None:
                 raise DomainValidationException(message="llm_model_mapping_not_found")
 
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.llm.provider_selector.get_active_pricing",
-                input={
-                    "provider": provider,
-                    "provider_model": mapping.provider_model,
-                },
-            ):
-                pricing: LLMPricingModel = (
-                    await self.pricing_repository.get_active_pricing(
-                        provider=provider, provider_model=mapping.provider_model
-                    )
-                )
+            pricing: LLMPricingModel = await self.pricing_repository.get_active_pricing(
+                provider=provider, provider_model=mapping.provider_model
+            )
             if pricing is None:
                 raise DomainValidationException(message="llm_pricing_not_found")
+
+            if agent_handle:
+                agent_handle.success(
+                    output={
+                        "provider": provider,
+                        "provider_model": mapping.provider_model,
+                        "pricing": pricing.to_dict(),
+                        "config": config.to_dict(),
+                        "mapping": mapping.to_dict(),
+                    }
+                )
 
             return LLMProviderSelection(
                 provider=provider,

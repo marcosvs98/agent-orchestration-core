@@ -6,7 +6,7 @@ from domain.execution.schemas.execution import (
     AgentRunCreate,
     FlowRun,
     FlowRunCreate,
-    FlowRunInput,
+    FlowRunResumeInput,
     ToolRun,
     ToolRunCreate,
 )
@@ -39,13 +39,12 @@ class ExecutionServicePort(ABC):
         self,
         *,
         flow_run_id: UUID,
-        input_payload: FlowRunInput | None,
+        input_payload: FlowRunResumeInput | None,
         channel: str,
         headers: dict[str, str],
         external_message_id: str | None,
         request_id: str | None,
         trace_id: str | None,
-        user_id: str | None = None,
     ) -> FlowRun:
         raise NotImplementedServiceException()
 

@@ -33,6 +33,12 @@ class ExecutionEventType(StrEnum):
     GuardrailChecked = "GuardrailChecked"
     GuardrailBlocked = "GuardrailBlocked"
     GuardrailDegraded = "GuardrailDegraded"
+    MemoryEmbeddingQueued = "MemoryEmbeddingQueued"
+    MemoryEmbeddingStarted = "MemoryEmbeddingStarted"
+    MemoryEmbeddingCompleted = "MemoryEmbeddingCompleted"
+    MemoryEmbeddingFailed = "MemoryEmbeddingFailed"
+    MemoryEmbedded = "MemoryEmbedded"
+    MemoryUpdated = "MemoryUpdated"
 
     PolicyEvaluated = "PolicyEvaluated"
     PolicyDenied = "PolicyDenied"

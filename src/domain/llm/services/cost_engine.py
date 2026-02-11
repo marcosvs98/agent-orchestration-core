@@ -33,14 +33,9 @@ class CostEngine:
         provider_model: str,
         token_usage: Mapping[str, int] | None,
     ) -> float:
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.llm.cost_engine.get_active_pricing",
-            input={"provider": provider, "provider_model": provider_model},
-        ):
-            pricing = await self.pricing_repository.get_active_pricing(
-                provider=provider, provider_model=provider_model
-            )
+        pricing = await self.pricing_repository.get_active_pricing(
+            provider=provider, provider_model=provider_model
+        )
         if pricing is None:
             raise DomainValidationException(message="llm_pricing_not_found")
 

@@ -1,6 +1,8 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+from domain.rag.schemas.embedding_job import EmbeddingStatus
 
 
 class VectorStore(BaseModel):
@@ -59,6 +61,8 @@ class RagContextItem(BaseModel):
     content: str
     score: float
     metadata: dict[str, object] | None = None
+    created_at: datetime | None = None
+    observed_at: datetime | None = None
 
 
 class RagContext(BaseModel):
@@ -89,6 +93,16 @@ class RagDocument(BaseModel):
     doc_type: str | None = None
     content_hash: str
     metadata: dict[str, object] | None = None
+    embedding_status: EmbeddingStatus | None = None
+
+
+class RagPreparedDocument(BaseModel):
+    id: UUID
+    source: str | None = None
+    doc_type: str | None = None
+    content_hash: str
+    metadata: dict[str, object] | None = None
+    embedding_status: EmbeddingStatus = EmbeddingStatus.PENDING
 
 
 class RagChunk(BaseModel):

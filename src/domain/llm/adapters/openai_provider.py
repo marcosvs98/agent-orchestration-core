@@ -1,12 +1,14 @@
-import orjson
 from typing import Any, Dict, Optional, NewType
 
-from adapters.http.hardened_http_client import HardenedHttpClient
+from openai import AsyncOpenAI
+from openai.types.responses import Response
+from openai.types.conversations import Conversation
+from openai.types.responses.response_usage import ResponseUsage
+
 from adapters.cache.redis_adapter import RedisAdapter
 from domain.llm.ports.llm_provider import LLMProviderPort
 from domain.tools.ports.secret_resolver import SecretResolverPort
 from exceptions.service_exceptions import DomainValidationException
-
 from domain.llm.schemas.llm import LLMRequest, LLMResult
 
 ConversationId = NewType("ConversationId", str)
@@ -19,29 +21,28 @@ class OpenAIProviderAdapter(LLMProviderPort):
     def __init__(
         self,
         *,
-        http_client: HardenedHttpClient,
         secret_resolver: SecretResolverPort,
         cache_adapter: RedisAdapter,
-        base_url: str = "https://api.openai.com/v1",
         credential_secret_ref: str | None = None,
     ) -> None:
-        self.http_client = http_client
         self.secret_resolver = secret_resolver
         self.cache_adapter = cache_adapter
-        self.base_url = base_url.rstrip("/")
         self.credential_secret_ref = credential_secret_ref
+        self._client: Optional[AsyncOpenAI] = None
 
-    async def _headers(self) -> Dict[str, str]:
+    async def _client_instance(self) -> AsyncOpenAI:
+        if self._client:
+            return self._client
+
         if not self.credential_secret_ref:
             raise DomainValidationException("llm_provider_missing_credentials")
 
         api_key = await self.secret_resolver.resolve(
             secret_ref=self.credential_secret_ref
         )
-        return {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+
+        self._client = AsyncOpenAI(api_key=api_key)
+        return self._client
 
     async def _get_or_create_conversation_id(
         self, conversation_key: str
@@ -52,27 +53,19 @@ class OpenAIProviderAdapter(LLMProviderPort):
         if cached:
             return ConversationId(cached)
 
-        response = await self.http_client.post_json(
-            url=f"{self.base_url}/conversations",
-            headers=await self._headers(),
-            json_body={},
+        client = await self._client_instance()
+        conversation: Conversation = await client.conversations.create(
+            metadata={"conversation_key": conversation_key}
         )
 
-        if response.status_code >= 400:
-            raise DomainValidationException("conversation_creation_failed")
-
-        conversation_id = response.json().get("id")
-        if not conversation_id:
-            raise DomainValidationException("invalid_conversation_response")
-
-        typed_id = ConversationId(conversation_id)
+        conversation_id = ConversationId(conversation.id)
 
         await self.cache_adapter.set(
             cache_key,
-            typed_id,
-            ttl_seconds=self.CONVERSATION_TTL_SECONDS,
+            conversation_id,
+            ttl=self.CONVERSATION_TTL_SECONDS,
         )
-        return typed_id
+        return conversation_id
 
     async def _get_previous_response_id(
         self, conversation_key: str
@@ -90,83 +83,89 @@ class OpenAIProviderAdapter(LLMProviderPort):
         await self.cache_adapter.set(
             f"openai:previous_response:{conversation_key}",
             response_id,
-            ttl_seconds=self.CONVERSATION_TTL_SECONDS,
+            ttl=self.CONVERSATION_TTL_SECONDS,
         )
 
     async def infer(self, request: LLMRequest) -> LLMResult:
-        headers = await self._headers()
-        url = f"{self.base_url}/responses"
+        client = await self._client_instance()
 
-        body: Dict[str, Any] = {
+        payload: Dict[str, Any] = {
             "model": request.model_alias,
             "input": request.prompt,
+            "temperature": request.temperature
+            if request.temperature is not None
+            else 0.2,
+            "truncation": "auto",
             "text": {"format": {"type": "json_object"}},
         }
 
         if request.system_prompt:
-            body["system"] = request.system_prompt
+            payload["instructions"] = request.system_prompt
 
         if request.max_tokens is not None:
-            body["max_output_tokens"] = request.max_tokens
+            payload["max_output_tokens"] = request.max_tokens
 
-        conversation_key = request.conversation_key
-        stateless = request.stateless
+        if request.prompt_cache_key:
+            payload["prompt_cache_key"] = request.prompt_cache_key
+            payload["prompt_cache_retention"] = "24h"
 
-        if conversation_key:
+        if request.metadata:
+            payload["metadata"] = request.metadata
+
+        if request.user_id:
+            payload["user"] = request.user_id
+
+        if request.conversation_key:
             conversation_id = await self._get_or_create_conversation_id(
-                conversation_key
+                request.conversation_key
             )
 
-            if stateless:
-                body["conversation"] = conversation_id
+            if request.stateless:
+                payload["conversation"] = conversation_id
             else:
                 previous_response_id = await self._get_previous_response_id(
-                    conversation_key
+                    request.conversation_key
                 )
                 if previous_response_id:
-                    body["previous_response_id"] = previous_response_id
+                    payload["previous_response_id"] = previous_response_id
                 else:
-                    body["conversation"] = conversation_id
+                    payload["conversation"] = conversation_id
 
-        timeout = request.max_latency_ms / 1000 if request.max_latency_ms else None
-
-        response = await self.http_client.post_json(
-            url=url,
-            headers=headers,
-            json_body=body,
-            timeout_seconds=timeout,
-        )
-
-        if response.status_code >= 400:
+        try:
+            response: Response = await client.responses.create(
+                **payload,
+                store=bool(request.conversation_key),
+                service_tier="auto",
+            )
+        except Exception as exc:
             raise DomainValidationException(
                 "llm_provider_error",
-                detail=f"status={response.status_code}",
+                detail=str(exc),
             )
 
-        raw_output = response.json()
-
-        response_id = raw_output.get("id")
-        if conversation_key and response_id:
+        if request.conversation_key and response.id:
             await self._set_previous_response_id(
-                conversation_key,
-                ConversationResponseID(response_id),
+                request.conversation_key,
+                ConversationResponseID(response.id),
             )
 
-        output_text = ""
-        output_blocks = raw_output.get("output") or []
-        if output_blocks:
-            content = output_blocks[0].get("content") or []
-            if content:
-                output_text = content[0].get("text", "") or "{}"
+        # output: Any = {}
+        output_text: Optional[str] = None
 
-        usage_raw = raw_output.get("usage") or {}
+        if response.output:
+            for block in response.output:
+                for item in block.content or []:
+                    # if item.type == "output_json":
+                    #    output = item.json
+                    if item.type == "output_text":
+                        output_text = item.text
+
+        usage: ResponseUsage = response.usage or {}
         token_usage = {
-            "input_tokens": usage_raw.get("input_tokens", 0),
-            "output_tokens": usage_raw.get("output_tokens", 0),
-            "cached_input_tokens": (
-                usage_raw.get("input_tokens_details", {}).get("cached_tokens", 0)
-            ),
-            "total_tokens": usage_raw.get("total_tokens", 0),
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "cached_input_tokens": (usage.input_tokens_details.cached_tokens),
+            "total_tokens": usage.total_tokens,
         }
 
         return LLMResult(
@@ -175,7 +174,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             cost_usd=None,
             latency_ms=None,
             model_alias=request.model_alias,
-            raw_output=raw_output,
+            raw_output=response.model_dump(),
         )
 
     async def classify(
@@ -188,54 +187,50 @@ class OpenAIProviderAdapter(LLMProviderPort):
         max_tokens: int = 300,
         temperature: float = 0.0,
     ) -> LLMResult:
-        headers = await self._headers()
-        url = f"{self.base_url}/chat/completions"
+        client = await self._client_instance()
 
-        body = {
+        payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "response_format": {"type": "json_object"},
-            "max_tokens": max_tokens,
+            "input": user_message,
+            "instructions": system_prompt,
             "temperature": temperature,
+            "max_output_tokens": max_tokens,
+            "text": {"format": {"type": "text"}},
         }
 
-        response = await self.http_client.post_json(
-            url=url,
-            headers=headers,
-            json_body=body,
-            prompt_cache_key=cache_key,
-        )
+        if cache_key:
+            payload["prompt_cache_key"] = cache_key
+            payload["prompt_cache_retention"] = "24h"
 
-        if response.status_code >= 400:
-            raise DomainValidationException("llm_classification_failed")
+        try:
+            response: Response = await client.responses.create(**payload)
+        except Exception as exc:
+            raise DomainValidationException(
+                "llm_classification_failed",
+                detail=str(exc),
+            )
 
-        raw_output = response.json()
-        choices = raw_output.get("choices") or []
+        output_text = ""
+        if response.output:
+            for block in response.output:
+                for item in block.content or []:
+                    if item.type == "output_text":
+                        output_text = item.text
 
-        output: Dict[str, Any] = {}
-        if choices:
-            message = choices[0].get("message") or {}
-            try:
-                output = orjson.loads(message.get("content") or "{}")
-            except Exception:
-                output = {}
-
-        usage_raw = raw_output.get("usage") or {}
+        usage = response.usage or {}
         token_usage = {
-            "input_tokens": usage_raw.get("prompt_tokens", 0),
-            "output_tokens": usage_raw.get("completion_tokens", 0),
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
             "cached_input_tokens": (
-                usage_raw.get("prompt_tokens_details", {}).get("cached_tokens", 0)
+                usage.get("input_tokens_details", {}).get("cached_tokens", 0)
             ),
         }
+
         return LLMResult(
-            output=output,
+            output={"content": output_text},
             token_usage=token_usage,
             cost_usd=None,
             latency_ms=None,
             model_alias=model,
-            raw_output=raw_output,
+            raw_output=response.model_dump(),
         )

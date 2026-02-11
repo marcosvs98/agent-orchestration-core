@@ -1,4 +1,13 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, Index
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
@@ -33,6 +42,11 @@ class RagChunk(ORMBaseModel):
     )
 
     __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "chunk_index",
+            name="uq_rag_chunk_document_id_chunk_index",
+        ),
         Index("ix_rag_chunk_document_id", "document_id"),
         Index("ix_rag_chunk_chunk_index", "chunk_index"),
         Index("ix_rag_chunk_embedding", "embedding", postgresql_using="ivfflat"),

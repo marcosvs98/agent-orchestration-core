@@ -39,42 +39,30 @@ class RateLimitService:
                 "principal_type": principal_type,
             },
             metadata={"guardrail_type": "rate_limit"},
-        ):
-            with self.tracer.observe(
-                as_type="retriever",
-                name="governance.rate_limit.get_default_policy",
-                input={"tenant_id": str(tenant_id)},
-            ) as policy_handle:
-                policy = await self.repository.get_default_policy_for_tenant(tenant_id)
-                if policy_handle:
-                    policy_handle.success(output={"found": policy is not None})
+        ) as enforce_handle:
+            policy = await self.repository.get_default_policy_for_tenant(tenant_id)
+            if enforce_handle:
+                enforce_handle.success(
+                    output={"policy": policy.to_dict() if policy else None}
+                )
+
         if policy is None:
             with self.tracer.observe(
                 as_type="event",
                 name="governance.rate_limit.policy_missing",
                 input={"tenant_id": str(tenant_id), "action": action},
-            ):
-                pass
+            ) as event_handle:
+                if event_handle:
+                    event_handle.success(output={"reason": "policy_not_configured"})
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_configured"
             )
 
-        with self.tracer.observe(
-            as_type="retriever",
-            name="governance.rate_limit.get_policy_version",
-            input={
-                "policy_id": str(policy.rate_limit_policy_id),
-                "action": action,
-                "principal_type": principal_type,
-            },
-        ) as version_handle:
-            version = await self.repository.get_published_policy_version(
-                policy.rate_limit_policy_id,
-                action=action,
-                principal_type=principal_type,
-            )
-            if version_handle:
-                version_handle.success(output={"found": version is not None})
+        version = await self.repository.get_published_policy_version(
+            policy.rate_limit_policy_id,
+            action=action,
+            principal_type=principal_type,
+        )
         if version is None:
             with self.tracer.observe(
                 as_type="event",
@@ -83,8 +71,9 @@ class RateLimitService:
                     "policy_id": str(policy.rate_limit_policy_id),
                     "action": action,
                 },
-            ):
-                pass
+            ) as event_handle:
+                if event_handle:
+                    event_handle.success(output={"reason": "policy_not_published"})
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_published"
             )
@@ -97,12 +86,20 @@ class RateLimitService:
                 "tenant_id": str(tenant_id),
                 "action": action,
                 "principal_type": principal_type,
+                "principal_id": principal_id,
+                "key": key,
+                "window_seconds": int(version.window_seconds),
             },
             metadata={"tool_name": "redis.incr_with_ttl"},
         ) as tool_handle:
             value = await self.redis.incr_with_ttl(key, int(version.window_seconds))
             if tool_handle:
-                tool_handle.success(output={"count": int(value)})
+                tool_handle.success(
+                    output={
+                        "count": int(value),
+                        "window_seconds": int(version.window_seconds),
+                    }
+                )
         if int(value) > int(version.limit):
             with self.tracer.observe(
                 as_type="event",
@@ -110,9 +107,20 @@ class RateLimitService:
                 input={
                     "tenant_id": str(tenant_id),
                     "action": action,
+                    "principal_type": principal_type,
+                    "principal_id": principal_id,
                     "limit": int(version.limit),
                     "count": int(value),
                 },
-            ):
-                pass
+            ) as event_handle:
+                if event_handle:
+                    event_handle.success(
+                        output={
+                            "exceeded": True,
+                            "principal_type": principal_type,
+                            "principal_id": principal_id,
+                            "limit": int(version.limit),
+                            "count": int(value),
+                        }
+                    )
             raise RateLimitExceededException(message="rate_limit_exceeded")

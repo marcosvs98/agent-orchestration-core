@@ -21,6 +21,7 @@ from seeds.demo.ids import (
     AGENT_VERSION_V1_ID,
     POLICY_VERSION_V1_ID,
     PRINCIPAL_SYSTEM,
+    RAG_CONFIG_DEMO_ID,
     TENANT_DEMO_ID,
 )
 
@@ -64,6 +65,7 @@ async def seed_agent() -> None:
                 agent_version_id=AGENT_VERSION_V1_ID,
                 agent_id=AGENT_DEMO_ID,
                 ai_execution_policy_version_id=POLICY_VERSION_V1_ID,
+                rag_config_id=RAG_CONFIG_DEMO_ID,
                 status=VersionStatus.PUBLISHED.value,
                 version_major=1,
                 version_minor=0,
@@ -72,6 +74,9 @@ async def seed_agent() -> None:
                 persona_config=persona_config,
             )
             session.add(agent_version)
+            await session.commit()
+        elif agent_version.rag_config_id is None:
+            agent_version.rag_config_id = RAG_CONFIG_DEMO_ID
             await session.commit()
 
         result = await session.execute(

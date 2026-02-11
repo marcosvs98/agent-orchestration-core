@@ -3,7 +3,14 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class AITask(BaseModel):
+class AITaskContextFlags(BaseModel):
+    allow_rag_tenant: bool = False
+    allow_user_memory: bool = False
+    allow_session_context: bool = False
+    allow_memory_write: bool = False
+
+
+class AITask(AITaskContextFlags):
     id: UUID
     name: str
 
