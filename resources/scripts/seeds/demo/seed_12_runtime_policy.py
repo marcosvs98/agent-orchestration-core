@@ -14,11 +14,69 @@ from infra.database import get_db
 from infra.database.models.governance.runtime_policy import RuntimePolicy
 
 from seeds.demo.ids import (
-    FLOW_DEMO_ID,
+    RAG_CONFIG_DEMO_ID,
     RUNTIME_POLICY_TENANT_ID,
     TENANT_DEMO_ID,
     PRINCIPAL_SYSTEM,
 )
+
+
+def _policy_definition() -> dict:
+    return {
+        "limits": {
+            "max_nodes": 50,
+            "max_depth": 20,
+            "max_edges_per_node": 3,
+            "max_total_duration_ms": 60000,
+            "max_node_duration_ms": 15000,
+            "max_loop_iterations": 10,
+        },
+        "execution": {
+            "fail_on_multiple_true_edges": True,
+            "fail_on_missing_graph": True,
+            "allow_parallel_nodes": False,
+        },
+        "tools": {
+            "max_retries": 2,
+            "circuit_breaker": {
+                "failure_threshold": 5,
+                "window_seconds": 60,
+            },
+        },
+        "llm": {
+            "max_retries": 3,
+            "timeout_ms": 30000,
+        },
+        "user_context_enrichment": {
+            "enabled": True,
+            "gating": True,
+            "default_layers_when_published": {
+                "allow_tenant_knowledge": True,
+                "allow_user_memory_structured": True,
+                "allow_user_memory_vector": True,
+            },
+        },
+        "memory_extraction": {
+            "enabled": False,
+            "rag_config_id": str(RAG_CONFIG_DEMO_ID),
+            "preference_schema_id": "user.preference.v1",
+            "profile_schema_id": "user.profile_signal.v1",
+            "llm": {
+                "provider": "OPENAI",
+                "model_alias": "fake-model",
+                "prompt": "Extract user preferences from flow output.",
+                "task_type": "RESPONSE_RENDER",
+            },
+        },
+        "memory_retrieval": {
+            "temporal_scoring": {
+                "enabled": False,
+                "half_life_seconds": 604800,
+                "timestamp_source": "OBSERVED_AT",
+                "candidate_multiplier": 3,
+            },
+        },
+    }
 
 
 async def seed_runtime_policy() -> None:
@@ -31,33 +89,6 @@ async def seed_runtime_policy() -> None:
         existing = result.scalar_one_or_none()
 
         if existing is None:
-            policy_definition = {
-                "limits": {
-                    "max_nodes": 50,
-                    "max_depth": 20,
-                    "max_edges_per_node": 3,
-                    "max_total_duration_ms": 60000,
-                    "max_node_duration_ms": 15000,
-                    "max_loop_iterations": 10,
-                },
-                "execution": {
-                    "fail_on_multiple_true_edges": True,
-                    "fail_on_missing_graph": True,
-                    "allow_parallel_nodes": False,
-                },
-                "tools": {
-                    "max_retries": 2,
-                    "circuit_breaker": {
-                        "failure_threshold": 5,
-                        "window_seconds": 60,
-                    },
-                },
-                "llm": {
-                    "max_retries": 3,
-                    "timeout_ms": 30000,
-                },
-            }
-
             runtime_policy = RuntimePolicy(
                 runtime_policy_id=RUNTIME_POLICY_TENANT_ID,
                 tenant_id=TENANT_DEMO_ID,
@@ -65,8 +96,12 @@ async def seed_runtime_policy() -> None:
                 flow_id=None,
                 version="1",
                 status="ACTIVE",
-                policy_definition=policy_definition,
+                policy_definition=_policy_definition(),
                 created_by=PRINCIPAL_SYSTEM,
             )
             session.add(runtime_policy)
-            await session.commit()
+        else:
+            existing.policy_definition = _policy_definition()
+            session.add(existing)
+
+        await session.commit()

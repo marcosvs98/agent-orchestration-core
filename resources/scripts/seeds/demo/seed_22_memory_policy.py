@@ -69,8 +69,20 @@ async def seed_memory_policy() -> None:
                     "admin_seed",
                 ],
                 allowed_schemas=[
-                    {"schema_id": "user.preference.v1", "max_item_bytes": 4096},
-                    {"schema_id": "user.profile_signal.v1", "max_item_bytes": 4096},
+                    {
+                        "schema_id": "user.preference.v1",
+                        "max_item_bytes": 4096,
+                        "preference_update": {
+                            "fixed_key": None,
+                            "allowed_keys": ["style.tone", "style.depth", "style.formality"],
+                            "ignore_if_unchanged": True,
+                            "overwrite_mode": "SOURCE_PRIORITY",
+                        },
+                    },
+                    {
+                        "schema_id": "user.profile_signal.v1",
+                        "max_item_bytes": 4096,
+                    },
                 ],
             )
             session.add(policy_version)

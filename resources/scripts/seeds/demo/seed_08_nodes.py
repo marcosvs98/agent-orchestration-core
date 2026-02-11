@@ -14,22 +14,24 @@ from infra.database import get_db
 from infra.database.models.flow.node import Node
 
 from seeds.demo.ids import (
+    AI_TASK_CLARIFICATION_ID,
     AI_TASK_INTENT_DETECTION_ID,
     AI_TASK_RESPONSE_FORMATTING_ID,
     AI_TASK_SLOT_FILLING_ID,
-    AI_TASK_CLARIFICATION_ID,
     FLOW_VERSION_V1_ID,
+    NODE_CLARIFICATION_ID,
     NODE_INTENT_ID,
+    NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_EXEC_ID,
-    NODE_RESPONSE_ID,
-    NODE_CLARIFICATION_ID,
+    NODE_USER_CONTEXT_ENRICHMENT_ID,
 )
 
 
 async def seed_nodes() -> None:
     async with get_db() as session:
         nodes = [
+            (NODE_USER_CONTEXT_ENRICHMENT_ID, None, "UserContextEnrichment"),
             (NODE_INTENT_ID, AI_TASK_INTENT_DETECTION_ID, "IntentDetection"),
             (NODE_SLOT_ID, AI_TASK_SLOT_FILLING_ID, "SlotFilling"),
             (NODE_TOOL_EXEC_ID, None, "ToolExecution"),

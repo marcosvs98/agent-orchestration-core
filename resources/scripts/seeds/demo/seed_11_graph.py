@@ -30,11 +30,12 @@ from seeds.demo.ids import (
     FLOW_GRAPH_DRAFT_ID,
     FLOW_GRAPH_SNAPSHOT_ID,
     FLOW_VERSION_V1_ID,
+    NODE_CLARIFICATION_ID,
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_EXEC_ID,
-    NODE_CLARIFICATION_ID,
+    NODE_USER_CONTEXT_ENRICHMENT_ID,
     PRINCIPAL_SYSTEM,
 )
 
@@ -53,8 +54,19 @@ async def seed_graph() -> None:
             )
 
         definition = FlowGraphDefinition(
-            start_node=str(NODE_INTENT_ID),
+            start_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
             nodes={
+                str(NODE_USER_CONTEXT_ENRICHMENT_ID): FlowGraphNodeSpec(
+                    type="UserContextEnrichmentNode",
+                    config={
+                        "publish": True,
+                        "layers": {
+                            "allow_tenant_knowledge": True,
+                            "allow_user_memory_structured": True,
+                            "allow_user_memory_vector": True,
+                        },
+                    },
+                ),
                 str(NODE_INTENT_ID): FlowGraphNodeSpec(
                     type="IntentToolSelectionNode",
                     config={
@@ -156,6 +168,12 @@ async def seed_graph() -> None:
                 ),
             },
             edges=[
+                FlowGraphEdge(
+                    from_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
+                    to_node=str(NODE_INTENT_ID),
+                    condition="true",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_SLOT_ID),

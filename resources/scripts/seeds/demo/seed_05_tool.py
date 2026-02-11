@@ -95,6 +95,10 @@ async def seed_tool() -> None:
             request_schema=op.get("request_schema", {}),
             response_schema=op.get("response_schema", {}),
             operation_id=op.get("operation_id", "createExpense"),
+            rag_activation={
+                "tenant_knowledge": {"enabled": True},
+                "user_memory_vector": {"enabled": True, "filters_override": {}},
+            },
         )
 
         tool_config = ToolConfig(
@@ -127,6 +131,10 @@ async def _create_basic_tool() -> None:
             tool_config_dict = ToolConfigConfig(
                 url="http://localhost:3000/createExpense",
                 method="POST",
+                rag_activation={
+                    "tenant_knowledge": {"enabled": True},
+                    "user_memory_vector": {"enabled": True, "filters_override": {}},
+                },
                 request_schema={
                     "type": "object",
                     "properties": {

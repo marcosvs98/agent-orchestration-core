@@ -83,6 +83,11 @@ async def seed_rag_policy() -> None:
                         },
                         "require_published_rag_config": True,
                         "top_k_cap": 5,
+                        "min_query_chars_by_scope": {
+                            "TENANT_KNOWLEDGE": 8,
+                            "USER_MEMORY_VECTOR": 8,
+                        },
+                        "allow_structured_input": False,
                     },
                 )
             )
