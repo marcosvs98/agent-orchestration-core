@@ -6,7 +6,7 @@ from typing import Any, Dict
 from uuid import UUID
 
 from domain.context.schemas.memory_write import MemoryWriteEventContext
-from domain.context.services.memory_extraction_node import MemoryExtractionNode
+from domain.context.services.memory_extraction_processor import MemoryExtractionProcessor
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.events import ExecutionEventType
@@ -40,9 +40,9 @@ class ExecutionEventHook(ABC):
         pass
 
 
-class DbExecutionEventHook(
-    ExecutionEventHook
-):  # Todo: Any method should be instrumented with tracer
+class DbExecutionEventHook(ExecutionEventHook):
+    """Execution event hook that persists events to DB; public methods use tracer."""
+
     def __init__(
         self, repository: ExecutionRepository, tracer: RuntimeTracerPort
     ) -> None:
@@ -284,11 +284,11 @@ class MemoryExtractionHook(ExecutionEventHook):
     def __init__(
         self,
         base_hook: ExecutionEventHook,
-        memory_extraction_node: MemoryExtractionNode,
+        memory_extraction_processor: MemoryExtractionProcessor,
         tracer: RuntimeTracerPort,
     ) -> None:
         self.base_hook = base_hook
-        self.memory_extraction_node = memory_extraction_node
+        self.memory_extraction_processor = memory_extraction_processor
         self.tracer = tracer
 
     async def on_flow_start(self, **kwargs: Any) -> None:
@@ -336,7 +336,7 @@ class MemoryExtractionHook(ExecutionEventHook):
             },
         ):
             try:
-                await self.memory_extraction_node.execute(
+                await self.memory_extraction_processor.execute(
                     tenant_id=tenant_id,
                     user_id=user_id,
                     session_id=session_id,

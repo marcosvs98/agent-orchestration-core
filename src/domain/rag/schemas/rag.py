@@ -33,7 +33,7 @@ class RagRetrievalOptions(BaseModel):
     """Define retrieval limits and filters for similarity search."""
 
     top_k: int = 5
-    similarity_threshold: float = 0.85
+    similarity_threshold: float = 0.50
     filters: dict[str, object] | None = None
 
 

@@ -37,7 +37,7 @@ async def seed_agent() -> None:
             agent = Agent(
                 agent_id=AGENT_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Assistente Financeiro",
+                name="Assistente de Bolso",
             )
             session.add(agent)
             await session.commit()
@@ -54,8 +54,11 @@ async def seed_agent() -> None:
             "tone": "professional",
             "style": "concise",
             "rules": [
-                "Não invente informações",
-                "Confirme dados críticos antes de executar ações",
+                "Nunca invente dados financeiros; trabalhe apenas com dados disponíveis no sistema.",
+                "Informe explicitamente quando não houver informação.",
+                "Confirme dados em caso de ambiguidade relevante.",
+                "Não assuma contexto financeiro não informado.",
+                "Não prometa funcionalidades inexistentes.",
             ],
             "max_response_length": 500,
         }
@@ -70,7 +73,7 @@ async def seed_agent() -> None:
                 version_major=1,
                 version_minor=0,
                 version_patch=0,
-                description="Agent demo v1.0.0",
+                description="Assistente de Bolso v1.0.0 - copiloto financeiro pessoal via WhatsApp",
                 persona_config=persona_config,
             )
             session.add(agent_version)

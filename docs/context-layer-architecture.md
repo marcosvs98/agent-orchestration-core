@@ -231,16 +231,16 @@ Location:
   - `event.MemoryUpdated` and `event.MemoryEmbedded` (tracing)
   - `ExecutionEventType.MemoryUpdated` and `ExecutionEventType.MemoryEmbedded` (persisted execution events when flow context is available)
 
-### MemoryExtractionNode (post-execution)
+### MemoryExtractionProcessor (post-execution)
 
-- Runs after `FlowCompleted` using `ExecutionEventHook.on_flow_complete(...)` wrapper semantics.
+- Post-execution processor (not a graph node): runs after `FlowCompleted` via `ExecutionEventHook.on_flow_complete(...)` wrapper semantics.
 - Executes LLM-assisted extraction/classification from final flow output into:
   - preference candidates
   - profile patch candidate
   - vector memory candidates
 - Converts extracted output into `UserMemoryItem` payloads and persists exclusively through `MemoryWriteService.write_memory_item(...)`.
 - Uses `MemoryPolicySource.INFERRED_LLM` by default and requires `rag_config_id` from runtime policy config.
-- Emits `domain.context.memory_extraction.started` and `domain.context.memory_extraction.completed` with keys/counts only, never raw flow output.
+- Emits `domain.context.memory_extraction_processor.execute` and `domain.context.memory_extraction.completed` with keys/counts only, never raw flow output.
 
 ### Async embedding pipeline (USER_MEMORY_VECTOR)
 

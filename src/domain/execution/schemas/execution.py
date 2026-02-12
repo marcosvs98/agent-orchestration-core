@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from enum import StrEnum
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 if TYPE_CHECKING:
     from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
@@ -218,3 +218,14 @@ class ToolRunCreate(BaseModel):
     correlation_id: UUID | None = None
     input: dict[str, object] = {}
     has_side_effect: bool = False
+
+
+class UserPreferenceUpsertResult(BaseModel):
+    """Result of upserting a user preference (insert or update)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    updated: bool
+    version: int
+    previous_source: str | None
+    reason: str | None = None

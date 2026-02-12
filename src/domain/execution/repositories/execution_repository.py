@@ -1,12 +1,11 @@
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
-from dataclasses import dataclass
 import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 
-from domain.execution.schemas.execution import FlowRunInput
+from domain.execution.schemas.execution import FlowRunInput, UserPreferenceUpsertResult
 from infra.database.models.conversation.session import Session as SessionModel
 from infra.database.models.conversation.user import User as UserModel
 from infra.database.models.conversation.user_memory_profile import (
@@ -22,7 +21,11 @@ from exceptions.service_exceptions import (
 )
 from infra.database import DatabaseConnection
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from domain.execution.services.state_machine import RunStatus, FlowRunStatus
+from domain.execution.services.state_machine import (
+    FlowRunStatus,
+    RunStatus,
+    ToolRunStatus,
+)
 from utils.query_compiler import compile_query
 from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
 from infra.database.models.execution.tool_run import ToolRun as ToolRunModel
@@ -82,16 +85,7 @@ from infra.database.models.governance.rag_policy_version import (
 from infra.database.models.execution.graph_state import GraphState as GraphStateModel
 
 
-# Todo: Do not use dataclass (User BaseModel or TypedDict)
-@dataclass(frozen=True)
-class UserPreferenceUpsertResult:
-    updated: bool
-    version: int
-    previous_source: str | None
-    reason: str | None = None
-
-
-class ExecutionRepository:  # Todo: Any method should be instrumented with tracer
+class ExecutionRepository:
     def __init__(
         self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
     ) -> None:
@@ -1393,7 +1387,7 @@ class ExecutionRepository:  # Todo: Any method should be instrumented with trace
             instance.canonical_status = str(canonical_status)
             instance.output = output or {}
             instance.error = error or {}
-            if status in {"COMPLETED", "FAILED"}:  # Todo: To use StrEnum here
+            if status in (ToolRunStatus.SUCCESS, ToolRunStatus.ERROR):
                 instance.finished_at = sa.func.now()
             with self.tracer.observe(
                 as_type="tool",

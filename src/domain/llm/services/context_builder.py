@@ -192,6 +192,34 @@ class ContextBuilder:
         if not isinstance(handle, dict):
             handle = {}
         if not bool(handle.get("published", False)):
+            if task_type == LLMTaskType.RESPONSE_RENDER:
+                default_layers = policy.get("default_layers_when_published")
+                if isinstance(default_layers, dict):
+                    return decision.model_copy(
+                        update={
+                            "allow_tenant_knowledge": bool(
+                                default_layers.get(
+                                    "allow_tenant_knowledge",
+                                    decision.allow_tenant_knowledge,
+                                )
+                            ),
+                            "allow_user_memory_structured": bool(
+                                default_layers.get(
+                                    "allow_user_memory_structured",
+                                    decision.allow_user_memory_structured,
+                                )
+                            ),
+                            "allow_user_memory_vector": bool(
+                                default_layers.get(
+                                    "allow_user_memory_vector",
+                                    decision.allow_user_memory_vector,
+                                )
+                            ),
+                        }
+                    )
+                return decision.model_copy(
+                    update={"allow_tenant_knowledge": True}
+                )
             with self.tracer.observe(
                 as_type="event",
                 name="domain.context.user_context_enrichment.gated_block",

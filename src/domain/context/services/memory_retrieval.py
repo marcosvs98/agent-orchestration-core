@@ -61,7 +61,7 @@ class MemoryRetrievalService:
     ) -> LayeredMemoryContext:
         retrieval_config = config or MemoryRetrievalConfig()
         with self.tracer.observe(
-            as_type="span",
+            as_type="retriever",
             name="domain.context.memory_retrieval.started",
             input={
                 "tenant_id": str(execution_context.tenant_id)

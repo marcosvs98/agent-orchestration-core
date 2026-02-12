@@ -20,7 +20,7 @@ except ImportError:
 
 app = FastAPI()
 
-LOG_DIR = Path(__file__).parent / "langfuse_logs"
+LOG_DIR = Path(__file__).parent / "local_traces"
 LOG_DIR.mkdir(exist_ok=True)
 
 TARGET_URL = os.getenv("LANGFUSE_TARGET_URL", "https://us.cloud.langfuse.com")
@@ -56,6 +56,24 @@ def sanitize_filename(name: str) -> str:
     return sanitized[:32] if len(sanitized) > 32 else sanitized
 
 
+def deep_parse_json_strings(obj: object) -> object:
+    """Recursively parse string values that are valid JSON into objects/arrays."""
+    if isinstance(obj, str):
+        stripped = obj.strip()
+        if len(stripped) > 1 and stripped[0] in ("{", "["):
+            try:
+                parsed = json.loads(obj)
+                return deep_parse_json_strings(parsed)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return obj
+    if isinstance(obj, dict):
+        return {k: deep_parse_json_strings(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [deep_parse_json_strings(item) for item in obj]
+    return obj
+
+
 def save_trace(data: dict | bytes, endpoint: str) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -66,7 +84,7 @@ def save_trace(data: dict | bytes, endpoint: str) -> None:
         if decoded:
             trace_id = "unknown"
             format_type = decoded.get("_format", "unknown")
-            
+
             if format_type == "trace" and decoded.get("resourceSpans"):
                 spans = decoded["resourceSpans"][0].get("scopeSpans", [])
                 if spans and spans[0].get("spans"):
@@ -81,9 +99,9 @@ def save_trace(data: dict | bytes, endpoint: str) -> None:
                             trace_id = trace_id_raw[:16]
                         else:
                             trace_id = trace_id_raw
-            
+
             trace_id = sanitize_filename(str(trace_id))
-            filename = f"{timestamp}_{trace_id}.json"
+            filename = f"{trace_id}.json"
             filepath = LOG_DIR / filename
             log_entry = {
                 "timestamp": datetime.now().isoformat(),
@@ -112,7 +130,10 @@ def save_trace(data: dict | bytes, endpoint: str) -> None:
             "format": "json",
             "data": data,
         }
-    
+
+    if "data" in log_entry and isinstance(log_entry["data"], dict):
+        log_entry["data"] = deep_parse_json_strings(log_entry["data"])
+
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(log_entry, f, indent=2, ensure_ascii=False)
 

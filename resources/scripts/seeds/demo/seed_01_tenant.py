@@ -26,8 +26,8 @@ async def seed_tenant() -> None:
         if existing is None:
             tenant = Tenant(
                 tenant_id=TENANT_DEMO_ID,
-                name="Demo Tenant - 1",
-                description="Tenant - 1 demo para validação e desenvolvimento",
+                name="Assistente de Bolso",
+                description="Agente financeiro conversacional via WhatsApp: controle financeiro pessoal com integração bancária (Open Finance), categorização de gastos, relatórios, metas financeiras e compromissos.",
                 is_active=True,
                 timezone="America/Sao_Paulo",
                 currency="BRL",

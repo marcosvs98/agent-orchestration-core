@@ -79,10 +79,18 @@ async def seed_graph() -> None:
                             "output_schema": {
                                 "type": "object",
                                 "properties": {
-                                    "intent": {"type": "string"},
-                                    "tool_config_id": {"type": "string", "format": "uuid"},
+                                    "intent": {"type": ["string", "null"]},
+                                    "tool_config_id": {
+                                        "type": ["string", "null"],
+                                        "format": "uuid",
+                                    },
+                                    "clarification": {"type": "boolean"},
+                                    "intent_category": {
+                                        "type": "string",
+                                        "enum": ["TRANSACTION", "DECLARATION", "SMALL_TALK"],
+                                    },
                                 },
-                                "required": ["intent", "tool_config_id"],
+                                "required": ["intent", "tool_config_id", "clarification"],
                             },
                         },
                         "default_tool_config_id": "00000000-0000-0000-0000-000000000501",
@@ -177,7 +185,13 @@ async def seed_graph() -> None:
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_SLOT_ID),
-                    condition="true",
+                    condition='intent_category == "TRANSACTION"',
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_INTENT_ID),
+                    to_node=str(NODE_RESPONSE_ID),
+                    condition='(intent_category == "DECLARATION" or intent_category == "SMALL_TALK")',
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(

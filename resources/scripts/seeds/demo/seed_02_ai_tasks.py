@@ -27,7 +27,7 @@ async def seed_ai_tasks() -> None:
             {
                 "id": AI_TASK_INTENT_DETECTION_ID,
                 "name": "IntentDetection",
-                "allow_rag_tenant": False,
+                "allow_rag_tenant": True,
                 "allow_user_memory": True,
                 "allow_session_context": True,
                 "allow_memory_write": False,
@@ -51,8 +51,8 @@ async def seed_ai_tasks() -> None:
             {
                 "id": AI_TASK_CLARIFICATION_ID,
                 "name": "Clarification",
-                "allow_rag_tenant": False,
-                "allow_user_memory": False,
+                "allow_rag_tenant": True,
+                "allow_user_memory": True,
                 "allow_session_context": True,
                 "allow_memory_write": False,
             },

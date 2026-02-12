@@ -34,8 +34,8 @@ class SlotFillingContext(BaseModel):
 
 class ResponseFormattingContext(BaseModel):
     persona: PersonaConfig
-    tool_response: dict
-    original_intent: str
+    tool_response: dict | None = None
+    original_intent: str | None = None
     user_input: str
     rag_context: RagContext | None = None
     session_context: SessionContextSnapshot | None = None

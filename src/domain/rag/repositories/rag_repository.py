@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from uuid import UUID
 from datetime import datetime
 
@@ -6,6 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from domain.common.schemas.versioning import VersionStatus
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.rag.schemas.embedding_job import EmbeddingStatus
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
@@ -16,19 +19,45 @@ from infra.database.models.rag.rag_query_cache import (
     RagQueryCache as RagQueryCacheModel,
 )
 from infra.database.models.rag.vector_store import VectorStore as VectorStoreModel
+from utils.query_compiler import compile_query
 
 
 class RagRepository:
-    def __init__(self, database_connection: DatabaseConnection) -> None:
+    def __init__(
+        self,
+        database_connection: DatabaseConnection,
+        tracer: RuntimeTracerPort | None = None,
+    ) -> None:
         self.db = database_connection
+        self.tracer = tracer
 
     async def get_vector_store(self, vector_store_id: UUID) -> VectorStoreModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(VectorStoreModel).where(
-                    VectorStoreModel.vector_store_id == vector_store_id
-                )
+            stmt = select(VectorStoreModel).where(
+                VectorStoreModel.vector_store_id == vector_store_id
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.get_vector_store",
+                    input={
+                        "query": query_sql,
+                        "params": {"vector_store_id": str(vector_store_id)},
+                    },
+                    metadata={"retriever_name": "get_vector_store"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    row = result.scalar_one_or_none()
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if row else 0,
+                                "found": row is not None,
+                            }
+                        )
+                    return row
+            result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def list_vector_stores(self) -> list[VectorStoreModel]:
@@ -37,16 +66,54 @@ class RagRepository:
                 VectorStoreModel.name.asc().nulls_last(),
                 VectorStoreModel.vector_store_id.asc(),
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.list_vector_stores",
+                    input={"query": query_sql, "params": {}},
+                    metadata={"retriever_name": "list_vector_stores"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    rows = list(result.scalars().all())
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": len(rows),
+                                "found": len(rows) > 0,
+                            }
+                        )
+                    return rows
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
     async def get_rag_config(self, rag_config_id: UUID) -> RagConfigModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(RagConfigModel).where(
-                    RagConfigModel.rag_config_id == rag_config_id
-                )
+            stmt = select(RagConfigModel).where(
+                RagConfigModel.rag_config_id == rag_config_id
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.get_rag_config",
+                    input={
+                        "query": query_sql,
+                        "params": {"rag_config_id": str(rag_config_id)},
+                    },
+                    metadata={"retriever_name": "get_rag_config"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    row = result.scalar_one_or_none()
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if row else 0,
+                                "found": row is not None,
+                            }
+                        )
+                    return row
+            result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def list_rag_configs(
@@ -65,6 +132,30 @@ class RagRepository:
                 RagConfigModel.version_minor.desc(),
                 RagConfigModel.version_patch.desc(),
             ).limit(limit)
+            query_sql = compile_query(stmt)
+            params: dict[str, object] = {
+                "tenant_id": str(tenant_id),
+                "limit": limit,
+            }
+            if status_filter is not None:
+                params["status_filter"] = status_filter
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.list_rag_configs",
+                    input={"query": query_sql, "params": params},
+                    metadata={"retriever_name": "list_rag_configs"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    rows = list(result.scalars().all())
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": len(rows),
+                                "found": len(rows) > 0,
+                            }
+                        )
+                    return rows
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
@@ -166,12 +257,35 @@ class RagRepository:
         self, *, tenant_id: UUID, content_hash: str
     ) -> RagDocumentModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(RagDocumentModel).where(
-                    RagDocumentModel.tenant_id == tenant_id,
-                    RagDocumentModel.content_hash == content_hash,
-                )
+            stmt = select(RagDocumentModel).where(
+                RagDocumentModel.tenant_id == tenant_id,
+                RagDocumentModel.content_hash == content_hash,
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.get_document_by_hash",
+                    input={
+                        "query": query_sql,
+                        "params": {
+                            "tenant_id": str(tenant_id),
+                            "content_hash": content_hash,
+                        },
+                    },
+                    metadata={"retriever_name": "get_document_by_hash"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    row = result.scalar_one_or_none()
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if row else 0,
+                                "found": row is not None,
+                            }
+                        )
+                    return row
+            result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def create_document(
@@ -204,11 +318,31 @@ class RagRepository:
 
     async def get_document_by_id(self, *, document_id: UUID) -> RagDocumentModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(RagDocumentModel).where(
-                    RagDocumentModel.document_id == document_id,
-                )
+            stmt = select(RagDocumentModel).where(
+                RagDocumentModel.document_id == document_id,
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.get_document_by_id",
+                    input={
+                        "query": query_sql,
+                        "params": {"document_id": str(document_id)},
+                    },
+                    metadata={"retriever_name": "get_document_by_id"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    row = result.scalar_one_or_none()
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if row else 0,
+                                "found": row is not None,
+                            }
+                        )
+                    return row
+            result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def update_document_embedding_status(
@@ -247,24 +381,87 @@ class RagRepository:
         self, *, tenant_id: UUID, limit: int
     ) -> list[RagDocumentModel]:
         async with self.db.get_session() as session:
-            result = await session.execute(
+            stmt = (
                 select(RagDocumentModel)
                 .where(RagDocumentModel.tenant_id == tenant_id)
                 .order_by(RagDocumentModel.created_at.desc())
                 .limit(limit)
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.list_documents",
+                    input={
+                        "query": query_sql,
+                        "params": {"tenant_id": str(tenant_id), "limit": limit},
+                    },
+                    metadata={"retriever_name": "list_documents"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    rows = list(result.scalars().all())
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": len(rows),
+                                "found": len(rows) > 0,
+                            }
+                        )
+                    return rows
+            result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    async def count_documents_for_user(
+        self, *, tenant_id: UUID, user_id: str
+    ) -> int:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(sa.func.count(RagDocumentModel.document_id))
+                .where(RagDocumentModel.tenant_id == tenant_id)
+                .where(
+                    RagDocumentModel.doc_metadata["scope"].astext
+                    == "USER_MEMORY"
+                )
+                .where(
+                    RagDocumentModel.doc_metadata["user_id"].astext == user_id
+                )
+            )
+            result = await session.execute(stmt)
+            value = result.scalar()
+            return int(value) if value is not None else 0
 
     async def list_chunks(
         self, *, document_id: UUID, limit: int
     ) -> list[RagChunkModel]:
         async with self.db.get_session() as session:
-            result = await session.execute(
+            stmt = (
                 select(RagChunkModel)
                 .where(RagChunkModel.document_id == document_id)
                 .order_by(RagChunkModel.chunk_index.asc())
                 .limit(limit)
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.list_chunks",
+                    input={
+                        "query": query_sql,
+                        "params": {"document_id": str(document_id), "limit": limit},
+                    },
+                    metadata={"retriever_name": "list_chunks"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    rows = list(result.scalars().all())
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": len(rows),
+                                "found": len(rows) > 0,
+                            }
+                        )
+                    return rows
+            result = await session.execute(stmt)
             return list(result.scalars().all())
 
     async def create_chunks(self, *, chunks: list[RagChunkModel]) -> None:
@@ -284,7 +481,7 @@ class RagRepository:
                         "embedding": chunk.embedding,
                         "embedding_model": chunk.embedding_model,
                         "embedding_dimension": chunk.embedding_dimension,
-                        "metadata": chunk.chunk_metadata,
+                        "chunk_metadata": chunk.chunk_metadata,
                     }
                 )
             stmt = (
@@ -301,12 +498,35 @@ class RagRepository:
         self, *, tenant_id: UUID, query_hash: str
     ) -> RagQueryCacheModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(RagQueryCacheModel).where(
-                    RagQueryCacheModel.tenant_id == tenant_id,
-                    RagQueryCacheModel.query_hash == query_hash,
-                )
+            stmt = select(RagQueryCacheModel).where(
+                RagQueryCacheModel.tenant_id == tenant_id,
+                RagQueryCacheModel.query_hash == query_hash,
             )
+            query_sql = compile_query(stmt)
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.get_query_cache",
+                    input={
+                        "query": query_sql,
+                        "params": {
+                            "tenant_id": str(tenant_id),
+                            "query_hash": query_hash,
+                        },
+                    },
+                    metadata={"retriever_name": "get_query_cache"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    row = result.scalar_one_or_none()
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": 1 if row else 0,
+                                "found": row is not None,
+                            }
+                        )
+                    return row
+            result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def save_query_cache(
@@ -404,9 +624,46 @@ class RagRepository:
                     RagDocumentModel.doc_metadata["user_id"].astext == user_id
                 )
             stmt = stmt.order_by(sa.text("distance asc")).limit(top_k)
+            query_sql = compile_query(stmt)
+            params: dict[str, object] = {
+                "tenant_id": str(tenant_id),
+                "top_k": top_k,
+                "similarity_threshold": similarity_threshold,
+            }
+            if user_id is not None:
+                params["user_id"] = user_id
+            if filters:
+                params["filter_keys"] = list(filters.keys())
+            if self.tracer:
+                with self.tracer.observe(
+                    as_type="retriever",
+                    name="domain.rag.rag_repository.search_similar_chunks",
+                    input={"query": query_sql, "params": params},
+                    metadata={"retriever_name": "search_similar_chunks"},
+                ) as retriever_handle:
+                    result = await session.execute(stmt)
+                    rows = result.all()
+                    items: list[
+                        tuple[RagChunkModel, float, datetime | None, str | None]
+                    ] = []
+                    for chunk, distance, document_created_at, document_observed_at in rows:
+                        score = 1.0 - float(distance)
+                        if score < similarity_threshold:
+                            continue
+                        items.append(
+                            (chunk, score, document_created_at, document_observed_at)
+                        )
+                    if retriever_handle:
+                        retriever_handle.success(
+                            output={
+                                "result_count": len(items),
+                                "found": len(items) > 0,
+                            }
+                        )
+                    return items
             result = await session.execute(stmt)
             rows = result.all()
-            items: list[tuple[RagChunkModel, float, datetime | None, str | None]] = []
+            items = []
             for chunk, distance, document_created_at, document_observed_at in rows:
                 score = 1.0 - float(distance)
                 if score < similarity_threshold:

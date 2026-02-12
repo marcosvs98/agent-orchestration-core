@@ -56,7 +56,7 @@ Thumbs.db
 *.log
 logs/
 log/
-resources/langfuse_logs/*.json
+resources/traces/*.json
 
 # Coverage
 htmlcov/

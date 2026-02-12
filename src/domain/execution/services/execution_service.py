@@ -87,7 +87,7 @@ from domain.context.services.retrievers import (
     UserMemoryReader,
 )
 from domain.context.services.rag_activation_service import RagActivationService
-from domain.context.services.memory_extraction_node import MemoryExtractionNode
+from domain.context.services.memory_extraction_processor import MemoryExtractionProcessor
 from domain.context.services.memory_retrieval import MemoryRetrievalService
 from domain.context.services.session_context import SessionContextService
 from domain.context.services.memory_writer import MemoryWriteService
@@ -104,8 +104,6 @@ from domain.tools.repositories.tools_repository import ToolsRepository
 from domain.tools.services.tools_service import ToolsService
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
 from infra.http_tool_executor import HttpToolExecutor
-
-TOOL_CATALOG_HASH_PLACEHOLDER = "tool_catalog_placeholder_v1"
 
 
 class _GraphStateSnapshot(BaseModel):
@@ -177,12 +175,14 @@ class ExecutionService(ExecutionServicePort):
             guardrail_engine=guardrail_engine,
             tracer=self.tracer,
         )
-        rag_repository = RagRepository(repository.db)
+        rag_repository = RagRepository(repository.db, tracer=tracer)
+        cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
         embedding_adapter = OpenAIEmbeddingAdapter(
             api_key=settings.OPENAI_API_KEY,
             model="text-embedding-3-small",
             dimension=1536,
             tracer=tracer,
+            cache_adapter=cache_adapter,
         )
         rag_runtime_service = RagRuntimeService(
             repository=rag_repository,
@@ -243,14 +243,14 @@ class ExecutionService(ExecutionServicePort):
         self.prompt_repository = prompt_repository
         self.system_prompt_compiler = system_prompt_compiler
         base_hook = DbExecutionEventHook(repository, tracer=self.tracer)
-        memory_extraction_node = MemoryExtractionNode(
+        memory_extraction_processor = MemoryExtractionProcessor(
             llm_executor=self.llm_executor,
             memory_write_service=memory_write_service,
             tracer=self.tracer,
         )
         self.hook = MemoryExtractionHook(
             base_hook=base_hook,
-            memory_extraction_node=memory_extraction_node,
+            memory_extraction_processor=memory_extraction_processor,
             tracer=self.tracer,
         )
         tool_executor = HttpToolExecutor(tracer=tracer)
@@ -507,8 +507,9 @@ class ExecutionService(ExecutionServicePort):
         )
         runtime_policy_hash = self._hash_dict(runtime_policy.definition.model_dump())
         execution_plan_hash = graph_snapshot.graph_hash
-
-        tool_catalog_hash = TOOL_CATALOG_HASH_PLACEHOLDER  # Todo: Entender isso e por que ficou hardcoded
+        tool_catalog_hash = self._hash_dict(
+            {"graph": execution_plan_hash, "runtime_policy": runtime_policy_hash}
+        )
         llm_provider_config_hash = None
 
         flow_run_id = await self.repository.create_flow_run(

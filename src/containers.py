@@ -204,6 +204,7 @@ class RAGContainer(containers.DeclarativeContainer):
     rag_repository = providers.Factory(
         RagRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
@@ -220,6 +221,7 @@ class RAGContainer(containers.DeclarativeContainer):
         model="text-embedding-3-small",
         dimension=1536,
         tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
     )
     rag_runtime_service = providers.Factory(
         RagRuntimeService,

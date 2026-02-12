@@ -8,6 +8,8 @@ from uuid import UUID
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.types import (
     ExecutionContext,
+    IntentCategory,
+    IntentValidationStatus,
     NodeExecutionStatus,
     NodeExecutor,
     NodeResult,
@@ -187,6 +189,25 @@ class IntentToolSelectionNode(NodeExecutor):
                 if default_tool_config_id:
                     output_payload["tool_config_id"] = str(default_tool_config_id)
 
+            tid = output_payload.get("tool_config_id")
+            has_valid_tool = False
+            if tid:
+                try:
+                    UUID(str(tid))
+                    has_valid_tool = True
+                except (ValueError, TypeError):
+                    pass
+            raw_category = output_payload.get("intent_category")
+            valid_categories = {
+                IntentCategory.TRANSACTION,
+                IntentCategory.DECLARATION,
+                IntentCategory.SMALL_TALK,
+            }
+            if raw_category not in valid_categories:
+                output_payload["intent_category"] = IntentCategory.DECLARATION
+
+            next_state = {"intent_output": output_payload}
+
             next_state = {"intent_output": output_payload}
             return NodeResult(
                 status=NodeExecutionStatus.SUCCESS,
@@ -196,7 +217,12 @@ class IntentToolSelectionNode(NodeExecutor):
             )
 
         payload = _payload_from_config(
-            config, {"validation_status": "VALID", "confidence": 1.0}
+            config,
+            {
+                "validation_status": IntentValidationStatus.VALID,
+                "confidence": 1.0,
+                "intent_category": IntentCategory.TRANSACTION,
+            },
         )
         next_state = {"intent_output": payload}
 
@@ -319,7 +345,7 @@ class ParamExtractionNode(NodeExecutor):
                     if chain_handle:
                         chain_handle.success(output=result.model_dump(mode="json"))
             except Exception as exc:
-                raise exc from exc  # Todo: Rever isso P0
+                raise exc from exc
 
             raw_output = result.output or {}
             try:

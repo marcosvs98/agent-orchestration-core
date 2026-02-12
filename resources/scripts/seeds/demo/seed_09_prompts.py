@@ -31,7 +31,14 @@ def _calculate_frozen_hash(template_text: str) -> str:
 async def seed_prompts() -> None:
     async with get_db() as session:
         intent_template = """# Task
-Select exactly one tool that best matches the user input.
+Select exactly one tool that best matches the user input and classify the user intention.
+
+# Intent categories
+- TRANSACTION: The user is giving data or a clear instruction to execute the tool now (e.g. "Registrar 50 reais no mercado", "Criar despesa de 100").
+- DECLARATION: The user is asking for information (how, what, whether), e.g. "Como registro uma despesa?", "Posso registrar despesa parcelada?", "O que preciso para registrar?".
+- SMALL_TALK: Greetings, thanks, or off-topic.
+
+Mentioning a topic does not imply execution. "Como registrar uma despesa?" is DECLARATION even if a createExpense tool exists.
 
 # Input
 User message: {ctx[user_input]}
@@ -44,13 +51,15 @@ Return a JSON object:
 {{
   "intent": "tool_name_or_null",
   "tool_config_id": "uuid_or_null",
-  "clarification": true_or_false
+  "clarification": true_or_false,
+  "intent_category": "TRANSACTION" or "DECLARATION" or "SMALL_TALK"
 }}
 
 # Constraints
 - Do not invent tools.
 - intent MUST be the exact tool name from available_tools.
 - If unsure, return intent=null and clarification=true.
+- intent_category MUST be one of: TRANSACTION, DECLARATION, SMALL_TALK.
 """
 
         slot_template = """# Task
@@ -105,10 +114,14 @@ JSON object:
 """
 
         response_template = """# Task
-Format the tool response as a natural language message for the user.
+If tool_response is present and non-empty: format it as a natural language message for the user in one concise sentence.
+If tool_response is empty or absent: the user asked an informative question (e.g. how to do something). Answer using the retrieved context and user_input; be short and helpful.
 
 # Intent
 {ctx[original_intent]}
+
+# User Input
+{ctx[user_input]}
 
 # Tool Response
 {ctx[tool_response]}
@@ -117,14 +130,9 @@ Format the tool response as a natural language message for the user.
 {ctx[persona]}
 
 # Output Guidelines
-- Generate only one concise sentence.
-- Use product-oriented, user-facing language.
-- Do not list fields, do not use bullets.
-- Do not explain technical details or backend behavior.
+- When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the expense was registered.
+- When tool_response is empty: answer the user question using the provided context; be concise.
 - Do not mention status codes, endpoints, requests, or payloads.
-- Use only relevant data from received_body.
-- If success is true, confirm that the expense was registered.
-- Focus on: action performed + main context.
 
 # Output Format
 JSON object:
@@ -134,7 +142,6 @@ JSON object:
 
 # Constraints
 - Respect persona language, tone, style.
-- Do not add information not present in tool_response.
 - Be concise, clear and helpful.
 """
 
@@ -152,6 +159,10 @@ JSON object:
                             "format": "uuid",
                         },
                         "clarification": {"type": "boolean"},
+                        "intent_category": {
+                            "type": "string",
+                            "enum": ["TRANSACTION", "DECLARATION", "SMALL_TALK"],
+                        },
                     },
                     "required": ["intent", "tool_config_id", "clarification"],
                 },

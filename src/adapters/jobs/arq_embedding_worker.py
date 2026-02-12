@@ -5,6 +5,7 @@ from typing import Any
 from arq.connections import RedisSettings
 
 import settings
+from adapters.cache.redis_adapter import RedisAdapter
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from domain.execution.repositories.execution_repository import ExecutionRepository
@@ -127,12 +128,14 @@ async def startup(ctx: dict[str, Any]) -> None:
     db = DatabaseConnection(engine=engine, sessionmaker=async_session)
     tracer = LangfuseRuntimeTracer()
     execution_repository = ExecutionRepository(db, tracer=tracer)
-    rag_repository = RagRepository(db)
+    rag_repository = RagRepository(db, tracer=tracer)
+    cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",
         dimension=1536,
         tracer=tracer,
+        cache_adapter=cache_adapter,
     )
     rag_runtime_service = RagRuntimeService(
         repository=rag_repository,

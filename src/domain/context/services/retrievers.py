@@ -11,6 +11,7 @@ from domain.context.schemas.context_layers import (
     UserMemoryQuery,
     UserMemoryStructured,
 )
+from domain.context.services.scope_resolver import resolve_rag_scope
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.governance.schemas.rag_policy import RagActivationScope
 from domain.governance.services.memory_policy_service import MemoryPolicyService
@@ -31,15 +32,15 @@ class TenantKnowledgeRetriever:
         top_k_override: int | None = None,
         filters_override: dict[str, object] | None = None,
     ) -> TenantKnowledgeContext:
-        effective_filters = {
-            "scope": ContextLayerScope.TENANT_KNOWLEDGE.value,
-        }
-        if isinstance(filters_override, dict):
-            effective_filters.update(filters_override)
-        effective_filters["scope"] = ContextLayerScope.TENANT_KNOWLEDGE.value
+        effective_filters, search_user_id = resolve_rag_scope(
+            ContextLayerScope.TENANT_KNOWLEDGE,
+            user_id=None,
+            filters_override=filters_override,
+        )
         rag_context = await self.rag_runtime_service.get_context(
             tenant_id=query.tenant_id,
             rag_config_id=query.rag_config_id,
+            user_id=search_user_id,
             user_input=query.user_input,
             filters_override=effective_filters,
             top_k_override=top_k_override,
@@ -92,10 +93,7 @@ class UserMemoryReader:
         )
         rag_context = None
         if self.rag_runtime_service and query.rag_config_id and query.user_input:
-            filters_override = {
-                "scope": ContextLayerScope.USER_MEMORY.value,
-                "user_id": query.user_id,
-            }
+            filters_override: dict[str, object] = {}
             effective_top_k_override = top_k_override
             if self.rag_activation_service and task_type:
                 activation_decision = await self.rag_activation_service.decide(
@@ -120,21 +118,26 @@ class UserMemoryReader:
                 if effective_top_k_override is None:
                     effective_top_k_override = activation_decision.effective_top_k
                 if isinstance(activation_decision.effective_filters_override, dict):
-                    filters_override.update(activation_decision.effective_filters_override)
+                    filters_override.update(
+                        activation_decision.effective_filters_override
+                    )
             if self.memory_policy_service:
                 resolved_policy = await self.memory_policy_service.resolve(
                     tenant_id=query.tenant_id
                 )
                 if resolved_policy.definition is not None:
                     filters_override["expires_after"] = datetime.now(UTC).isoformat()
-            filters_override["scope"] = ContextLayerScope.USER_MEMORY.value
-            filters_override["user_id"] = query.user_id
+            effective_filters, search_user_id = resolve_rag_scope(
+                ContextLayerScope.USER_MEMORY,
+                user_id=query.user_id,
+                filters_override=filters_override,
+            )
             rag_context = await self.rag_runtime_service.get_context(
                 tenant_id=query.tenant_id,
                 rag_config_id=query.rag_config_id,
-                user_id=query.user_id,
+                user_id=search_user_id,
                 user_input=query.user_input,
-                filters_override=filters_override,
+                filters_override=effective_filters,
                 top_k_override=effective_top_k_override,
             )
         return UserMemoryContext(

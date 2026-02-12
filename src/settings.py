@@ -43,6 +43,11 @@ EMBEDDING_QUEUE_MAX_ATTEMPTS: int = config(
     default=3,
     cast=int,
 )
+MAX_USER_MEMORY_DOCUMENTS: int = config(
+    "MAX_USER_MEMORY_DOCUMENTS",
+    default=10_000,
+    cast=int,
+)
 
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="", cast=str)
 

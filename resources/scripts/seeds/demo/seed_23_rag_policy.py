@@ -42,6 +42,38 @@ async def seed_rag_policy() -> None:
             )
             await session.commit()
 
+        policy_definition = {
+            "defaults": {
+                "INTENT_SELECTION": {
+                    "tenant_knowledge": {"enabled": True},
+                    "user_memory_vector": {
+                        "enabled": True,
+                        "allowed_tool_config_ids": [
+                            str(TOOL_CONFIG_DEMO_ID)
+                        ],
+                    },
+                },
+                "SLOT_FILLING": {
+                    "tenant_knowledge": {"enabled": True},
+                    "user_memory_vector": {"enabled": True},
+                },
+                "RESPONSE_RENDER": {
+                    "tenant_knowledge": {"enabled": True},
+                    "user_memory_vector": {"enabled": True},
+                },
+                "CLARIFICATION": {
+                    "tenant_knowledge": {"enabled": True},
+                    "user_memory_vector": {"enabled": True},
+                },
+            },
+            "require_published_rag_config": True,
+            "top_k_cap": 5,
+            "min_query_chars_by_scope": {
+                "TENANT_KNOWLEDGE": 8,
+                "USER_MEMORY_VECTOR": 8,
+            },
+            "allow_structured_input": False,
+        }
         result = await session.execute(
             select(RagPolicyVersion).where(
                 RagPolicyVersion.rag_policy_version_id == RAG_POLICY_VERSION_V1_ID
@@ -57,40 +89,13 @@ async def seed_rag_policy() -> None:
                     version_major=1,
                     version_minor=0,
                     version_patch=0,
-                    policy_definition={
-                        "defaults": {
-                            "INTENT_SELECTION": {
-                                "tenant_knowledge": {"enabled": True},
-                                "user_memory_vector": {
-                                    "enabled": True,
-                                    "allowed_tool_config_ids": [
-                                        str(TOOL_CONFIG_DEMO_ID)
-                                    ],
-                                },
-                            },
-                            "SLOT_FILLING": {
-                                "tenant_knowledge": {"enabled": True},
-                                "user_memory_vector": {"enabled": True},
-                            },
-                            "RESPONSE_RENDER": {
-                                "tenant_knowledge": {"enabled": True},
-                                "user_memory_vector": {"enabled": True},
-                            },
-                            "CLARIFICATION": {
-                                "tenant_knowledge": {"enabled": False},
-                                "user_memory_vector": {"enabled": False},
-                            },
-                        },
-                        "require_published_rag_config": True,
-                        "top_k_cap": 5,
-                        "min_query_chars_by_scope": {
-                            "TENANT_KNOWLEDGE": 8,
-                            "USER_MEMORY_VECTOR": 8,
-                        },
-                        "allow_structured_input": False,
-                    },
+                    policy_definition=policy_definition,
                 )
             )
+            await session.commit()
+        else:
+            existing_version.policy_definition = policy_definition
+            session.add(existing_version)
             await session.commit()
 
         result = await session.execute(

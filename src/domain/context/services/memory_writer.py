@@ -213,7 +213,24 @@ class MemoryWriteService:
             )
 
         if MemoryWriteTarget.USER_MEMORY_VECTOR in targets:
-            prepared_document = await self.rag_runtime_service.prepare_document_for_embedding(
+            current_count = await self.rag_runtime_service.count_documents_for_user(
+                tenant_id=tenant_id,
+                user_id=user_id,
+            )
+            if current_count >= settings.MAX_USER_MEMORY_DOCUMENTS:
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.memory.write.cap_reached",
+                    input={
+                        "tenant_id": str(tenant_id),
+                        "user_id": user_id,
+                        "current_count": current_count,
+                        "cap": settings.MAX_USER_MEMORY_DOCUMENTS,
+                    },
+                ):
+                    pass
+            else:
+                prepared_document = await self.rag_runtime_service.prepare_document_for_embedding(
                 tenant_id=tenant_id,
                 rag_config_id=memory_item.rag_config_id,
                 document=RagDocumentCreate(
@@ -236,122 +253,122 @@ class MemoryWriteService:
                         "expires_at": expires_at.isoformat() if expires_at else None,
                     },
                 ),
-            )
-            result.embedded_document_id = prepared_document.id
-            result.targets_applied.append(MemoryWriteTarget.USER_MEMORY_VECTOR)
-            if (
-                prepared_document.embedding_status == EmbeddingStatus.COMPLETED
-                and self.embedding_job_queue is None
-            ):
-                event_payload = {
-                    "scope": ContextLayerScope.USER_MEMORY.value,
-                    "target": MemoryWriteTarget.USER_MEMORY_VECTOR.value,
-                    "schema_id": memory_item.schema_id,
-                    "schema_version": memory_item.schema_version,
-                    "source": memory_item.source.value,
-                    "policy_version_id": str(resolved_policy.policy_version_id)
-                    if resolved_policy.policy_version_id
-                    else None,
-                    "rag_config_id": str(memory_item.rag_config_id),
-                    "document_id": str(prepared_document.id),
-                }
-                self._emit_trace_event(
-                    name=f"event.{ExecutionEventType.MemoryEmbedded.value}",
-                    payload={
-                        "tenant_id": str(tenant_id),
-                        "user_id": user_id,
-                        **event_payload,
-                    },
                 )
-                await self._append_execution_event(
-                    tenant_id=tenant_id,
-                    event_context=event_context,
-                    event_type=ExecutionEventType.MemoryEmbedded,
-                    payload=event_payload,
-                )
-            elif self.embedding_job_queue is None:
-                document = await self.rag_runtime_service.embed_document_by_id(
-                    tenant_id=tenant_id,
-                    rag_config_id=memory_item.rag_config_id,
-                    document_id=prepared_document.id,
-                )
-                result.embedded_document_id = document.id
-                event_payload = {
-                    "scope": ContextLayerScope.USER_MEMORY.value,
-                    "target": MemoryWriteTarget.USER_MEMORY_VECTOR.value,
-                    "schema_id": memory_item.schema_id,
-                    "schema_version": memory_item.schema_version,
-                    "source": memory_item.source.value,
-                    "policy_version_id": str(resolved_policy.policy_version_id)
-                    if resolved_policy.policy_version_id
-                    else None,
-                    "rag_config_id": str(memory_item.rag_config_id),
-                    "document_id": str(document.id),
-                }
-                self._emit_trace_event(
-                    name=f"event.{ExecutionEventType.MemoryEmbedded.value}",
-                    payload={
-                        "tenant_id": str(tenant_id),
-                        "user_id": user_id,
-                        **event_payload,
-                    },
-                )
-                await self._append_execution_event(
-                    tenant_id=tenant_id,
-                    event_context=event_context,
-                    event_type=ExecutionEventType.MemoryEmbedded,
-                    payload=event_payload,
-                )
-            else:
-                await self.embedding_job_queue.enqueue_embedding_job(
-                    payload=EmbeddingJobPayload(
+                result.embedded_document_id = prepared_document.id
+                result.targets_applied.append(MemoryWriteTarget.USER_MEMORY_VECTOR)
+                if (
+                    prepared_document.embedding_status == EmbeddingStatus.COMPLETED
+                    and self.embedding_job_queue is None
+                ):
+                    event_payload = {
+                        "scope": ContextLayerScope.USER_MEMORY.value,
+                        "target": MemoryWriteTarget.USER_MEMORY_VECTOR.value,
+                        "schema_id": memory_item.schema_id,
+                        "schema_version": memory_item.schema_version,
+                        "source": memory_item.source.value,
+                        "policy_version_id": str(resolved_policy.policy_version_id)
+                        if resolved_policy.policy_version_id
+                        else None,
+                        "rag_config_id": str(memory_item.rag_config_id),
+                        "document_id": str(prepared_document.id),
+                    }
+                    self._emit_trace_event(
+                        name=f"event.{ExecutionEventType.MemoryEmbedded.value}",
+                        payload={
+                            "tenant_id": str(tenant_id),
+                            "user_id": user_id,
+                            **event_payload,
+                        },
+                    )
+                    await self._append_execution_event(
+                        tenant_id=tenant_id,
+                        event_context=event_context,
+                        event_type=ExecutionEventType.MemoryEmbedded,
+                        payload=event_payload,
+                    )
+                elif self.embedding_job_queue is None:
+                    document = await self.rag_runtime_service.embed_document_by_id(
                         tenant_id=tenant_id,
                         rag_config_id=memory_item.rag_config_id,
                         document_id=prepared_document.id,
-                        flow_run_id=event_context.flow_run_id if event_context else None,
-                        session_id=event_context.session_id if event_context else None,
-                        correlation_id=event_context.correlation_id
-                        if event_context
-                        else None,
-                        user_id=user_id,
-                        policy_version_id=resolved_policy.policy_version_id,
-                        schema_id=memory_item.schema_id,
-                        schema_version=memory_item.schema_version,
-                        expires_at=expires_at.isoformat() if expires_at else None,
-                        max_attempts=settings.EMBEDDING_QUEUE_MAX_ATTEMPTS,
                     )
-                )
-                queued_payload = {
-                    "scope": ContextLayerScope.USER_MEMORY.value,
-                    "target": MemoryWriteTarget.USER_MEMORY_VECTOR.value,
-                    "schema_id": memory_item.schema_id,
-                    "schema_version": memory_item.schema_version,
-                    "source": memory_item.source.value,
-                    "policy_version_id": str(resolved_policy.policy_version_id)
-                    if resolved_policy.policy_version_id
-                    else None,
-                    "rag_config_id": str(memory_item.rag_config_id),
-                    "document_id": str(prepared_document.id),
-                }
-                with self.tracer.observe(
-                    as_type="event",
-                    name="domain.rag.embedding.queued",
-                    input={
-                        "tenant_id": str(tenant_id),
-                        "user_id": user_id,
-                        **queued_payload,
-                    },
-                    metadata={
-                        "event_type": ExecutionEventType.MemoryEmbeddingQueued.value
-                    },
-                ):
-                    pass
-                await self._append_execution_event(
-                    tenant_id=tenant_id,
-                    event_context=event_context,
-                    event_type=ExecutionEventType.MemoryEmbeddingQueued,
-                    payload=queued_payload,
-                )
+                    result.embedded_document_id = document.id
+                    event_payload = {
+                        "scope": ContextLayerScope.USER_MEMORY.value,
+                        "target": MemoryWriteTarget.USER_MEMORY_VECTOR.value,
+                        "schema_id": memory_item.schema_id,
+                        "schema_version": memory_item.schema_version,
+                        "source": memory_item.source.value,
+                        "policy_version_id": str(resolved_policy.policy_version_id)
+                        if resolved_policy.policy_version_id
+                        else None,
+                        "rag_config_id": str(memory_item.rag_config_id),
+                        "document_id": str(document.id),
+                    }
+                    self._emit_trace_event(
+                        name=f"event.{ExecutionEventType.MemoryEmbedded.value}",
+                        payload={
+                            "tenant_id": str(tenant_id),
+                            "user_id": user_id,
+                            **event_payload,
+                        },
+                    )
+                    await self._append_execution_event(
+                        tenant_id=tenant_id,
+                        event_context=event_context,
+                        event_type=ExecutionEventType.MemoryEmbedded,
+                        payload=event_payload,
+                    )
+                else:
+                    await self.embedding_job_queue.enqueue_embedding_job(
+                        payload=EmbeddingJobPayload(
+                            tenant_id=tenant_id,
+                            rag_config_id=memory_item.rag_config_id,
+                            document_id=prepared_document.id,
+                            flow_run_id=event_context.flow_run_id if event_context else None,
+                            session_id=event_context.session_id if event_context else None,
+                            correlation_id=event_context.correlation_id
+                            if event_context
+                            else None,
+                            user_id=user_id,
+                            policy_version_id=resolved_policy.policy_version_id,
+                            schema_id=memory_item.schema_id,
+                            schema_version=memory_item.schema_version,
+                            expires_at=expires_at.isoformat() if expires_at else None,
+                            max_attempts=settings.EMBEDDING_QUEUE_MAX_ATTEMPTS,
+                        )
+                    )
+                    queued_payload = {
+                        "scope": ContextLayerScope.USER_MEMORY.value,
+                        "target": MemoryWriteTarget.USER_MEMORY_VECTOR.value,
+                        "schema_id": memory_item.schema_id,
+                        "schema_version": memory_item.schema_version,
+                        "source": memory_item.source.value,
+                        "policy_version_id": str(resolved_policy.policy_version_id)
+                        if resolved_policy.policy_version_id
+                        else None,
+                        "rag_config_id": str(memory_item.rag_config_id),
+                        "document_id": str(prepared_document.id),
+                    }
+                    with self.tracer.observe(
+                        as_type="event",
+                        name="domain.rag.embedding.queued",
+                        input={
+                            "tenant_id": str(tenant_id),
+                            "user_id": user_id,
+                            **queued_payload,
+                        },
+                        metadata={
+                            "event_type": ExecutionEventType.MemoryEmbeddingQueued.value
+                        },
+                    ):
+                        pass
+                    await self._append_execution_event(
+                        tenant_id=tenant_id,
+                        event_context=event_context,
+                        event_type=ExecutionEventType.MemoryEmbeddingQueued,
+                        payload=queued_payload,
+                    )
 
         return result
 

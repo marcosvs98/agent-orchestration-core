@@ -116,7 +116,7 @@ class PromptResolver:
                 "task_type": task_type.value,
                 **flags_metadata,
             },
-        ):
+        ): # Todo: Fix it - Because All observations needs to have a context and output. Only input and pass don't seems a good idea !
             pass
 
         if intent == PromptIntent.INTENT_TOOL_SELECTION:

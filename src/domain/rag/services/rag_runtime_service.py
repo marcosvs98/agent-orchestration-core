@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import tiktoken
 
@@ -142,16 +142,18 @@ class RagRuntimeService:
                 "rag_config_id": str(rag_config_id),
                 "document_id": str(document_id),
             },
-        ):
+        ) as embedder_handle:
             options = await self._resolve_rag_options(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
             )
             document = await self.repository.get_document_by_id(document_id=document_id)
             if document is None or document.tenant_id != tenant_id:
+                embedder_handle.error(error_type="rag_document_not_found", error_message="rag_document_not_found")
                 raise NotFoundServiceException(message="rag_document_not_found")
             current_status = self._as_embedding_status(document.embedding_status)
             if current_status == EmbeddingStatus.COMPLETED:
+                embedder_handle.success(output={"embedding_status": EmbeddingStatus.COMPLETED})
                 return RagDocument(
                     id=document.document_id,
                     source=document.source,
@@ -161,6 +163,7 @@ class RagRuntimeService:
                     embedding_status=EmbeddingStatus.COMPLETED,
                 )
             if not isinstance(document.content, str) or not document.content:
+                embedder_handle.error(error_type="rag_document_content_required", error_message="rag_document_content_required")
                 raise DomainValidationException(message="rag_document_content_required")
             started_at = datetime.now(timezone.utc)
             await self.repository.update_document_embedding_status(
@@ -190,6 +193,7 @@ class RagRuntimeService:
                 for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_models.append(
                         RagChunkModel(
+                            chunk_id=uuid4(),
                             document_id=document.document_id,
                             chunk_index=idx,
                             content=chunk_text,
@@ -209,6 +213,7 @@ class RagRuntimeService:
                     completed_at=completed_at,
                     error_code=None,
                 )
+                embedder_handle.success(output={"embedding_status": EmbeddingStatus.COMPLETED, "completed_at": completed_at, "document_id": document.document_id})
             except Exception as exc:
                 await self.repository.update_document_embedding_status(
                     document_id=document.document_id,
@@ -240,6 +245,13 @@ class RagRuntimeService:
             )
             for item in items
         ]
+
+    async def count_documents_for_user(
+        self, *, tenant_id: UUID, user_id: str
+    ) -> int:
+        return await self.repository.count_documents_for_user(
+            tenant_id=tenant_id, user_id=user_id
+        )
 
     async def list_chunks(self, *, document_id: UUID, limit: int) -> list[RagChunk]:
         """List chunks for a stored document."""
@@ -312,14 +324,24 @@ class RagRuntimeService:
         effective_top_k = int(options.retrieval.top_k)
         if top_k_override is not None:
             effective_top_k = max(1, int(top_k_override))
-        results = await self.repository.search_similar_chunks(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            query_embedding=embedding,
-            top_k=effective_top_k,
-            similarity_threshold=options.retrieval.similarity_threshold,
-            filters=effective_filters,
-        )
+        with self.tracer.observe(
+            as_type="retriever",
+            name="domain.rag.runtime.search_similar_chunks",
+            input={
+                "tenant_id": str(tenant_id),
+                "top_k": effective_top_k,
+                "similarity_threshold": options.retrieval.similarity_threshold,
+            },
+        ) as retriever_handle:
+            results = await self.repository.search_similar_chunks(
+                tenant_id=tenant_id,
+                user_id=user_id, # Todo: UserId is None
+                query_embedding=embedding,
+                top_k=effective_top_k,
+                similarity_threshold=options.retrieval.similarity_threshold,
+                filters=effective_filters,
+            )
+            retriever_handle.success(output={"chunk_count": len(results)})
         if not results:
             return RagContext(
                 context_items=[],
@@ -343,29 +365,11 @@ class RagRuntimeService:
                     observed_at=observed_at,
                 )
             )
-        avg_score = sum(item.score for item in items) / len(items)
-        with self.tracer.observe(
-            as_type="evaluator",
-            name="domain.rag.runtime.evaluate_relevance",
-            input={
-                "rag_config_id": str(rag_config_id),
-                "avg_score": avg_score,
-                "item_count": len(items),
-            },
-        ):
-            if avg_score < options.retrieval.similarity_threshold + 0.05:
-                return RagContext(
-                    context_items=[],
-                    context_summary=None,
-                    eligible=False,
-                    reason="LOW_RELEVANCE",
-                    generation_contract=options.generation_contract,
-                )
         return RagContext(
             context_items=items,
             context_summary=None,
             eligible=True,
-            reason="OK",
+            reason="OK", # Todo: To use StrEnum here
             generation_contract=options.generation_contract,
         )
 

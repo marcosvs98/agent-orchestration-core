@@ -15,6 +15,22 @@ class NodeExecutionStatus(StrEnum):
     NEEDS_INPUT = "NEEDS_INPUT"
 
 
+class IntentCategory(StrEnum):
+    TRANSACTION = "TRANSACTION"
+    DECLARATION = "DECLARATION"
+    SMALL_TALK = "SMALL_TALK"
+
+
+class IntentValidationStatus(StrEnum):
+    VALID = "VALID"
+    INVALID = "INVALID"
+
+
+class UserContextEnrichmentMode(StrEnum):
+    GATED = "GATED"
+    LEGACY = "LEGACY"
+
+
 class ExecutionContext(BaseModel):
     """Immutable per-step context used by the runtime."""
 
@@ -36,6 +52,9 @@ class ExecutionContext(BaseModel):
     node_output: Dict[str, Any] = Field(default_factory=dict)
     iteration_counters: Dict[str, int] = Field(default_factory=dict)
     system_prompt: str | None = None
+
+    def snapshot(self) -> Dict[str, Any]:
+        return self.model_dump(mode="json")
 
 
 class NodeResult(BaseModel):
