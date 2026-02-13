@@ -30,7 +30,7 @@ async def seed_ai_tasks() -> None:
                 "allow_rag_tenant": True,
                 "allow_user_memory": True,
                 "allow_session_context": True,
-                "allow_memory_write": False,
+                "allow_memory_write": True,
             },
             {
                 "id": AI_TASK_SLOT_FILLING_ID,
@@ -46,7 +46,7 @@ async def seed_ai_tasks() -> None:
                 "allow_rag_tenant": True,
                 "allow_user_memory": True,
                 "allow_session_context": True,
-                "allow_memory_write": False,
+                "allow_memory_write": True,
             },
             {
                 "id": AI_TASK_CLARIFICATION_ID,
@@ -54,7 +54,7 @@ async def seed_ai_tasks() -> None:
                 "allow_rag_tenant": True,
                 "allow_user_memory": True,
                 "allow_session_context": True,
-                "allow_memory_write": False,
+                "allow_memory_write": True,
             },
         ]
 

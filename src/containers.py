@@ -133,6 +133,7 @@ class AgentsContainer(containers.DeclarativeContainer):
         AgentsRepository,
         database_connection=core.database_connection,
         tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
@@ -160,6 +161,7 @@ class ToolsContainer(containers.DeclarativeContainer):
         AgentsRepository,
         database_connection=core.database_connection,
         tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
@@ -269,6 +271,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
         ExecutionRepository,
         database_connection=core.database_connection,
         tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
     )
     idempotency_service = providers.Factory(
         IdempotencyService,

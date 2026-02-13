@@ -1,7 +1,6 @@
 FROM python:3.13
 
-#LABEL maintainer="Assistente Bolso Team"
-#LABEL description="Agente Roteador para assistente financeiro conversacional"
+LABEL maintainer="agent-orchestration-core"
 #LABEL version="1.0.0"
 
 RUN apt-get update && apt-get install -y \

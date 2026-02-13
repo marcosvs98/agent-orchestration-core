@@ -1,11 +1,17 @@
-from uuid import UUID, uuid4
+import asyncio
 from datetime import datetime, timezone
+from uuid import UUID, uuid4
+
 import sqlalchemy as sa
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 
-from domain.execution.schemas.execution import FlowRunInput, UserPreferenceUpsertResult
+from domain.execution.schemas.execution import (
+    FlowRunInput,
+    UserPreferenceUpsertResult,
+)
+from adapters.cache.redis_adapter import RedisAdapter
 from infra.database.models.conversation.session import Session as SessionModel
 from infra.database.models.conversation.user import User as UserModel
 from infra.database.models.conversation.user_memory_profile import (
@@ -84,13 +90,99 @@ from infra.database.models.governance.rag_policy_version import (
 )
 from infra.database.models.execution.graph_state import GraphState as GraphStateModel
 
+DEFAULT_EVENT_BATCH_SIZE = 20
+
 
 class ExecutionRepository:
     def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
+        self,
+        database_connection: DatabaseConnection,
+        tracer: RuntimeTracerPort,
+        cache_adapter: RedisAdapter,
+        event_batch_size: int = DEFAULT_EVENT_BATCH_SIZE,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
+        self._event_batch_size = event_batch_size
+        self._event_batch_buffer: dict[UUID, list[dict]] = {}
+        self._batching_flow_runs: set[UUID] = set()
+        self._event_batch_lock = asyncio.Lock()
+
+    def start_event_batching(self, flow_run_id: UUID) -> None:
+        """Enable batching for execution events for the given flow run."""
+        self._batching_flow_runs.add(flow_run_id)
+        if flow_run_id not in self._event_batch_buffer:
+            self._event_batch_buffer[flow_run_id] = []
+
+    async def _persist_execution_events_batch(
+        self, flow_run_id: UUID, events: list[dict]
+    ) -> None:
+        if not events:
+            return
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.repository.flush_execution_events",
+            input={"flow_run_id": str(flow_run_id), "event_count": len(events)},
+        ) as tool_handle:
+            async with self.db.get_session() as session:
+                first = events[0]
+                user_id = first.get("user_id")
+                if user_id is None:
+                    flow_run_result = await session.execute(
+                        select(FlowRunModel.user_id).where(
+                            FlowRunModel.flow_run_id == flow_run_id
+                        )
+                    )
+                    user_id = flow_run_result.scalar_one_or_none()
+                if user_id is None:
+                    raise NotFoundServiceException(message="flow_run_user_not_found")
+                await session.execute(
+                    select(FlowRunLockModel)
+                    .where(FlowRunLockModel.flow_run_id == flow_run_id)
+                    .with_for_update()
+                )
+                result = await session.execute(
+                    select(
+                        sa.func.coalesce(
+                            sa.func.max(ExecutionEventModel.event_sequence), 0
+                        )
+                    ).where(ExecutionEventModel.flow_run_id == flow_run_id)
+                )
+                next_seq = int(result.scalar_one()) + 1
+                for ev in events:
+                    session.add(
+                        ExecutionEventModel(
+                            execution_event_id=ev["event_id"],
+                            tenant_id=ev["tenant_id"],
+                            user_id=user_id,
+                            session_id=ev["session_id"],
+                            flow_run_id=flow_run_id,
+                            correlation_id=ev["correlation_id"],
+                            causation_id=ev.get("causation_id"),
+                            event_sequence=next_seq,
+                            schema_version=ev.get("schema_version", 1),
+                            type=ev["event_type"],
+                            payload=ev["payload"],
+                            node_id=ev.get("node_id"),
+                            edge_id=ev.get("edge_id"),
+                        )
+                    )
+                    next_seq += 1
+                await session.commit()
+                if tool_handle:
+                    tool_handle.success(output={"flushed": len(events)})
+
+    async def flush_execution_events(self, flow_run_id: UUID) -> None:
+        """Persist all buffered events for the flow run in a single transaction."""
+        async with self._event_batch_lock:
+            self._batching_flow_runs.discard(flow_run_id)
+            events = self._event_batch_buffer.pop(flow_run_id, [])
+        await self._persist_execution_events_batch(flow_run_id, events)
+
+    async def end_event_batching(self, flow_run_id: UUID) -> None:
+        """Flush remaining events and disable batching for the flow run."""
+        await self.flush_execution_events(flow_run_id)
 
     async def create_flow_run(
         self,
@@ -629,6 +721,34 @@ class ExecutionRepository:
         edge_id: str | None = None,
     ) -> UUID:
         event_id = uuid4()
+        in_batching = False
+        events_to_flush: list[dict] = []
+        async with self._event_batch_lock:
+            if flow_run_id in self._batching_flow_runs:
+                in_batching = True
+                if flow_run_id not in self._event_batch_buffer:
+                    self._event_batch_buffer[flow_run_id] = []
+                ev = {
+                    "event_id": event_id,
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "event_type": event_type,
+                    "payload": payload,
+                    "correlation_id": correlation_id,
+                    "causation_id": causation_id,
+                    "schema_version": schema_version,
+                    "node_id": node_id,
+                    "edge_id": edge_id,
+                }
+                self._event_batch_buffer[flow_run_id].append(ev)
+                if len(self._event_batch_buffer[flow_run_id]) >= self._event_batch_size:
+                    events_to_flush = list(self._event_batch_buffer[flow_run_id])
+                    self._event_batch_buffer[flow_run_id].clear()
+        if events_to_flush:
+            await self._persist_execution_events_batch(flow_run_id, events_to_flush)
+        if in_batching:
+            return event_id
         with self.tracer.observe(
             as_type="tool",
             name="domain.execution.repository.append_execution_event",
@@ -929,6 +1049,10 @@ class ExecutionRepository:
     async def get_active_billing_policy_version_id(
         self, tenant_id: UUID
     ) -> UUID | None:
+        key = f"active_billing_version:{tenant_id}"
+        if cached := await self.cache_adapter.get(key):
+            if isinstance(cached, dict) and cached.get("billing_policy_version_id"):
+                return UUID(cached["billing_policy_version_id"])
         async with self.db.get_session() as session:
             stmt = select(
                 ActiveBillingPolicyVersionModel.billing_policy_version_id
@@ -947,21 +1071,29 @@ class ExecutionRepository:
                 },
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                row = result.scalar_one_or_none()
+                version_id = result.scalar_one_or_none()
 
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if row else 0,
-                            "found": row is not None,
+                            "result_count": 1 if version_id else 0,
+                            "found": version_id is not None,
                         }
                     )
 
-                return row
+        if version_id is None:
+            return None
+        await self.cache_adapter.set(
+            key, {"billing_policy_version_id": str(version_id)}
+        )
+        return version_id
 
     async def get_billing_policy_version(
         self, billing_policy_version_id: UUID
     ) -> BillingPolicyVersionModel | None:
+        key = f"billing_policy_version:{billing_policy_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return BillingPolicyVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(BillingPolicyVersionModel).where(
                 BillingPolicyVersionModel.billing_policy_version_id
@@ -991,9 +1123,16 @@ class ExecutionRepository:
                         }
                     )
 
-                return policy
+        if policy is None:
+            return None
+        await self.cache_adapter.set(key, policy.to_dict())
+        return policy
 
     async def get_active_memory_policy_version_id(self, tenant_id: UUID) -> UUID | None:
+        key = f"active_memory_version:{tenant_id}"
+        if cached := await self.cache_adapter.get(key):
+            if isinstance(cached, dict) and cached.get("memory_policy_version_id"):
+                return UUID(cached["memory_policy_version_id"])
         async with self.db.get_session() as session:
             stmt = select(
                 ActiveMemoryPolicyVersionModel.memory_policy_version_id
@@ -1012,21 +1151,29 @@ class ExecutionRepository:
                 },
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                row = result.scalar_one_or_none()
+                version_id = result.scalar_one_or_none()
 
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if row else 0,
-                            "found": row is not None,
+                            "result_count": 1 if version_id else 0,
+                            "found": version_id is not None,
                         }
                     )
 
-                return row
+        if version_id is None:
+            return None
+        await self.cache_adapter.set(
+            key, {"memory_policy_version_id": str(version_id)}
+        )
+        return version_id
 
     async def get_memory_policy_version(
         self, memory_policy_version_id: UUID
     ) -> MemoryPolicyVersionModel | None:
+        key = f"memory_policy_version:{memory_policy_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return MemoryPolicyVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(MemoryPolicyVersionModel).where(
                 MemoryPolicyVersionModel.memory_policy_version_id
@@ -1056,9 +1203,16 @@ class ExecutionRepository:
                         }
                     )
 
-                return policy
+        if policy is None:
+            return None
+        await self.cache_adapter.set(key, policy.to_dict())
+        return policy
 
     async def get_active_rag_policy_version_id(self, tenant_id: UUID) -> UUID | None:
+        key = f"active_rag_version:{tenant_id}"
+        if cached := await self.cache_adapter.get(key):
+            if isinstance(cached, dict) and cached.get("rag_policy_version_id"):
+                return UUID(cached["rag_policy_version_id"])
         async with self.db.get_session() as session:
             stmt = select(ActiveRagPolicyVersionModel.rag_policy_version_id).where(
                 ActiveRagPolicyVersionModel.tenant_id == tenant_id
@@ -1077,21 +1231,29 @@ class ExecutionRepository:
                 },
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                row = result.scalar_one_or_none()
+                version_id = result.scalar_one_or_none()
 
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if row else 0,
-                            "found": row is not None,
+                            "result_count": 1 if version_id else 0,
+                            "found": version_id is not None,
                         }
                     )
 
-                return row
+        if version_id is None:
+            return None
+        await self.cache_adapter.set(
+            key, {"rag_policy_version_id": str(version_id)}
+        )
+        return version_id
 
     async def get_rag_policy_version(
         self, rag_policy_version_id: UUID
     ) -> RagPolicyVersionModel | None:
+        key = f"rag_policy_version:{rag_policy_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return RagPolicyVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(RagPolicyVersionModel).where(
                 RagPolicyVersionModel.rag_policy_version_id == rag_policy_version_id
@@ -1120,7 +1282,10 @@ class ExecutionRepository:
                         }
                     )
 
-                return policy
+        if policy is None:
+            return None
+        await self.cache_adapter.set(key, policy.to_dict())
+        return policy
 
     async def stamp_agent_run_billing_policy(
         self, *, agent_run_id: UUID, billing_policy_version_id: UUID
@@ -1739,6 +1904,9 @@ class ExecutionRepository:
                 await session.commit()
 
     async def get_flow_version(self, flow_version_id: UUID) -> FlowVersionModel | None:
+        key = f"flow_version:{flow_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return FlowVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(FlowVersionModel).where(
                 FlowVersionModel.flow_version_id == flow_version_id
@@ -1765,7 +1933,10 @@ class ExecutionRepository:
                         }
                     )
 
-                return version
+        if version is None:
+            return None
+        await self.cache_adapter.set(key, version.to_dict())
+        return version
 
     async def get_flow(self, flow_id: UUID) -> FlowModel | None:
         async with self.db.get_session() as session:
@@ -1788,10 +1959,13 @@ class ExecutionRepository:
                             "found": flow is not None,
                         }
                     )
-
-                return flow
+        return flow
 
     async def get_active_flow_version_id(self, flow_id: UUID) -> UUID | None:
+        key = f"flow_active_version:{flow_id}"
+        if cached := await self.cache_adapter.get(key):
+            if isinstance(cached, dict) and cached.get("flow_version_id"):
+                return UUID(cached["flow_version_id"])
         async with self.db.get_session() as session:
             stmt = select(ActiveFlowVersionModel).where(
                 ActiveFlowVersionModel.flow_id == flow_id
@@ -1815,11 +1989,17 @@ class ExecutionRepository:
                         }
                     )
 
-                return row.flow_version_id if row else None
+        if row is None:
+            return None
+        await self.cache_adapter.set(key, {"flow_version_id": str(row.flow_version_id)})
+        return row.flow_version_id
 
     async def get_flow_graph_by_flow_version(
         self, flow_version_id: UUID
     ) -> FlowGraphModel | None:
+        key = f"flow_graph:{flow_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return FlowGraphModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(FlowGraphModel).where(
                 FlowGraphModel.flow_version_id == flow_version_id
@@ -1846,11 +2026,17 @@ class ExecutionRepository:
                         }
                     )
 
-                return graph
+        if graph is None:
+            return None
+        await self.cache_adapter.set(key, graph.to_dict())
+        return graph
 
     async def get_flow_graph_snapshot_by_flow_version(
         self, flow_version_id: UUID
     ) -> FlowGraphSnapshotModel | None:
+        key = f"flow_snapshot:{flow_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return FlowGraphSnapshotModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(FlowGraphSnapshotModel).where(
                 FlowGraphSnapshotModel.flow_version_id == flow_version_id
@@ -1877,9 +2063,15 @@ class ExecutionRepository:
                         }
                     )
 
-                return snapshot
+        if snapshot is None:
+            return None
+        await self.cache_adapter.set(key, snapshot.to_dict())
+        return snapshot
 
     async def get_tool_config(self, tool_config_id: UUID) -> ToolConfigModel | None:
+        key = f"tool_config:{tool_config_id}"
+        if cached := await self.cache_adapter.get(key):
+            return ToolConfigModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(ToolConfigModel).where(
                 ToolConfigModel.tool_config_id == tool_config_id
@@ -1906,7 +2098,10 @@ class ExecutionRepository:
                         }
                     )
 
-                return tool_config
+        if tool_config is None:
+            return None
+        await self.cache_adapter.set(key, tool_config.to_dict())
+        return tool_config
 
     async def get_agent_run(self, agent_run_id: UUID) -> AgentRunModel | None:
         async with self.db.get_session() as session:
@@ -1985,6 +2180,9 @@ class ExecutionRepository:
     async def get_agent_version(
         self, agent_version_id: UUID
     ) -> AgentVersionModel | None:
+        key = f"agent_version:{agent_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return AgentVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(AgentVersionModel).where(
                 AgentVersionModel.agent_version_id == agent_version_id
@@ -2011,9 +2209,16 @@ class ExecutionRepository:
                         }
                     )
 
-                return version
+        if version is None:
+            return None
+        await self.cache_adapter.set(key, version.to_dict())
+        return version
 
     async def get_active_agent_version_id(self, agent_id: UUID) -> UUID | None:
+        key = f"agent_active_version:{agent_id}"
+        if cached := await self.cache_adapter.get(key):
+            if isinstance(cached, dict) and cached.get("agent_version_id"):
+                return UUID(cached["agent_version_id"])
         async with self.db.get_session() as session:
             stmt = select(ActiveAgentVersionModel).where(
                 ActiveAgentVersionModel.agent_id == agent_id
@@ -2037,11 +2242,19 @@ class ExecutionRepository:
                         }
                     )
 
-                return row.agent_version_id if row else None
+        if row is None:
+            return None
+        await self.cache_adapter.set(
+            key, {"agent_version_id": str(row.agent_version_id)}
+        )
+        return row.agent_version_id
 
     async def get_ai_execution_policy_version(
         self, ai_execution_policy_version_id: UUID
     ) -> AIExecutionPolicyVersionModel | None:
+        key = f"ai_policy_version:{ai_execution_policy_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return AIExecutionPolicyVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(AIExecutionPolicyVersionModel).where(
                 AIExecutionPolicyVersionModel.ai_execution_policy_version_id
@@ -2075,9 +2288,15 @@ class ExecutionRepository:
                         }
                     )
 
-                return policy
+        if policy is None:
+            return None
+        await self.cache_adapter.set(key, policy.to_dict())
+        return policy
 
     async def get_model(self, model_id: UUID) -> ModelModel | None:
+        key = f"model:{model_id}"
+        if cached := await self.cache_adapter.get(key):
+            return ModelModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(ModelModel).where(ModelModel.model_id == model_id)
             query_sql = compile_query(stmt)
@@ -2099,7 +2318,10 @@ class ExecutionRepository:
                         }
                     )
 
-                return model
+        if model is None:
+            return None
+        await self.cache_adapter.set(key, model.to_dict())
+        return model
 
     async def get_node_run(self, node_run_id: UUID) -> NodeRunModel | None:
         async with self.db.get_session() as session:
@@ -2129,6 +2351,9 @@ class ExecutionRepository:
                 return run
 
     async def get_node(self, node_id: UUID) -> NodeModel | None:
+        key = f"node:{node_id}"
+        if cached := await self.cache_adapter.get(key):
+            return NodeModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(NodeModel).where(NodeModel.node_id == node_id)
             query_sql = compile_query(stmt)
@@ -2150,9 +2375,15 @@ class ExecutionRepository:
                         }
                     )
 
-                return node
+        if node is None:
+            return None
+        await self.cache_adapter.set(key, node.to_dict())
+        return node
 
     async def get_ai_task(self, ai_task_id: UUID) -> AITaskModel | None:
+        key = f"ai_task:{ai_task_id}"
+        if cached := await self.cache_adapter.get(key):
+            return AITaskModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(AITaskModel).where(AITaskModel.ai_task_id == ai_task_id)
             query_sql = compile_query(stmt)
@@ -2177,7 +2408,10 @@ class ExecutionRepository:
                         }
                     )
 
-                return ai_task
+        if ai_task is None:
+            return None
+        await self.cache_adapter.set(key, ai_task.to_dict())
+        return ai_task
 
     async def create_agent_run(
         self,

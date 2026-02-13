@@ -127,9 +127,11 @@ async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, obj
 async def startup(ctx: dict[str, Any]) -> None:
     db = DatabaseConnection(engine=engine, sessionmaker=async_session)
     tracer = LangfuseRuntimeTracer()
-    execution_repository = ExecutionRepository(db, tracer=tracer)
-    rag_repository = RagRepository(db, tracer=tracer)
     cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
+    execution_repository = ExecutionRepository(
+        db, tracer=tracer, cache_adapter=cache_adapter
+    )
+    rag_repository = RagRepository(db, tracer=tracer)
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",

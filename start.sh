@@ -3,7 +3,7 @@ set -e
 
 export ENVIRONMENT=${ENVIRONMENT:-development}
 export PORT=${PORT:-8000}
-export WORKERS=${WORKERS:-1}
+export WORKERS=${WORKERS:-4}
 export LOG_LEVEL=${LOG_LEVEL:-INFO}
 export TIMEOUT=${TIMEOUT:-120}
 
@@ -72,6 +72,7 @@ if [[ $ENVIRONMENT = 'development' ]] ; then
     --timeout 0 \
     --log-level DEBUG \
     --access-logfile - \
+    --workers $WORKERS \
     --chdir $PYTHONPATH \
     --reload
 else

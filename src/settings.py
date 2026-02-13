@@ -56,6 +56,9 @@ LANGFUSE_SECRET_KEY: str | None = config("LANGFUSE_SECRET_KEY", default=None)
 LANGFUSE_HOST: str = config(
     "LANGFUSE_HOST", default="https://cloud.langfuse.com", cast=str
 )
+TRACING_ENABLED: bool = config(
+    "TRACING_ENABLED", default=True, cast=bool
+)
 OTEL_SERVICE_NAME: str = config(
     "OTEL_SERVICE_NAME", default="agent-orchestration-core", cast=str
 )

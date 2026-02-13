@@ -57,7 +57,7 @@ def _policy_definition() -> dict:
             },
         },
         "memory_extraction": {
-            "enabled": False,
+            "enabled": True,
             "rag_config_id": str(RAG_CONFIG_DEMO_ID),
             "preference_schema_id": "user.preference.v1",
             "profile_schema_id": "user.profile_signal.v1",

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from exceptions.service_exceptions import (
@@ -23,12 +24,19 @@ from infra.database.models.flow.flow_version import FlowVersion as FlowVersionMo
 from utils.query_compiler import compile_query
 
 
+AGENT_VERSION_BY_NODE_CACHE_TTL = 3600
+
+
 class AgentsRepository:
     def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
+        self,
+        database_connection: DatabaseConnection,
+        tracer: RuntimeTracerPort,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
 
     async def get_agent(self, agent_id: UUID) -> AgentModel | None:
         async with self.db.get_session() as session:
@@ -601,9 +609,21 @@ class AgentsRepository:
                 session.add(instance)
                 await session.commit()
                 await session.refresh(instance)
+                if self.cache_adapter:
+                    key = f"agent_version_by_node:{node_id}"
+                    await self.cache_adapter.set(
+                        key,
+                        {"agent_version_id": str(agent_version_id)},
+                        ttl=AGENT_VERSION_BY_NODE_CACHE_TTL,
+                    )
                 return instance
 
     async def get_agent_version_id_by_node_id(self, node_id: UUID) -> UUID | None:
+        key = f"agent_version_by_node:{node_id}"
+        if cached := await self.cache_adapter.get(key):
+            agent_version_id = cached.get("agent_version_id")
+            return UUID(agent_version_id) if agent_version_id else None
+
         async with self.db.get_session() as session:
             stmt = select(NodeAgentBindingModel).where(
                 NodeAgentBindingModel.node_id == node_id
@@ -630,4 +650,11 @@ class AgentsRepository:
                         }
                     )
 
-                return binding.agent_version_id if binding else None
+                agent_version_id = binding.agent_version_id if binding else None
+                
+                await self.cache_adapter.set(
+                    key,
+                    {"agent_version_id": str(agent_version_id) if agent_version_id else None},
+                    ttl=AGENT_VERSION_BY_NODE_CACHE_TTL,
+                )
+                return agent_version_id

@@ -78,7 +78,7 @@ async def seed_tool() -> None:
         if existing_by_version:
             return
 
-        base_url = "http://localhost:3001"
+        base_url = "http://router-mock-api-dev:3000"
         servers = parsed_spec.servers if hasattr(parsed_spec, "servers") else []
         if servers and isinstance(servers, list) and len(servers) > 0:
             server_url = servers[0].get("url", "")

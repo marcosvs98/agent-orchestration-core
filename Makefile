@@ -29,6 +29,9 @@ seed-demo:
 test-flow-demo:
 	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo.py
 
+test-flow-demo-2:
+	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo_direct.py
+
 test-trace-hierarchy:
 	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/test_trace_hierarchy.py
 

@@ -1,5 +1,5 @@
 import uuid
-
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import Column, DateTime, MetaData, func, inspect
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase
@@ -42,8 +42,13 @@ class ORMBaseModel(DeclarativeBase):
         return {c.key: getattr(self, c.key) for c in mapper.column_attrs}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ORMBaseModel":
-        return cls(**data)
+    def from_dict(cls, data: dict) -> 'ORMBaseModel':
+        mapper = sa_inspect(cls).mapper
+        filtered = {
+            k: v for k, v in data.items()
+            if k in mapper.columns
+        }
+        return cls(**filtered)
 
     def __repr__(self):
         attrs = ", ".join(f"{k}={v!r}" for k, v in self.to_dict().items())

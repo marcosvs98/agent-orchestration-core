@@ -15,6 +15,7 @@ from settings import (
     LANGFUSE_HOST,
     LANGFUSE_PUBLIC_KEY,
     LANGFUSE_SECRET_KEY,
+    TRACING_ENABLED,
 )
 
 logger = get_logger(__name__)
@@ -96,10 +97,14 @@ class LangfuseRuntimeTracer:
     def __init__(
         self, *, environment: str | None = None, runtime_version: str | None = None
     ) -> None:
-        if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY or not LANGFUSE_HOST:
-            raise DomainValidationException(message="langfuse_not_configured")
+        self._enabled = bool(TRACING_ENABLED)
         self.environment = environment or ENVIRONMENT
         self.runtime_version = runtime_version or APPLICATION_VERSION
+        self.langfuse = None
+        if not self._enabled:
+            return
+        if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY or not LANGFUSE_HOST:
+            raise DomainValidationException(message="langfuse_not_configured")
         try:
             self.langfuse = Langfuse(
                 public_key=LANGFUSE_PUBLIC_KEY,
@@ -138,7 +143,7 @@ class LangfuseRuntimeTracer:
         try:
             if trace_id is not None:
                 trace_id_val = trace_id
-            elif external_request_id:
+            elif self._enabled and self.langfuse and external_request_id:
                 deterministic_trace_id = self.langfuse.create_trace_id(
                     seed=external_request_id
                 )
@@ -214,6 +219,9 @@ class LangfuseRuntimeTracer:
 
         flow_span = None
         handle = ObservationHandle(None)
+        if not self._enabled or not self.langfuse:
+            yield handle
+            return
         try:
             with self.langfuse.start_as_current_observation(
                 as_type="span",
@@ -261,6 +269,9 @@ class LangfuseRuntimeTracer:
         **kwargs: Any,
     ) -> Iterator[ObservationHandle]:
         handle = ObservationHandle(None)
+        if not self._enabled or not self.langfuse:
+            yield handle
+            return
         try:
             if as_type == "event":
                 self.langfuse.create_event(
@@ -294,6 +305,8 @@ class LangfuseRuntimeTracer:
             raise
 
     def flush(self) -> None:
+        if not self._enabled or not self.langfuse:
+            return
         try:
             self.langfuse.flush()
         except Exception as e:
@@ -303,6 +316,8 @@ class LangfuseRuntimeTracer:
             )
 
     def shutdown(self) -> None:
+        if not self._enabled or not self.langfuse:
+            return
         try:
             self.langfuse.shutdown()
         except Exception as e:

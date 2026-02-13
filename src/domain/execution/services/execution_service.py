@@ -151,7 +151,11 @@ class ExecutionService(ExecutionServicePort):
         prompt_service = PromptService(
             repository=prompt_repository, execution_repository=repository, tracer=tracer
         )
-        agents_repository = AgentsRepository(repository.db, tracer=tracer)
+        agents_repository = AgentsRepository(
+            repository.db,
+            tracer=tracer,
+            cache_adapter=getattr(repository, "cache_adapter", None),
+        )
         self.tools_repository = ToolsRepository(repository.db, tracer=tracer)
         if tools_service:
             self.tools_service = tools_service
@@ -572,6 +576,7 @@ class ExecutionService(ExecutionServicePort):
         await self.repository.link_interaction_to_flow_run(
             interaction_id=interaction_id, flow_run_id=flow_run_id
         )
+        self.repository.start_event_batching(flow_run_id)
         # canonical status: CREATED
         response = FlowRun(
             id=flow_run_id,
@@ -662,57 +667,60 @@ class ExecutionService(ExecutionServicePort):
 
         flow_handle = None
         flow_run_result = None
-        with self.tracer.flow(
-            trace=trace_context,
-            input={"user_input": flow_run.input.user_input},
-        ) as flow_handle:
-            with self.tracer.observe(
-                as_type="chain",
-                name="flow.execution",
-                input={"plan_hash": execution_plan_hash, "node_count": len(plan.nodes)},
-                metadata={"chain_name": "flow.execution"},
-            ) as chain_handle:
-                await self.runtime.run(
-                    tenant_id=tenant_id,
-                    session_id=flow_run.session_id,
-                    input_payload=flow_run.input,
-                    flow_id=flow_id,
-                    flow_version_id=selected_flow_version_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    trace_id=trace_uuid,
-                    plan=plan,
-                    runtime_policy=runtime_policy,
-                    trace_context=trace_context,
-                    start_node_id=origin_start_node_id,
-                    initial_state=origin_initial_state,
-                    initial_memory=origin_initial_memory,
-                )
-                if chain_handle:
-                    chain_handle.success(
-                        output={
-                            "plan_hash": execution_plan_hash,
-                            "node_count": len(plan.nodes),
-                        }
+        try:
+            with self.tracer.flow(
+                trace=trace_context,
+                input={"user_input": flow_run.input.user_input},
+            ) as flow_handle:
+                with self.tracer.observe(
+                    as_type="chain",
+                    name="flow.execution",
+                    input={"plan_hash": execution_plan_hash, "node_count": len(plan.nodes)},
+                    metadata={"chain_name": "flow.execution"},
+                ) as chain_handle:
+                    await self.runtime.run(
+                        tenant_id=tenant_id,
+                        session_id=flow_run.session_id,
+                        input_payload=flow_run.input,
+                        flow_id=flow_id,
+                        flow_version_id=selected_flow_version_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        trace_id=trace_uuid,
+                        plan=plan,
+                        runtime_policy=runtime_policy,
+                        trace_context=trace_context,
+                        start_node_id=origin_start_node_id,
+                        initial_state=origin_initial_state,
+                        initial_memory=origin_initial_memory,
                     )
-            if trace_context.root_observation_id:
-                await self.repository.set_root_observation_id(
-                    flow_run_id=flow_run_id,
-                    root_observation_id=trace_context.root_observation_id,
-                )
+                    if chain_handle:
+                        chain_handle.success(
+                            output={
+                                "plan_hash": execution_plan_hash,
+                                "node_count": len(plan.nodes),
+                            }
+                        )
+                if trace_context.root_observation_id:
+                    await self.repository.set_root_observation_id(
+                        flow_run_id=flow_run_id,
+                        root_observation_id=trace_context.root_observation_id,
+                    )
 
-            flow_run_result = await self.repository.get_flow_run(flow_run_id)
-            output = flow_run_result.output if flow_run_result else {}
-            error = flow_run_result.error if flow_run_result else {}
-            if flow_handle:
-                if error:
-                    flow_handle.error(
-                        error_type="flow_run_failed",
-                        error_message=str(error),
-                        output={"output": output, "error": error},
-                    )
-                else:
-                    flow_handle.success(output=output)
+                flow_run_result = await self.repository.get_flow_run(flow_run_id)
+                output = flow_run_result.output if flow_run_result else {}
+                error = flow_run_result.error if flow_run_result else {}
+                if flow_handle:
+                    if error:
+                        flow_handle.error(
+                            error_type="flow_run_failed",
+                            error_message=str(error),
+                            output={"output": output, "error": error},
+                        )
+                    else:
+                        flow_handle.success(output=output)
+        finally:
+            await self.repository.end_event_batching(flow_run_id)
 
         if flow_run_result:
             response = response.model_copy(
@@ -893,31 +901,35 @@ class ExecutionService(ExecutionServicePort):
         initial_state = snapshot.state
         initial_memory = snapshot.memory
 
-        with self.tracer.flow(
-            trace=trace_context,
-            input={"user_input": input_payload.user_input},
-        ):
-            await self.runtime.run(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                input_payload=FlowRunInput(user_input=input_payload.user_input),
-                flow_id=flow_id,
-                flow_version_id=flow_version.flow_version_id,
-                flow_run_id=flow_run_id,
-                correlation_id=flow_run.correlation_id,
-                trace_id=trace_uuid,
-                plan=plan,
-                runtime_policy=runtime_policy,
-                trace_context=trace_context,
-                start_node_id=resume_to_node_id,
-                initial_state=initial_state,
-                initial_memory=initial_memory,
-            )
+        self.repository.start_event_batching(flow_run_id)
+        try:
+            with self.tracer.flow(
+                trace=trace_context,
+                input={"user_input": input_payload.user_input},
+            ):
+                await self.runtime.run(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    input_payload=FlowRunInput(user_input=input_payload.user_input),
+                    flow_id=flow_id,
+                    flow_version_id=flow_version.flow_version_id,
+                    flow_run_id=flow_run_id,
+                    correlation_id=flow_run.correlation_id,
+                    trace_id=trace_uuid,
+                    plan=plan,
+                    runtime_policy=runtime_policy,
+                    trace_context=trace_context,
+                    start_node_id=resume_to_node_id,
+                    initial_state=initial_state,
+                    initial_memory=initial_memory,
+                )
 
-        flow_run_result = await self.repository.get_flow_run(flow_run_id)
-        if flow_run_result is None:
-            raise NotFoundServiceException(message="flow_run_not_found")
-        return FlowRun.from_model(flow_run_result)
+            flow_run_result = await self.repository.get_flow_run(flow_run_id)
+            if flow_run_result is None:
+                raise NotFoundServiceException(message="flow_run_not_found")
+            return FlowRun.from_model(flow_run_result)
+        finally:
+            await self.repository.end_event_batching(flow_run_id)
 
     async def create_agent_run(
         self,

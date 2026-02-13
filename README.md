@@ -184,13 +184,17 @@ Copiar arquivo de exemplo `.env` e ajustar variáveis conforme necessidade:
 **Principais variáveis**:
 
 - `DATABASE_URL` — conexão com PostgreSQL (ex: `postgresql+asyncpg://user:pass@host:5432/dbname`)
-- `REDIS_URL` — conexão com Redis (ex: `redis://localhost:6379/3`)
+- `REDIS_URL` — conexão com Redis (ex: `redis://localhost:6379/3`). Scripts de demo (ex: `resources/scripts/examples/execute_flow_demo_direct.py`) beneficiam de Redis ativo para cache do repositório de execução; sem Redis, o cache falha em silêncio quando `CACHE_SILENT_MODE=true` (default).
 - `JWT_SECRET` — chave secreta para validação de JWT
 - `JWT_ISSUER` — issuer esperado nos tokens JWT
 - `JWT_AUDIENCE` — audience esperado nos tokens JWT
 - `LANGFUSE_PUBLIC_KEY` — chave pública do Langfuse (opcional)
 - `LANGFUSE_SECRET_KEY` — chave secreta do Langfuse (opcional)
 - `LANGFUSE_HOST` — host do Langfuse (opcional)
+
+**Profile do demo**: Para comparar impacto de cache no demo (`resources/scripts/examples/execute_flow_demo_direct.py`), rode uma vez sem Redis (ou com cache desabilitado) e salve o profile (ex: `execute_flow_demo_direct_no_redis.prof`), depois com Redis ativo e salve (ex: `execute_flow_demo_direct_with_redis.prof`). Compare tempo em `session.execute`/`commit` e em métodos do repositório; com cache ativo espera-se redução de I/O e de chamadas ao repositório.
+
+**Custo create_flow_run/executor**: O caminho create_flow_run carrega flow, flow_version e graph_snapshot uma vez por run e reutiliza o plano compilado (com cache por graph_hash). Os eventos de execução são persistidos em batch (buffer por flow_run_id, flush por tamanho ou ao fim do run), reduzindo transações. Para auditar chamadas por run, use o profile do demo (pstats) e inspecione contagens de `get_flow`, `get_flow_version`, `append_execution_event`/`flush_execution_events`.
 
 **Nota**: O sistema usa **UV** para gerenciamento de dependências. Instale UV e execute:
 
