@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+from typing import Any, Dict
+from uuid import UUID
+
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.execution.schemas.trace import TraceContext
+from domain.execution.services.graph_runtime.nodes._common import (
+    conversation_key_and_stateless,
+    payload_from_config,
+    read_user_input,
+)
+from domain.execution.services.graph_runtime.types import (
+    ExecutionContext,
+    NodeExecutionStatus,
+    NodeExecutor,
+    NodeResult,
+)
+from domain.llm.ports.llm_executor import LLMExecutorPort
+from domain.llm.schemas.llm import (
+    LLMProviderType,
+    LLMRequest,
+    LLMResult,
+    LLMTaskType,
+)
+from domain.prompts.schemas.prompt import NodeType, PromptIntent
+
+
+def _intent_from_intent_slice(intent_slice: dict) -> str:
+    result = intent_slice.get("result")
+    if isinstance(result, list) and result and isinstance(result[0], dict):
+        return result[0].get("intent_type") or ""
+    return ""
+
+
+def _missing_fields_from_param_slice(param_slice: dict) -> list[str]:
+    result = param_slice.get("result")
+    if not isinstance(result, list):
+        return []
+    fields: list[str] = []
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        for field in item.get("missing_fields") or []:
+            if isinstance(field, str):
+                fields.append(field)
+            elif isinstance(field, dict) and field.get("field"):
+                fields.append(str(field["field"]))
+    return fields
+from exceptions.service_exceptions import DomainValidationException
+
+
+class ClarificationNode(NodeExecutor):
+    node_type = NodeType.ClarificationNode
+    side_effect = False
+    deterministic = True
+
+    def __init__(
+        self,
+        tracer: RuntimeTracerPort,
+        llm_executor: LLMExecutorPort | None = None,
+        prompt_resolver: Any | None = None,
+    ) -> None:
+        self.llm_executor = llm_executor
+        self.prompt_resolver = prompt_resolver
+        self.tracer = tracer
+
+    async def execute(
+        self, context: ExecutionContext, config: Dict[str, Any] | None = None
+    ) -> NodeResult:
+        config = config or {}
+        llm_cfg = config.get("llm")
+        if llm_cfg and context:
+            if not self.prompt_resolver or not self.llm_executor:
+                raise DomainValidationException(message="prompt_resolver_required")
+            runtime_policy = (
+                (context.metadata or {}).get("runtime_policy", {})
+                if context.metadata
+                else {}
+            )
+            llm_policy = runtime_policy.get("llm", {})
+            provider = llm_cfg.get("provider") or LLMProviderType.OPENAI.value
+            model_alias = llm_cfg.get("model_alias") or "gpt-4.1-mini"
+            try:
+                node_uuid = UUID(context.current_node_id)
+            except Exception:
+                node_uuid = None
+            with self.tracer.observe(
+                as_type="chain",
+                name="domain.execution.nodes.clarification.resolve_prompt",
+                input={"node_id": str(node_uuid) if node_uuid else None},
+            ):
+                resolved_prompt = await self.prompt_resolver.resolve(
+                    intent=PromptIntent.CLARIFICATION,
+                    context=context,
+                    node_id=node_uuid,
+                )
+            intent_slice = context.get_node_output(NodeType.IntentDetectionNode)
+            param_slice = context.get_node_output(NodeType.ParamExtractionNode)
+            request = LLMRequest(
+                prompt=resolved_prompt.prompt_text,
+                system_prompt=context.system_prompt,
+                user_message=read_user_input(context),
+                user_payload={
+                    "user_input": read_user_input(context),
+                    "intent": _intent_from_intent_slice(intent_slice),
+                    "missing_fields": _missing_fields_from_param_slice(param_slice),
+                },
+                input_schema=resolved_prompt.input_schema
+                or llm_cfg.get("input_schema", {}),
+                output_schema=resolved_prompt.output_schema
+                or llm_cfg.get("output_schema", {}),
+                json_schema=resolved_prompt.output_schema
+                or llm_cfg.get("output_schema", {}),
+                json_schema_name="clarification_output",
+                model_alias=model_alias,
+                temperature=llm_cfg.get("temperature")
+                if (llm_cfg and "temperature" in llm_cfg)
+                else llm_policy.get("temperature"),
+                max_tokens=llm_policy.get("max_tokens"),
+                max_latency_ms=llm_policy.get("max_latency_ms"),
+                max_cost_usd=llm_policy.get("max_cost_usd"),
+                retry_limit=llm_policy.get("retry_limit"),
+                fallback_model_alias=llm_cfg.get("fallback_model_alias"),
+                prompt_id=str(resolved_prompt.prompt_id)
+                if resolved_prompt.prompt_id
+                else None,
+                prompt_version=resolved_prompt.prompt_version,
+                prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
+                task_type=LLMTaskType.CLARIFICATION,
+                user_id=context.user_id,
+                conversation_key=(
+                    _conv_key := conversation_key_and_stateless(
+                        LLMTaskType.CLARIFICATION,
+                        llm_policy,
+                        context.tenant_id,
+                        context.session_id,
+                    )
+                )[0],
+                stateless=_conv_key[1],
+            )
+            with self.tracer.observe(
+                as_type="chain",
+                name="domain.execution.nodes.clarification.execute_llm",
+                input=request.model_dump(mode="json"),
+            ) as chain_handle:
+                result: LLMResult = await self.llm_executor.execute_llm(
+                    request=request,
+                    trace=TraceContext(
+                        trace_id=context.trace_id or UUID(int=0),
+                        flow_run_id=context.flow_run_id,
+                        tenant_id=context.tenant_id,
+                        user_id=context.user_id,
+                    ),
+                    tenant_id=context.tenant_id,
+                    session_id=context.session_id,
+                    flow_run_id=context.flow_run_id,
+                    correlation_id=context.correlation_id,
+                    node_id=node_uuid,
+                    provider=provider,
+                    policy_llm=llm_policy,
+                )
+                if chain_handle:
+                    chain_handle.success(output=result.model_dump(mode="json"))
+            return NodeResult(
+                node=self.node_type,
+                status=NodeExecutionStatus.NEEDS_INPUT,
+                data=result.output,
+                metrics=result.token_usage,
+            )
+        payload = payload_from_config(config, {"system_output": ""})
+        return NodeResult(
+            node=self.node_type,
+            status=NodeExecutionStatus.NEEDS_INPUT,
+            data=payload,
+        )
+

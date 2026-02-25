@@ -12,13 +12,16 @@ from domain.context.schemas.memory_extraction import (
 from domain.context.schemas.memory_write import MemoryWriteEventContext
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.trace import TraceContext
-from domain.governance.schemas.memory_policy import MemoryPolicySource, MemoryWriteTarget
+from domain.governance.schemas.memory_policy import (
+    MemoryPolicySource,
+    MemoryWriteTarget,
+)
 from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.llm.schemas.llm import LLMRequest, LLMResult, LLMTaskType
 from pydantic import ValidationError
 
 _LLM_TASK_TYPE_BY_VALUE: dict[str, LLMTaskType] = {t.value: t for t in LLMTaskType}
-_DEFAULT_LLM_TASK_TYPE = LLMTaskType.RESPONSE_RENDER
+_DEFAULT_LLM_TASK_TYPE = LLMTaskType.MEMORY_EXTRACTION
 
 
 class MemoryExtractionProcessor:
@@ -34,10 +37,14 @@ class MemoryExtractionProcessor:
         self.memory_write_service = memory_write_service
         self.tracer = tracer
 
-    def _resolve_task_type(self, task_type_str: str | None) -> LLMTaskType:
-        if not task_type_str or not isinstance(task_type_str, str):
+    def _resolve_task_type(
+        self, task_type_value: str | LLMTaskType | None
+    ) -> LLMTaskType:
+        if isinstance(task_type_value, LLMTaskType):
+            return task_type_value
+        if not task_type_value or not isinstance(task_type_value, str):
             return _DEFAULT_LLM_TASK_TYPE
-        key = task_type_str.strip()
+        key = task_type_value.strip()
         return _LLM_TASK_TYPE_BY_VALUE.get(key, _DEFAULT_LLM_TASK_TYPE)
 
     async def execute(
@@ -77,18 +84,24 @@ class MemoryExtractionProcessor:
                 user_id=user_id,
                 correlation_id=correlation_id,
             )
-            llm_input = json.dumps(flow_output)
-            prompt = (config.llm.prompt or "Extract memory items from the following flow output.") + "\n\nFlow output:\n" + llm_input
+            llm_input = json.dumps(flow_output, ensure_ascii=True)
+            prompt = (
+                config.llm.prompt
+                or "Extract memory items from the provided flow output."
+            )
             request = LLMRequest(
                 prompt=prompt,
+                user_message=llm_input,
+                user_payload={"flow_output": llm_input},
                 output_schema=MemoryExtractionLLMOutput.model_json_schema(),
+                json_schema=MemoryExtractionLLMOutput.model_json_schema(),
+                json_schema_name="memory_extraction_output",
                 input_schema=config.llm.input_schema or {},
                 model_alias=config.llm.model_alias,
                 max_tokens=config.llm.max_tokens,
                 max_latency_ms=config.llm.max_latency_ms,
                 max_cost_usd=config.llm.max_cost_usd,
                 retry_limit=config.llm.retry_limit,
-                fallback_model_alias=config.llm.fallback_model_alias,
                 task_type=self._resolve_task_type(config.llm.task_type),
                 user_id=user_id,
             )
@@ -101,7 +114,7 @@ class MemoryExtractionProcessor:
                     flow_run_id=flow_run_id,
                     correlation_id=correlation_id,
                     node_id=None,
-                    provider=config.llm.provider or "OPENAI", # Todo: To use StrEnum here
+                    provider=config.llm.provider.value,
                     policy_llm=None,
                 )
             except Exception:
@@ -113,7 +126,9 @@ class MemoryExtractionProcessor:
                 parsed = MemoryExtractionLLMOutput.model_validate(raw_output)
             except (ValidationError, TypeError):
                 if span_handle:
-                    span_handle.failure(output={"error": "llm_output_validation_failed"})
+                    span_handle.failure(
+                        output={"error": "llm_output_validation_failed"}
+                    )
                 return
             summary = MemoryExtractionSummary()
             for pref in parsed.preferences:
@@ -155,7 +170,10 @@ class MemoryExtractionProcessor:
                     item=item,
                     event_context=event_context,
                 )
-                if MemoryWriteTarget.USER_MEMORY_PROFILE in write_result.targets_applied:
+                if (
+                    MemoryWriteTarget.USER_MEMORY_PROFILE
+                    in write_result.targets_applied
+                ):
                     summary.applied_profile += 1
                 else:
                     summary.ignored_profile += 1

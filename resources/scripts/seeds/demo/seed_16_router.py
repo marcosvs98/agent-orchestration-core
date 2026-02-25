@@ -19,7 +19,7 @@ from seeds.demo.ids import (
     CONDITION_EXPRESSION_DEMO_ID,
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
-    NODE_SLOT_ID,
+    NODE_TOOL_SELECTION_ID,
     ROUTER_DEMO_ID,
     ROUTING_RULE_DEMO_ID,
 )
@@ -47,7 +47,7 @@ async def seed_router() -> None:
         if existing_condition is None:
             condition = ConditionExpression(
                 condition_expression_id=CONDITION_EXPRESSION_DEMO_ID,
-                expression='ctx.get("intent") == "payment"',
+                expression='ctx.get("primary_intent_type") == "execution"',
             )
             session.add(condition)
             await session.commit()
@@ -65,7 +65,7 @@ async def seed_router() -> None:
                 router_id=ROUTER_DEMO_ID,
                 condition_expression_id=CONDITION_EXPRESSION_DEMO_ID,
                 from_node_id=NODE_INTENT_ID,
-                to_node_id=NODE_SLOT_ID,
+                to_node_id=NODE_TOOL_SELECTION_ID,
             )
             session.add(routing_rule)
             await session.commit()

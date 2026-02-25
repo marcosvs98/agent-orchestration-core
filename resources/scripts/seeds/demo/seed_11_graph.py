@@ -9,6 +9,7 @@ if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
 from sqlalchemy import select
+from pydantic import BaseModel
 
 from domain.common.schemas.versioning import VersionStatus
 from domain.flows.schemas.graph import (
@@ -31,13 +32,96 @@ from seeds.demo.ids import (
     FLOW_GRAPH_SNAPSHOT_ID,
     FLOW_VERSION_V1_ID,
     NODE_CLARIFICATION_ID,
+    NODE_CLARIFICATION_INTENT_ID,
+    NODE_FALLBACK_SLA_ID,
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
+    NODE_TOOL_ERROR_HANDLER_ID,
     NODE_TOOL_EXEC_ID,
+    NODE_TOOL_SELECTION_ID,
     NODE_USER_CONTEXT_ENRICHMENT_ID,
     PRINCIPAL_SYSTEM,
 )
+
+
+class _LlmNodeConfig(BaseModel):
+    task_type: str
+    provider: str
+    model_alias: str
+    temperature: float
+    top_p: float
+
+
+class _ConfigWithLlm(BaseModel):
+    llm: _LlmNodeConfig
+
+
+class _ResumeConfigWithLlm(BaseModel):
+    resume_to_node_id: str
+    llm: _LlmNodeConfig
+
+
+class _UserContextLayersConfig(BaseModel):
+    allow_tenant_knowledge: bool
+    allow_user_memory_structured: bool
+    allow_user_memory_vector: bool
+
+
+class _UserContextNodeConfig(BaseModel):
+    publish: bool
+    layers: _UserContextLayersConfig
+
+
+def _llm_node_config(
+    *,
+    task_type: str,
+    provider: str,
+    model_alias: str,
+    temperature: float,
+    top_p: float,
+) -> dict[str, object]:
+    return _ConfigWithLlm(
+        llm=_LlmNodeConfig(
+            task_type=task_type,
+            provider=provider,
+            model_alias=model_alias,
+            temperature=temperature,
+            top_p=top_p,
+        )
+    ).model_dump(mode="json")
+
+
+def _resume_llm_node_config(
+    *,
+    resume_to_node_id: str,
+    task_type: str,
+    provider: str,
+    model_alias: str,
+    temperature: float,
+    top_p: float,
+) -> dict[str, object]:
+    return _ResumeConfigWithLlm(
+        resume_to_node_id=resume_to_node_id,
+        llm=_LlmNodeConfig(
+            task_type=task_type,
+            provider=provider,
+            model_alias=model_alias,
+            temperature=temperature,
+            top_p=top_p,
+        ),
+    ).model_dump(mode="json")
+
+
+def _user_context_node_config() -> dict[str, object]:
+    return _UserContextNodeConfig(
+        publish=True,
+        layers=_UserContextLayersConfig(
+            allow_tenant_knowledge=True,
+            allow_user_memory_structured=True,
+            allow_user_memory_vector=True,
+        ),
+    ).model_dump(mode="json")
 
 
 async def seed_graph() -> None:
@@ -58,164 +142,172 @@ async def seed_graph() -> None:
             nodes={
                 str(NODE_USER_CONTEXT_ENRICHMENT_ID): FlowGraphNodeSpec(
                     type="UserContextEnrichmentNode",
-                    config={
-                        "publish": True,
-                        "layers": {
-                            "allow_tenant_knowledge": True,
-                            "allow_user_memory_structured": True,
-                            "allow_user_memory_vector": True,
-                        },
-                    },
+                    config=_user_context_node_config(),
                 ),
                 str(NODE_INTENT_ID): FlowGraphNodeSpec(
-                    type="IntentToolSelectionNode",
-                    config={
-                        "llm": {
-                            "task_type": "INTENT_SELECTION",
-                            "provider": "OPENAI",
-                            "model_alias": "fake-model",
-                            "input": {},
-                            "input_schema": {},
-                            "output_schema": {
-                                "type": "object",
-                                "properties": {
-                                    "intent": {"type": ["string", "null"]},
-                                    "tool_config_id": {
-                                        "type": ["string", "null"],
-                                        "format": "uuid",
-                                    },
-                                    "clarification": {"type": "boolean"},
-                                    "intent_category": {
-                                        "type": "string",
-                                        "enum": ["TRANSACTION", "DECLARATION", "SMALL_TALK"],
-                                    },
-                                },
-                                "required": ["intent", "tool_config_id", "clarification"],
-                            },
-                        },
-                        "default_tool_config_id": "00000000-0000-0000-0000-000000000501",
-                    },
-                ),
-                    str(NODE_SLOT_ID): FlowGraphNodeSpec(
-                        type="ParamExtractionNode",
-                        config={
-                            "llm": {
-                                "task_type": "SLOT_FILLING",
-                                "provider": "OPENAI",
-                                "model_alias": "fake-model",
-                                "input": {},
-                                "input_schema": {},
-                                "output_schema": {
-                                    "type": "object",
-                                "required": [
-                                    "payload",
-                                    "missing_fields",
-                                    "missing_fields_count",
-                                    "execution_ready",
-                                ],
-                                    "properties": {
-                                        "payload": {
-                                        "type": "object"
-                                        },
-                                        "missing_fields": {
-                                        "type": "array",
-                                        "items": { "type": "string" }
-                                    },
-                                    "missing_fields_count": {
-                                    "type": "integer"
-                                    },
-                                    "execution_ready": {
-                                    "type": "boolean"
-                                        }
-                                    }
-                                },
-                            }
-                        },
+                    type="IntentDetectionNode",
+                    config=_llm_node_config(
+                        task_type="INTENT_SELECTION",
+                        provider="OPENAI",
+                        model_alias="gpt-4o-mini",
+                        temperature=0.1,
+                        top_p=0.1,
                     ),
+                ),
+                str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
+                    type="ClarificationIntentNode",
+                    config=_resume_llm_node_config(
+                        resume_to_node_id=str(NODE_INTENT_ID),
+                        task_type="CLARIFICATION",
+                        provider="OPENAI",
+                        model_alias="gpt-4.1-mini",
+                        temperature=0.4,
+                        top_p=0.3,
+                    ),
+                ),
+                str(NODE_TOOL_SELECTION_ID): FlowGraphNodeSpec(
+                    type="ToolSelectionNode",
+                    config=_llm_node_config(
+                        task_type="TOOL_SELECTION",
+                        provider="OPENAI",
+                        model_alias="gpt-4o-mini",
+                        temperature=0.1,
+                        top_p=0.2,
+                    ),
+                ),
+                str(NODE_SLOT_ID): FlowGraphNodeSpec(
+                    type="ParamExtractionNode",
+                    config=_llm_node_config(
+                        task_type="SLOT_FILLING",
+                        provider="OPENAI",
+                        model_alias="gpt-4.1-mini",
+                        temperature=0.2,
+                        top_p=0.2,
+                    ),
+                ),
                 str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
-                    type="ClarificationNode",
-                    config={
-                        "resume_to_node_id": str(NODE_SLOT_ID),
-                        "llm": {
-                            "task_type": "CLARIFICATION",
-                            "provider": "OPENAI",
-                            "model_alias": "fake-model",
-                            "input": {},
-                            "input_schema": {},
-                            "output_schema": {
-                                "type": "object",
-                                "properties": {
-                                    "system_output": {"type": "string"},
-                                },
-                                "required": ["system_output"],
-                            },
-                        },
-                    },
+                    type="ClarificationSlotNode",
+                    config=_resume_llm_node_config(
+                        resume_to_node_id=str(NODE_SLOT_ID),
+                        task_type="CLARIFICATION",
+                        provider="OPENAI",
+                        model_alias="gpt-4.1-mini",
+                        temperature=0.4,
+                        top_p=0.3,
+                    ),
                 ),
                 str(NODE_TOOL_EXEC_ID): FlowGraphNodeSpec(
-                    type="ToolExecutionNode", config={}
+                    type="ToolExecutionNode",
+                    config={},
+                ),
+                str(NODE_TOOL_ERROR_HANDLER_ID): FlowGraphNodeSpec(
+                    type="ToolErrorHandlerNode",
+                    config={"max_retries": 1},
+                ),
+                str(NODE_FALLBACK_SLA_ID): FlowGraphNodeSpec(
+                    type="FallbackNode",
+                    config={},
                 ),
                 str(NODE_RESPONSE_ID): FlowGraphNodeSpec(
-                    type="ResponseNode",
-                    config={
-                        "llm": {
-                            "task_type": "GENERATION",
-                            "provider": "OPENAI",
-                            "model_alias": "fake-model",
-                            "input": {},
-                            "input_schema": {},
-                            "output_schema": {
-                                "type": "object",
-                                "properties": {
-                                    "system_output": {"type": "string"},
-                                },
-                                "required": ["system_output"],
-                            },
-                        },
-                    },
+                    type="ResponseComposer",
+                    config=_llm_node_config(
+                        task_type="RESPONSE_RENDER",
+                        provider="OPENAI",
+                        model_alias="gpt-4o",
+                        temperature=0.3,
+                        top_p=0.4,
+                    ),
                 ),
             },
             edges=[
                 FlowGraphEdge(
                     from_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
                     to_node=str(NODE_INTENT_ID),
-                    condition="true",
+                    condition="1==1",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
-                    to_node=str(NODE_SLOT_ID),
-                    condition='intent_category == "TRANSACTION"',
+                    to_node=str(NODE_CLARIFICATION_INTENT_ID),
+                    condition="overall_confidence < 0.6",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_INTENT_ID),
+                    to_node=str(NODE_TOOL_SELECTION_ID),
+                    condition="HasAny(result.intent_type, ['execution', 'query']) and overall_confidence >= 0.8",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_RESPONSE_ID),
-                    condition='(intent_category == "DECLARATION" or intent_category == "SMALL_TALK")',
+                    condition="overall_confidence >= 0.6 and (HasAny(result.intent_type, ['conversation']) or not HasAny(result.intent_type, ['execution', 'query']))",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
-                    from_node=str(NODE_SLOT_ID),
-                    to_node=str(NODE_TOOL_EXEC_ID),
-                    condition="missing_fields_count == 0",
+                    from_node=str(NODE_CLARIFICATION_INTENT_ID),
+                    to_node=str(NODE_RESPONSE_ID),
+                    condition="1==1",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_TOOL_SELECTION_ID),
+                    to_node=str(NODE_SLOT_ID),
+                    condition="len(result) >= 1",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_SLOT_ID),
                     to_node=str(NODE_CLARIFICATION_ID),
-                    condition="missing_fields_count > 0",
+                    condition="HasAny(result.status, ['incomplete'])",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_CLARIFICATION_ID),
-                    to_node=str(NODE_RESPONSE_ID),
-                    condition="true",
+                    to_node=str(NODE_SLOT_ID),
+                    condition="1==1",
+                    edge_kind=EdgeKind.LOOP,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_SLOT_ID),
+                    to_node=str(NODE_TOOL_EXEC_ID),
+                    condition="HasAll(result.status, ['ready'])",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_TOOL_EXEC_ID),
                     to_node=str(NODE_RESPONSE_ID),
-                    condition="true",
+                    condition="HasAll(result.status, ['success', 'scheduled'])",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_TOOL_EXEC_ID),
+                    to_node=str(NODE_TOOL_ERROR_HANDLER_ID),
+                    condition="HasAny(result.status, ['incomplete', 'error', 'cancelled'])",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_TOOL_ERROR_HANDLER_ID),
+                    to_node=str(NODE_TOOL_EXEC_ID),
+                    condition="retry_operation_ids_count > 0",
+                    edge_kind=EdgeKind.LOOP,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_TOOL_ERROR_HANDLER_ID),
+                    to_node=str(NODE_FALLBACK_SLA_ID),
+                    condition="fallback_required == true",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_TOOL_ERROR_HANDLER_ID),
+                    to_node=str(NODE_RESPONSE_ID),
+                    condition="retry_operation_ids_count == 0 and fallback_required == false",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_FALLBACK_SLA_ID),
+                    to_node=str(NODE_RESPONSE_ID),
+                    condition="1==1",
                     edge_kind=EdgeKind.NORMAL,
                 ),
             ],

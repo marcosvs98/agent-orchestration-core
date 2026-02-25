@@ -19,7 +19,9 @@ class RagPolicyVersion(ORMBaseModel):
     version_minor = Column(Integer, nullable=False, server_default="0")
     version_patch = Column(Integer, nullable=False, server_default="0")
     config_hash = Column(String(length=128), nullable=True)
-    policy_definition = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    policy_definition = Column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
 
     __table_args__ = (
         UniqueConstraint(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import orjson
 
 import httpx
 
@@ -49,7 +49,7 @@ class HttpToolExecutor(ToolExecutorPort):
 
                 try:
                     body = response.json()
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     body = response.text
 
                 result = {
@@ -59,6 +59,11 @@ class HttpToolExecutor(ToolExecutorPort):
                 }
 
                 if tool_handle:
-                    tool_handle.success(output=result)
+                    tool_handle.success(
+                        output={
+                            "status_code": response.status_code,
+                            "response_size": len(response.content),
+                        }
+                    )
 
                 return result

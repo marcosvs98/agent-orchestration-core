@@ -9,7 +9,7 @@ import pytest
 from domain.execution.services.guardrails.guardrail_engine import GuardrailEngine
 from domain.llm.schemas.llm import LLMRequest, LLMTaskType
 from domain.prompts.repositories.prompt_repository import PromptRepository
-from domain.prompts.schemas.prompt import NodePrompt, NodeType
+from domain.prompts.schemas.prompt import NodePrompt, NodePromptCreate, NodeType
 from domain.prompts.services.prompt_service import PromptService
 
 
@@ -26,8 +26,8 @@ class TestPromptGuardrails:
             prompt_id=uuid4(),
             node_type=create.node_type,
             template_text=create.template_text,
-            input_schema_id=None,
-            output_schema_id=None,
+            input_schema=None,
+            output_schema=None,
             version=1,
             frozen_hash=PromptService._calculate_frozen_hash(create.template_text),
             is_active=True,

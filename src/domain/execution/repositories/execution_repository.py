@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy import inspect as sa_inspect, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 
@@ -1163,9 +1163,7 @@ class ExecutionRepository:
 
         if version_id is None:
             return None
-        await self.cache_adapter.set(
-            key, {"memory_policy_version_id": str(version_id)}
-        )
+        await self.cache_adapter.set(key, {"memory_policy_version_id": str(version_id)})
         return version_id
 
     async def get_memory_policy_version(
@@ -1243,9 +1241,7 @@ class ExecutionRepository:
 
         if version_id is None:
             return None
-        await self.cache_adapter.set(
-            key, {"rag_policy_version_id": str(version_id)}
-        )
+        await self.cache_adapter.set(key, {"rag_policy_version_id": str(version_id)})
         return version_id
 
     async def get_rag_policy_version(

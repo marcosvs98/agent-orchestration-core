@@ -16,7 +16,9 @@ from domain.rag.services.rag_runtime_service import RagRuntimeService
 from infra.database import DatabaseConnection, async_session, engine
 
 
-async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, object]) -> None:
+async def process_embedding_job(
+    ctx: dict[str, Any], payload_data: dict[str, object]
+) -> None:
     payload = EmbeddingJobPayload.model_validate(payload_data)
     execution_repository: ExecutionRepository = ctx["execution_repository"]
     rag_repository: RagRepository = ctx["rag_repository"]
@@ -25,7 +27,9 @@ async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, obj
     existing_document = await rag_repository.get_document_by_id(
         document_id=payload.document_id
     )
-    attempt = (int(existing_document.embedding_attempts) + 1) if existing_document else 1
+    attempt = (
+        (int(existing_document.embedding_attempts) + 1) if existing_document else 1
+    )
     with tracer.observe(
         as_type="event",
         name="domain.rag.embedding.started",
@@ -43,7 +47,9 @@ async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, obj
             event_payload={
                 "document_id": str(payload.document_id),
                 "rag_config_id": str(payload.rag_config_id),
-                "flow_run_id": str(payload.flow_run_id) if payload.flow_run_id else None,
+                "flow_run_id": str(payload.flow_run_id)
+                if payload.flow_run_id
+                else None,
                 "attempt": attempt,
             },
         )
@@ -93,7 +99,9 @@ async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, obj
                 },
             )
     except Exception as exc:
-        document = await rag_repository.get_document_by_id(document_id=payload.document_id)
+        document = await rag_repository.get_document_by_id(
+            document_id=payload.document_id
+        )
         attempt = int(document.embedding_attempts) if document else attempt
         error_code = exc.__class__.__name__
         with tracer.observe(

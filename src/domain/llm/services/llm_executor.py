@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 from typing import Any, Dict, Callable
 from uuid import UUID
@@ -124,9 +124,18 @@ class LLMExecutor(LLMExecutorPort):
             ) from validation_exc
 
     @staticmethod
+    # Todo: needs-clarification: moving policy enforcement out of LLMExecutor changes shared guardrail/policy boundaries and requires an architectural decision.
     def _enforce_policy(request: LLMRequest, result: LLMResult) -> None:
         if request.max_tokens is not None:
-            used = sum(result.token_usage.values()) if result.token_usage else 0
+            token_usage = result.token_usage or {}
+            completion_tokens = token_usage.get("completion_tokens")
+            if completion_tokens is None:
+                completion_tokens = token_usage.get("output_tokens")
+            if completion_tokens is None:
+                completion_tokens = token_usage.get("total_tokens")
+            used = (
+                completion_tokens if isinstance(completion_tokens, (int, float)) else 0
+            )
             if used > request.max_tokens:
                 raise DomainValidationException(
                     message="llm_policy_max_tokens_exceeded"
@@ -247,10 +256,20 @@ class LLMExecutor(LLMExecutorPort):
 
         llm_input: Dict[str, Any] = {
             "prompt": request.prompt,
-            "system_prompt": request.system_prompt,
+            "system_prompt": request.system_prompt,  # Todo: This is system prompt that will define the persona
             "provider_model": provider_model,
             "provider": provider,
         }
+        if request.user_payload:
+            llm_input["user_payload"] = request.user_payload
+        if request.input_payload:
+            llm_input["input_payload"] = request.input_payload
+        if request.user_message:
+            llm_input["user_message"] = request.user_message
+        if request.messages:
+            llm_input["messages"] = [
+                m.model_dump(mode="json") for m in request.messages
+            ]
         if task_type_value:
             llm_input["task_type"] = task_type_value
         if request.user_id:
@@ -279,7 +298,13 @@ class LLMExecutor(LLMExecutorPort):
             ) as chain_handler:
                 try:
                     self._validate_schema(
-                        {"prompt": request.prompt},
+                        request.user_payload
+                        or request.input_payload
+                        or (
+                            {"user_message": request.user_message}
+                            if request.user_message
+                            else {"prompt": request.prompt}
+                        ),
                         request.input_schema,
                         error_code="llm_input_invalid",
                     )
@@ -438,7 +463,7 @@ class LLMExecutor(LLMExecutorPort):
                                     update={"max_latency_ms": max_latency_override}
                                 )
 
-                    completion_start = datetime.utcnow()
+                    completion_start = datetime.now(UTC)
                     with self.tracer.observe(
                         as_type="generation",
                         name=f"domain.llm.llm_executor.infer.{task_type_value.lower() or 'infer'}".lower(),
@@ -510,19 +535,35 @@ class LLMExecutor(LLMExecutorPort):
                             raise
 
                     output_to_validate = result.output
-                    if isinstance(result.output, dict) and "content" in result.output:
-                        content_str = result.output.get("content")
+                    if isinstance(result.output, str):
                         try:
-                            parsed_content = orjson.loads(content_str)
-                            output_to_validate = parsed_content
+                            output_to_validate = orjson.loads(result.output)
                             result = result.model_copy(
-                                update={"output": parsed_content}
+                                update={"output": output_to_validate}
                             )
                         except orjson.JSONDecodeError as json_exc:
                             raise DomainValidationException(
                                 message="llm_output_json_parse_error",
-                                detail=f"Failed to parse JSON content: {str(json_exc)}",
+                                detail=f"Failed to parse JSON output: {str(json_exc)}",
                             ) from json_exc
+                    elif (
+                        isinstance(result.output, dict)
+                        and "content" in result.output
+                        and len(result.output.keys()) == 1
+                    ):
+                        content_str = result.output.get("content")
+                        if isinstance(content_str, str):
+                            try:
+                                parsed_content = orjson.loads(content_str)
+                                output_to_validate = parsed_content
+                                result = result.model_copy(
+                                    update={"output": parsed_content}
+                                )
+                            except orjson.JSONDecodeError as json_exc:
+                                raise DomainValidationException(
+                                    message="llm_output_json_parse_error",
+                                    detail=f"Failed to parse JSON content: {str(json_exc)}",
+                                ) from json_exc
 
                     try:
                         self._validate_schema(

@@ -10,6 +10,7 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
+from exceptions.service_exceptions import DomainValidationException
 scripts_path = Path(__file__).resolve().parent.parent.parent
 if str(scripts_path) not in sys.path:
     sys.path.insert(0, str(scripts_path))
@@ -75,8 +76,24 @@ async def main() -> None:
             ("RAG Policy", seed_rag_policy),
         ]
 
-        for name, seed_func in seeds:
-            await seed_func()
+        try:
+            for name, seed_func in seeds:
+                await seed_func()
+        except DomainValidationException as exc:
+            print(
+                {
+                    "code": exc.name,
+                    "message": exc.message,
+                    "correlation_id": None,
+                    "details": {
+                        "service": exc.service,
+                        "resource": 'resources.scripts.seeds.demo.run.py',
+                        "errors": exc.errors(),
+                    },
+                    "input_data": exc.input_data
+                }
+            )
+            raise exc from exc
 
         print("Bootstrap completed successfully", file=sys.stdout)
         sys.exit(0)

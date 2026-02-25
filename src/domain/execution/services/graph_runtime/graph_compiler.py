@@ -51,7 +51,7 @@ class GraphCompiler:
                         node_id
                         for node_id, spec in nodes.items()
                         if spec.get("type")
-                        in {NodeType.ResponseNode, NodeType.FallbackNode}
+                        in {NodeType.ResponseComposer, NodeType.FallbackNodeSLA}
                     ]
                 )
                 if not terminal_nodes:

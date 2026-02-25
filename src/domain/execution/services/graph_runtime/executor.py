@@ -30,11 +30,14 @@ from domain.execution.services.state_machine import (
 from domain.flows.schemas.graph import EdgeKind
 from domain.flows.services.flow_graph_validator import TERMINAL_NODE_TYPES
 from exceptions.service_exceptions import (
+    format_exception,
     BaseServiceException,
     DomainValidationException,
 )
 from domain.governance.schemas.runtime_policy import ResolvedRuntimePolicy
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.prompts.schemas.prompt import NodeType
+# from jsonschema import ValidationError, validate
 
 
 class RuntimeExecutor:
@@ -111,7 +114,12 @@ class RuntimeExecutor:
         if isinstance(user_context_policy, dict) and bool(
             user_context_policy.get("enabled")
         ):
-            handle = context.state.get("user_context_enrichment")
+            uce_key = NodeType.UserContextEnrichmentNode.value
+            handle = (
+                context.state.get(uce_key)
+                or context.state.get(NodeType.UserContextEnrichmentNode)
+                or context.state.get("user_context_enrichment")
+            )
             if not isinstance(handle, dict):
                 handle = {}
             mode = (
@@ -129,7 +137,7 @@ class RuntimeExecutor:
                 else {},
                 "mode": str(handle.get("mode") or mode),
             }
-            context.state["user_context_enrichment"] = merged_handle
+            context.state[uce_key] = merged_handle
             with self.tracer.observe(
                 as_type="event",
                 name="domain.context.user_context_enrichment.seeded",
@@ -152,12 +160,6 @@ class RuntimeExecutor:
             loop_limit * max(len(adjacency), 1) + 2,
         )
         for _ in range(max_steps):
-            with self.tracer.observe(
-                as_type="event",
-                name="domain.execution.graph_runtime.context_snapshot",
-                input=context.snapshot(),
-            ):
-                pass
             edges = adjacency.get(context.current_node_id, [])
             spec = node_specs.get(context.current_node_id)
             if spec is None:
@@ -183,6 +185,10 @@ class RuntimeExecutor:
                     reason=FlowFailureReason.UNKNOWN_NODE_TYPE,
                 )
                 return
+
+            context_metadata = dict(context.metadata or {})
+            context_metadata["current_node_type"] = node_type
+            context = context.model_copy(update={"metadata": context_metadata})
 
             node: NodeExecutor = node_cls()
 
@@ -245,10 +251,11 @@ class RuntimeExecutor:
                             error_message=str(exc),
                             output={"status": "failed"},
                         )
-                    raise
+                    raise exc from exc
+                # self._validate_node_output(spec, node_result)
                 if node_handle:
                     node_handle.success(output=node_result.model_dump(mode="json"))
-            context.node_output = node_result.payload
+            context.node_output = node_result.data
 
             status = self._map_status(node_result.status)
             await self.repository.update_node_run_result(
@@ -291,7 +298,7 @@ class RuntimeExecutor:
                     payload={
                         "node_id": context.current_node_id,
                         "status": node_result.status,
-                        "payload": node_result.payload,
+                        "payload": node_result.data,
                         "error": node_result.error,
                         "metrics": node_result.metrics,
                     },
@@ -307,7 +314,7 @@ class RuntimeExecutor:
                     payload={
                         "node_id": context.current_node_id,
                         "status": node_result.status,
-                        "payload": node_result.payload,
+                        "payload": node_result.data,
                         "error": node_result.error,
                         "metrics": node_result.metrics,
                     },
@@ -322,6 +329,7 @@ class RuntimeExecutor:
                     "state": new_state,
                     "memory": new_memory,
                     "resume_to_node_id": resume_to_node_id,
+                    "metadata": context.metadata,
                 },
                 last_node_run_id=node_run_id,
             )
@@ -329,11 +337,11 @@ class RuntimeExecutor:
             if node_result.status == NodeExecutionStatus.NEEDS_INPUT:
                 await self.repository.set_flow_run_output(
                     flow_run_id=flow_run_id,
-                    output=node_result.payload or {},
+                    output=node_result.data or {},
                 )
                 await self.repository.set_current_interaction_result_for_flow_run(
                     flow_run_id=flow_run_id,
-                    output=node_result.payload or {},
+                    output=node_result.data or {},
                     result_node_run_id=node_run_id,
                 )
                 await self.repository.set_flow_run_status(
@@ -358,11 +366,11 @@ class RuntimeExecutor:
                     await self.repository.complete_flow_run(
                         flow_run_id=flow_run_id,
                         status=FlowRunStatus.COMPLETED,
-                        output=node_result.payload,
+                        output=node_result.data,
                     )
                     await self.repository.set_current_interaction_result_for_flow_run(
                         flow_run_id=flow_run_id,
-                        output=node_result.payload or {},
+                        output=node_result.data or {},
                         result_node_run_id=node_run_id,
                     )
                     memory_extraction_config = None
@@ -381,7 +389,7 @@ class RuntimeExecutor:
                             correlation_id=correlation_id,
                             payload={
                                 "terminated_at": context.current_node_id,
-                                "payload": node_result.payload,
+                                "payload": node_result.data,
                                 "memory_extraction_config": memory_extraction_config,
                             },
                             causation_id=None,
@@ -395,7 +403,7 @@ class RuntimeExecutor:
                             event_type=ExecutionEventType.FlowCompleted,
                             payload={
                                 "terminated_at": context.current_node_id,
-                                "payload": node_result.payload,
+                                "payload": node_result.data,
                                 "memory_extraction_config": memory_extraction_config,
                             },
                             correlation_id=correlation_id,
@@ -417,7 +425,7 @@ class RuntimeExecutor:
                 matching = await self._evaluate_edges(
                     edges,
                     context.current_node_id,
-                    node_result.payload,
+                    node_result.data,
                     iteration_counters=context.iteration_counters,
                     loop_limit=loop_limit,
                     tenant_id=tenant_id,
@@ -433,7 +441,8 @@ class RuntimeExecutor:
                     session_id=session_id,
                     flow_run_id=flow_run_id,
                     correlation_id=correlation_id,
-                    reason=str(exc),
+                    reason=FlowFailureReason.EDGE_EVALUATION_ERROR,
+                    exc=exc,
                 )
                 return
             if not matching:
@@ -462,7 +471,7 @@ class RuntimeExecutor:
                     "current_node_id": matching[0],
                     "state": new_state,
                     "memory": new_memory,
-                    "node_output": node_result.payload,
+                    "node_output": node_result.data,
                 }
             )
         await self._fail_flow(
@@ -667,12 +676,14 @@ class RuntimeExecutor:
         flow_run_id: UUID,
         correlation_id: UUID,
         reason: FlowFailureReason,
+        exc: BaseServiceException,
     ) -> None:
-        reason_str = reason.value if hasattr(reason, "value") else str(reason)
+        error_detail = await format_exception(reason, str(correlation_id), exc)
 
         await self.repository.fail_flow_run(
             flow_run_id=flow_run_id,
-            failure_reason=reason_str,
+            failure_reason=reason,
+            error=error_detail,
         )
 
         with self.tracer.observe(
@@ -681,7 +692,8 @@ class RuntimeExecutor:
             input={
                 "flow_run_id": str(flow_run_id),
                 "correlation_id": str(correlation_id),
-                "reason": reason_str,
+                "reason": reason,
+                "error_detail": error_detail,
             },
             metadata={"event_type": ExecutionEventType.FlowFailed.value},
         ) as event_handle:
@@ -692,7 +704,7 @@ class RuntimeExecutor:
                     session_id=session_id,
                     flow_run_id=flow_run_id,
                     correlation_id=correlation_id,
-                    payload={"reason": reason_str},
+                    payload={"reason": reason},
                     causation_id=None,
                     schema_version=1,
                 )
@@ -702,14 +714,14 @@ class RuntimeExecutor:
                     session_id=session_id,
                     flow_run_id=flow_run_id,
                     event_type=ExecutionEventType.FlowFailed,
-                    payload={"reason": reason_str},
+                    payload={"reason": reason},
                     correlation_id=correlation_id,
                     causation_id=None,
                     schema_version=1,
                 )
             if event_handle:
                 event_handle.success(
-                    output={"status": "recorded", "payload": {"reason": reason_str}}
+                    output={"status": "recorded", "payload": {"reason": reason}}
                 )
 
     @staticmethod

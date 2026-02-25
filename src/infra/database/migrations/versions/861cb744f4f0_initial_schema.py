@@ -142,8 +142,12 @@ def upgrade() -> None:
         sa.Column("prompt_id", sa.UUID(), nullable=False),
         sa.Column("node_type", sa.String(length=64), nullable=False),
         sa.Column("template_text", sa.Text(), nullable=False),
-        sa.Column("input_schema_id", sa.String(length=128), nullable=True),
-        sa.Column("output_schema_id", sa.String(length=128), nullable=True),
+        sa.Column(
+            "input_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column(
+            "output_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("frozen_hash", sa.String(length=64), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),

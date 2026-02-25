@@ -6,7 +6,7 @@ from domain.flows.schemas.graph import FlowGraphDefinition
 from exceptions.service_exceptions import DomainValidationException
 
 
-TERMINAL_NODE_TYPES = {"ResponseNode", "FallbackNode"}
+TERMINAL_NODE_TYPES = {"ResponseComposer", "FallbackNode"}
 
 
 class FlowGraphValidator:

@@ -243,7 +243,7 @@ class ToolOrchestrator:
         latency_ms = int((time.monotonic() - started_at) * 1000)
         retries = max(attempt - 1, 0)
         response_size = (
-            len(result.get("text", "").encode("utf-8"))
+            len(json.dumps(result.get("body"), default=str).encode("utf-8"))
             if isinstance(result, dict)
             else 0
         )

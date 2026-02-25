@@ -129,8 +129,7 @@ class PromptRepository:
                 model = NodePromptModel(
                     node_type=prompt.node_type,
                     template_text=prompt.template_text,
-                    input_schema_id=prompt.input_schema_id,
-                    output_schema_id=prompt.output_schema_id,
+                    output_schema=prompt.output_schema,
                     version=next_version,
                     frozen_hash=frozen_hash,
                     is_active=True,
@@ -188,12 +187,9 @@ class PromptRepository:
                 new_model = NodePromptModel(
                     node_type=old_model.node_type,
                     template_text=update_data.template_text or old_model.template_text,
-                    input_schema_id=update_data.input_schema_id
-                    if update_data.input_schema_id is not None
-                    else old_model.input_schema_id,
-                    output_schema_id=update_data.output_schema_id
-                    if update_data.output_schema_id is not None
-                    else old_model.output_schema_id,
+                    output_schema=update_data.output_schema
+                    if update_data.output_schema is not None
+                    else old_model.output_schema,
                     version=new_version,
                     frozen_hash=frozen_hash,
                     is_active=True,

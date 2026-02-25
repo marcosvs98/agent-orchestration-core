@@ -15,7 +15,9 @@ class ActiveMemoryPolicyVersion(ORMBaseModel):
     )
     memory_policy_version_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey("memory_policy_version.memory_policy_version_id", ondelete="RESTRICT"),
+        ForeignKey(
+            "memory_policy_version.memory_policy_version_id", ondelete="RESTRICT"
+        ),
         nullable=False,
     )
     activated_by_principal_id = Column(String(length=128), nullable=False)

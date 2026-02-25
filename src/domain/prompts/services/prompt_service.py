@@ -54,8 +54,8 @@ class PromptService:
         if node_type in self._cache:
             del self._cache[node_type]
 
-    def _validate_schema(self, schema_id: str | None, schema_data: dict | None) -> bool:
-        if schema_id is None or schema_data is None:
+    def _validate_schema(self, schema_data: dict | None, schema_field: str) -> bool:
+        if schema_data is None:
             return True
         try:
             jsonschema.Draft202012Validator.check_schema(schema_data)
@@ -63,7 +63,7 @@ class PromptService:
         except JsonSchemaValidationError as exc:
             logger.warning(
                 "Invalid JSON schema",
-                schema_id=schema_id,
+                schema_field=schema_field,
                 error=str(exc),
             )
             return False
@@ -72,38 +72,12 @@ class PromptService:
         if not prompt.template_text or len(prompt.template_text.strip()) == 0:
             return False
 
-        if prompt.input_schema_id:
-            try:
-                schema_data = self._load_schema(prompt.input_schema_id)
-                if schema_data and not self._validate_schema(
-                    prompt.input_schema_id, schema_data
-                ):
-                    return False
-            except Exception as exc:
-                logger.warning(
-                    "Failed to load input schema",
-                    schema_id=prompt.input_schema_id,
-                    error=str(exc),
-                )
-
-        if prompt.output_schema_id:
-            try:
-                schema_data = self._load_schema(prompt.output_schema_id)
-                if schema_data and not self._validate_schema(
-                    prompt.output_schema_id, schema_data
-                ):
-                    return False
-            except Exception as exc:
-                logger.warning(
-                    "Failed to load output schema",
-                    schema_id=prompt.output_schema_id,
-                    error=str(exc),
-                )
+        if not self._validate_schema(prompt.input_schema, "input_schema"):
+            return False
+        if not self._validate_schema(prompt.output_schema, "output_schema"):
+            return False
 
         return True
-
-    def _load_schema(self, schema_id: str) -> dict:
-        return {}
 
     async def get_prompt(self, node_type: str) -> Optional[NodePrompt]:
         entry = self._cache.get(node_type)
@@ -133,8 +107,8 @@ class PromptService:
 
                 update_data = NodePromptUpdate(
                     template_text=create.template_text,
-                    input_schema_id=create.input_schema_id,
-                    output_schema_id=create.output_schema_id,
+                    input_schema=create.input_schema,
+                    output_schema=create.output_schema,
                     description=create.description,
                 )
                 with self.tracer.observe(

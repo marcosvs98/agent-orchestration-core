@@ -17,7 +17,7 @@ pc-run-all:
 pc-run:
 	@PYTHONPATH=src python3.13 -m pre_commit run
 
-gen-admin-token:
+gen-token:
 	@PYTHONPATH=src python3 resources/generate_jwt_token.py
 
 run-seed:

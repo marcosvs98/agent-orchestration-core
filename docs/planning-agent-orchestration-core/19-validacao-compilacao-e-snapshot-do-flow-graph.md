@@ -58,7 +58,7 @@ Executada na transição **DRAFT → VALIDATED**.
 ### Regras obrigatórias
 
 • existe exatamente 1 StartNode
-• existe ao menos 1 ResponseNode ou FallbackNode
+• existe ao menos 1 ResponseComposer ou FallbackNode
 • todo node é alcançável a partir do Start
 • não existem nós órfãos
 • não existem edges sem condição

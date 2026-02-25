@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -65,13 +66,18 @@ class RagContextItem(BaseModel):
     observed_at: datetime | None = None
 
 
+class RagContextReason(StrEnum):
+    OK = "OK"
+    NO_MATCHES = "NO_MATCHES"
+
+
 class RagContext(BaseModel):
     """Represent the retrieval outcome used by the generator."""
 
     context_items: list[RagContextItem]
     context_summary: str | None = None
     eligible: bool
-    reason: str
+    reason: RagContextReason
     generation_contract: RagGenerationContract | None = None
 
 

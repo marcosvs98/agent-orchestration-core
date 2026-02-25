@@ -78,7 +78,7 @@ async def seed_tool() -> None:
         if existing_by_version:
             return
 
-        base_url = "http://router-mock-api-dev:3000"
+        base_url = "http://localhost:3001"
         servers = parsed_spec.servers if hasattr(parsed_spec, "servers") else []
         if servers and isinstance(servers, list) and len(servers) > 0:
             server_url = servers[0].get("url", "")
@@ -129,7 +129,7 @@ async def _create_basic_tool() -> None:
         tool_config = result.scalar_one_or_none()
         if tool_config is None:
             tool_config_dict = ToolConfigConfig(
-                url="http://localhost:3000/createExpense",
+                url="http://localhost:3001/createExpense",
                 method="POST",
                 rag_activation={
                     "tenant_knowledge": {"enabled": True},

@@ -411,20 +411,13 @@ class RagRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def count_documents_for_user(
-        self, *, tenant_id: UUID, user_id: str
-    ) -> int:
+    async def count_documents_for_user(self, *, tenant_id: UUID, user_id: str) -> int:
         async with self.db.get_session() as session:
             stmt = (
                 select(sa.func.count(RagDocumentModel.document_id))
                 .where(RagDocumentModel.tenant_id == tenant_id)
-                .where(
-                    RagDocumentModel.doc_metadata["scope"].astext
-                    == "USER_MEMORY"
-                )
-                .where(
-                    RagDocumentModel.doc_metadata["user_id"].astext == user_id
-                )
+                .where(RagDocumentModel.doc_metadata["scope"].astext == "USER_MEMORY")
+                .where(RagDocumentModel.doc_metadata["user_id"].astext == user_id)
             )
             result = await session.execute(stmt)
             value = result.scalar()
@@ -646,7 +639,12 @@ class RagRepository:
                     items: list[
                         tuple[RagChunkModel, float, datetime | None, str | None]
                     ] = []
-                    for chunk, distance, document_created_at, document_observed_at in rows:
+                    for (
+                        chunk,
+                        distance,
+                        document_created_at,
+                        document_observed_at,
+                    ) in rows:
                         score = 1.0 - float(distance)
                         if score < similarity_threshold:
                             continue

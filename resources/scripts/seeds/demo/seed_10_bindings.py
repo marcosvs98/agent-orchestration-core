@@ -18,17 +18,24 @@ from infra.database.models.tool.agent_version_tool_binding import (
 
 from seeds.demo.ids import (
     AGENT_VERSION_V1_ID,
+    NODE_CLARIFICATION_INTENT_ID,
+    NODE_CLARIFICATION_ID,
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
-    NODE_CLARIFICATION_ID,
     TOOL_CONFIG_DEMO_ID,
 )
 
 
 async def seed_bindings() -> None:
     async with get_db() as session:
-        nodes = [NODE_INTENT_ID, NODE_SLOT_ID, NODE_RESPONSE_ID, NODE_CLARIFICATION_ID]
+        nodes = [
+            NODE_INTENT_ID,
+            NODE_SLOT_ID,
+            NODE_RESPONSE_ID,
+            NODE_CLARIFICATION_ID,
+            NODE_CLARIFICATION_INTENT_ID,
+        ]
 
         for node_id in nodes:
             result = await session.execute(

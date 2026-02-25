@@ -455,9 +455,8 @@ class RagActivationService:
         min_chars = int(min_chars_by_scope.get(scope, 8))
         if len(normalized) < min_chars:
             return RagActivationDecisionReason.INPUT_TOO_SHORT
-        if (
-            not allow_structured_input
-            and (normalized.startswith("{") or normalized.startswith("["))
+        if not allow_structured_input and (
+            normalized.startswith("{") or normalized.startswith("[")
         ):
             return RagActivationDecisionReason.INPUT_STRUCTURED
         return None

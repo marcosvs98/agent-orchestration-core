@@ -9,29 +9,37 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class PromptIntent(StrEnum):
-    INTENT_TOOL_SELECTION = "INTENT_TOOL_SELECTION"
-    PARAM_EXTRACTION = "PARAM_EXTRACTION"
-    SLOT_FILLING = "SLOT_FILLING"
-    CLARIFICATION = "CLARIFICATION"
-    RESPONSE_RENDER = "RESPONSE_RENDER"
+    INTENT_TOOL_SELECTION = "intent_tool_selection"
+    PARAM_EXTRACTION = "param_extraction"
+    SLOT_FILLING = "slot_filling"
+    CLARIFICATION = "clarification"
+    RESPONSE_RENDER = "response_render"
 
 
 class NodeType(StrEnum):
-    IntentToolSelectionNode = "IntentToolSelectionNode"
-    ParamExtractionNode = "ParamExtractionNode"
-    ClarificationNode = "ClarificationNode"
-    ResponseNode = "ResponseNode"
-    ToolExecutionNode = "ToolExecutionNode"
     UserContextEnrichmentNode = "UserContextEnrichmentNode"
-    FallbackNode = "FallbackNode"
+
+    IntentDetectionNode = "IntentDetectionNode"
+    ParamExtractionNode = "ParamExtractionNode"
+
+    ClarificationNode = "ClarificationNode"
+    ClarificationIntentNode = "ClarificationIntentNode"
+    ClarificationSlotNode = "ClarificationSlotNode"
+
+    ToolSelectionNode = "ToolSelectionNode"
+    ToolExecutionNode = "ToolExecutionNode"
+    ToolErrorHandlerNode = "ToolErrorHandlerNode"
+
+    ResponseComposer = "ResponseComposer"
+    FallbackNodeSLA = "FallbackNodeSLA"
 
 
 class NodePrompt(BaseModel):
     prompt_id: UUID
     node_type: str
     template_text: str
-    input_schema_id: str | None = None
-    output_schema_id: str | None = None
+    input_schema: Dict[str, Any] | None = None
+    output_schema: Dict[str, Any] | None = None
     version: int
     frozen_hash: str
     is_active: bool
@@ -46,20 +54,15 @@ class NodePrompt(BaseModel):
 class NodePromptCreate(BaseModel):
     node_type: str
     template_text: str = Field(..., min_length=1)
-    input_schema_id: str | None = None
-    output_schema_id: str | None = None
+    input_schema: Dict[str, Any] | None = None
+    output_schema: Dict[str, Any] | None = None
     description: str | None = None
     created_by: str | None = None
 
     @field_validator("node_type")
     @classmethod
     def validate_node_type(cls, v: str) -> str:
-        valid_types: set[str] = {
-            NodeType.IntentToolSelectionNode.value,
-            NodeType.ParamExtractionNode.value,
-            NodeType.ClarificationNode.value,
-            NodeType.ResponseNode.value,
-        }
+        valid_types: set[str] = {node_type.value for node_type in NodeType}
         if v not in valid_types:
             raise ValueError(f"node_type must be one of {', '.join(valid_types)}")
         return v
@@ -67,8 +70,8 @@ class NodePromptCreate(BaseModel):
 
 class NodePromptUpdate(BaseModel):
     template_text: str | None = Field(None, min_length=1)
-    input_schema_id: str | None = None
-    output_schema_id: str | None = None
+    input_schema: Dict[str, Any] | None = None
+    output_schema: Dict[str, Any] | None = None
     description: str | None = None
 
 

@@ -27,7 +27,7 @@ O usuário/admin define ou atualiza o template, mas **o runtime decide como apli
    * IntentToolSelectionNode
    * ParamExtractionNode / Slot Filling
    * ClarificationNode
-   * ResponseNode
+   * ResponseComposer
 
 2. **Atualização via API**:
 

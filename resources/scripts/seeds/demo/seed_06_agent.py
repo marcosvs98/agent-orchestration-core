@@ -10,6 +10,7 @@ if str(src_path) not in sys.path:
 
 from sqlalchemy import select
 
+from domain.agents.schemas.agents import PersonaConfig
 from domain.common.schemas.versioning import VersionStatus
 from infra.database import get_db
 from infra.database.models.agent.agent import Agent
@@ -49,19 +50,21 @@ async def seed_agent() -> None:
         )
         agent_version = result.scalar_one_or_none()
 
-        persona_config = {
-            "language": "pt_BR",
-            "tone": "professional",
-            "style": "concise",
-            "rules": [
-                "Nunca invente dados financeiros; trabalhe apenas com dados disponíveis no sistema.",
-                "Informe explicitamente quando não houver informação.",
-                "Confirme dados em caso de ambiguidade relevante.",
-                "Não assuma contexto financeiro não informado.",
-                "Não prometa funcionalidades inexistentes.",
-            ],
-            "max_response_length": 500,
-        }
+        persona_config = PersonaConfig.model_validate(
+            {
+                "language": "pt_BR",
+                "tone": "professional",
+                "style": "concise",
+                "rules": [
+                    "Nunca invente dados financeiros; trabalhe apenas com dados disponíveis no sistema.",
+                    "Informe explicitamente quando não houver informação.",
+                    "Confirme dados em caso de ambiguidade relevante.",
+                    "Não assuma contexto financeiro não informado.",
+                    "Não prometa funcionalidades inexistentes.",
+                ],
+                "max_response_length": 500,
+            }
+        ).model_dump(mode="json")
 
         if agent_version is None:
             agent_version = AgentVersion(

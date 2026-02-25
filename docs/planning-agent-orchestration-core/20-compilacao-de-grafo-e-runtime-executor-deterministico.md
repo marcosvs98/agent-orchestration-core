@@ -191,7 +191,7 @@ Node não decide próximo passo.
 * IntentToolSelectionNode
 * ToolExecutionNode
 * ClarificationNode
-* ResponseNode
+* ResponseComposer
 * FallbackNode
 
 Runtime trata todos igualmente.

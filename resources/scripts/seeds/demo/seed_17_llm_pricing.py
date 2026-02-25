@@ -16,6 +16,8 @@ from infra.database import get_db
 from infra.database.models.governance.llm_pricing import LLMPricing
 
 from seeds.demo.ids import (
+    LLM_PRICING_GPT4O_ID,
+    LLM_PRICING_GPT41_MINI_ID,
     LLM_PRICING_GPT4O_MINI_ID,
     PRINCIPAL_SYSTEM,
 )
@@ -23,24 +25,58 @@ from seeds.demo.ids import (
 
 async def seed_llm_pricing() -> None:
     async with get_db() as session:
-        result = await session.execute(
-            select(LLMPricing).where(
-                LLMPricing.llm_pricing_id == LLM_PRICING_GPT4O_MINI_ID
-            )
-        )
-        existing = result.scalar_one_or_none()
+        pricing_rows = [
+            (
+                LLM_PRICING_GPT4O_MINI_ID,
+                "gpt-4o-mini",
+                Decimal("0.150"),
+                Decimal("0.600"),
+                "ACTIVE",
+            ),
+            (
+                LLM_PRICING_GPT4O_ID,
+                "gpt-4o",
+                Decimal("5.000"),
+                Decimal("15.000"),
+                "ACTIVE",
+            ),
+            (
+                LLM_PRICING_GPT41_MINI_ID,
+                "gpt-4.1-mini",
+                Decimal("0.150"),
+                Decimal("0.600"),
+                "ACTIVE",
+            ),
+        ]
 
-        if existing is None:
-            pricing = LLMPricing(
-                llm_pricing_id=LLM_PRICING_GPT4O_MINI_ID,
-                provider="OPENAI",
-                provider_model="gpt-4o-mini",
-                unit="tokens",
-                input_cost_per_1k=Decimal("0.150"),
-                output_cost_per_1k=Decimal("0.600"),
-                currency="USD",
-                status="ACTIVE",
-                created_by=PRINCIPAL_SYSTEM,
+        for pricing_id, provider_model, input_cost, output_cost, status in pricing_rows:
+            result = await session.execute(
+                select(LLMPricing).where(LLMPricing.llm_pricing_id == pricing_id)
             )
-            session.add(pricing)
-            await session.commit()
+            existing = result.scalar_one_or_none()
+            if existing is None:
+                session.add(
+                    LLMPricing(
+                        llm_pricing_id=pricing_id,
+                        provider="OPENAI",
+                        provider_model=provider_model,
+                        unit="tokens",
+                        input_cost_per_1k=input_cost,
+                        output_cost_per_1k=output_cost,
+                        currency="USD",
+                        status=status,
+                        created_by=PRINCIPAL_SYSTEM,
+                    )
+                )
+            else:
+                existing.provider = "OPENAI"
+                existing.provider_model = provider_model
+                existing.unit = "tokens"
+                existing.input_cost_per_1k = input_cost
+                existing.output_cost_per_1k = output_cost
+                existing.currency = "USD"
+                existing.status = status
+                existing.created_by = PRINCIPAL_SYSTEM
+                session.add(existing)
+
+        await session.commit()

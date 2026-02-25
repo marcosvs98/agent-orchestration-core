@@ -82,12 +82,17 @@ from domain.agents.schemas.agents import PersonaConfig
 from application.prompts.prompt_resolver import PromptResolver
 from application.prompts.system_prompt_compiler import SystemPromptCompiler
 from domain.llm.services.context_builder import ContextBuilder
+from domain.llm.services.structured_output_schema_composer import (
+    StructuredOutputSchemaComposer,
+)
 from domain.context.services.retrievers import (
     TenantKnowledgeRetriever,
     UserMemoryReader,
 )
 from domain.context.services.rag_activation_service import RagActivationService
-from domain.context.services.memory_extraction_processor import MemoryExtractionProcessor
+from domain.context.services.memory_extraction_processor import (
+    MemoryExtractionProcessor,
+)
 from domain.context.services.memory_retrieval import MemoryRetrievalService
 from domain.context.services.session_context import SessionContextService
 from domain.context.services.memory_writer import MemoryWriteService
@@ -154,7 +159,7 @@ class ExecutionService(ExecutionServicePort):
         agents_repository = AgentsRepository(
             repository.db,
             tracer=tracer,
-            cache_adapter=getattr(repository, "cache_adapter", None),
+            cache_adapter=repository.cache_adapter,
         )
         self.tools_repository = ToolsRepository(repository.db, tracer=tracer)
         if tools_service:
@@ -229,12 +234,13 @@ class ExecutionService(ExecutionServicePort):
         context_builder = ContextBuilder(
             agents_repository,
             self.tools_repository,
-            rag_runtime_service=rag_runtime_service,
-            tenant_knowledge_retriever=tenant_knowledge_retriever,
-            user_memory_reader=user_memory_reader,
             memory_retrieval_service=memory_retrieval_service,
             rag_activation_service=rag_activation_service,
             runtime_context_policy=runtime_context_policy,
+            tracer=tracer,
+        )
+        structured_output_schema_composer = StructuredOutputSchemaComposer(
+            tools_repository=self.tools_repository,
             tracer=tracer,
         )
         system_prompt_compiler = SystemPromptCompiler(tracer)
@@ -243,6 +249,7 @@ class ExecutionService(ExecutionServicePort):
             context_builder=context_builder,
             execution_repository=repository,
             tracer=tracer,
+            structured_output_schema_composer=structured_output_schema_composer,
         )
         self.prompt_repository = prompt_repository
         self.system_prompt_compiler = system_prompt_compiler
@@ -303,12 +310,10 @@ class ExecutionService(ExecutionServicePort):
                     "circuit_breaker": {"failure_threshold": 5, "window_seconds": 60},
                 },
                 "llm": {
-                    "model_alias": "fake-model",
                     "max_tokens": 2048,
                     "max_latency_ms": 10000,
                     "max_cost_usd": 1.0,
                     "retry_limit": 0,
-                    "fallback_model_alias": None,
                     "max_cost_usd_per_flow_run": 5.0,
                     "max_cost_usd_per_tenant_window": 50.0,
                     "tenant_cost_window_seconds": 86400,
@@ -316,11 +321,10 @@ class ExecutionService(ExecutionServicePort):
                     "max_llm_calls_per_tenant_window": 500,
                     "tenant_llm_calls_window_seconds": 3600,
                     "max_latency_ms_hard": 15000,
-                    "degrade_model_alias": "text-small",
                 },
                 "memory_extraction": {},
                 "memory_retrieval": {},
-                "user_context_enrichment": {},
+                # "user_context_enrichment": {},
             },
         }
         self.policy_resolver = RuntimePolicyResolver(
@@ -675,7 +679,10 @@ class ExecutionService(ExecutionServicePort):
                 with self.tracer.observe(
                     as_type="chain",
                     name="flow.execution",
-                    input={"plan_hash": execution_plan_hash, "node_count": len(plan.nodes)},
+                    input={
+                        "plan_hash": execution_plan_hash,
+                        "node_count": len(plan.nodes),
+                    },
                     metadata={"chain_name": "flow.execution"},
                 ) as chain_handle:
                     await self.runtime.run(

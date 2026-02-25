@@ -14,7 +14,10 @@ from domain.governance.schemas.memory_policy import (
     ResolvedMemoryPolicySource,
     UserMemoryItem,
 )
-from exceptions.service_exceptions import AuthorizationDeniedException, DomainValidationException
+from exceptions.service_exceptions import (
+    AuthorizationDeniedException,
+    DomainValidationException,
+)
 
 
 class MemoryPolicyService:
@@ -22,7 +25,9 @@ class MemoryPolicyService:
         self.repository = repository
 
     async def resolve(self, *, tenant_id: UUID) -> ResolvedMemoryPolicy:
-        policy_version_id = await self.repository.get_active_memory_policy_version_id(tenant_id)
+        policy_version_id = await self.repository.get_active_memory_policy_version_id(
+            tenant_id
+        )
         if policy_version_id is None:
             return ResolvedMemoryPolicy(
                 source=ResolvedMemoryPolicySource.DEFAULT_NONE,
@@ -30,7 +35,9 @@ class MemoryPolicyService:
                 policy_version_id=None,
                 definition=None,
             )
-        policy_version = await self.repository.get_memory_policy_version(policy_version_id)
+        policy_version = await self.repository.get_memory_policy_version(
+            policy_version_id
+        )
         if policy_version is None:
             return ResolvedMemoryPolicy(
                 source=ResolvedMemoryPolicySource.DEFAULT_NONE,
@@ -40,7 +47,9 @@ class MemoryPolicyService:
             )
         definition = MemoryPolicyDefinition(
             retention_ttl_seconds=int(policy_version.retention_ttl_seconds),
-            consent=ConsentDefinition.model_validate(policy_version.consent_definition or {}),
+            consent=ConsentDefinition.model_validate(
+                policy_version.consent_definition or {}
+            ),
             allowed_sources=[
                 MemoryPolicySource(value)
                 for value in list(policy_version.allowed_sources or [])
@@ -134,7 +143,9 @@ class MemoryPolicyService:
             allowed_set = {str(field_name) for field_name in allowed_field_names}
             unexpected_fields = set(payload.keys()) - allowed_set
             if unexpected_fields:
-                raise DomainValidationException(message="memory_item_fields_not_allowed")
+                raise DomainValidationException(
+                    message="memory_item_fields_not_allowed"
+                )
 
     async def _enforce_consent(
         self,

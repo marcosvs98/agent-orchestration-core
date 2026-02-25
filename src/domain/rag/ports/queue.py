@@ -6,5 +6,4 @@ from domain.rag.schemas.embedding_job import EmbeddingJobPayload
 
 
 class EmbeddingJobQueuePort(Protocol):
-    async def enqueue_embedding_job(self, *, payload: EmbeddingJobPayload) -> None:
-        ...
+    async def enqueue_embedding_job(self, *, payload: EmbeddingJobPayload) -> None: ...

@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from domain.common.schemas.versioning import VersionStatus
 from domain.execution.schemas.trace import TraceContext
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.schemas.rag import RagConfigOptions, RagDocumentCreate
@@ -144,7 +145,7 @@ async def seed_rag() -> None:
                 rag_config_id=RAG_CONFIG_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
                 vector_store_id=VECTOR_STORE_DEMO_ID,
-                status="PUBLISHED",
+                status=VersionStatus.PUBLISHED.value,
                 version_major=1,
                 version_minor=0,
                 version_patch=0,
@@ -157,12 +158,12 @@ async def seed_rag() -> None:
             if not options:
                 options = RagConfigOptions().model_dump(mode="json")
                 existing_config.options = options
-            if existing_config.status != "PUBLISHED":
-                existing_config.status = "PUBLISHED"
+            if existing_config.status != VersionStatus.PUBLISHED.value:
+                existing_config.status = VersionStatus.PUBLISHED.value
             await session.commit()
 
     if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is required for RAG seed ingestion")
+        raise RuntimeError("`OPENAI_API_KEY` is required for RAG seed ingestion")
 
     cache_adapter = RedisAdapter()
     database_connection = DatabaseConnection(engine=engine, sessionmaker=async_session)
@@ -180,6 +181,7 @@ async def seed_rag() -> None:
         embedding_adapter=embedding_adapter,
         tracer=tracer,
     )
+    '''
     documents = [
         RagDocumentCreate(
             source="assistente-bolso",
@@ -335,6 +337,8 @@ async def seed_rag() -> None:
             metadata={"topic": "policy"},
         ),
     ]
+    '''
+    documents = []
     for document in documents:
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,

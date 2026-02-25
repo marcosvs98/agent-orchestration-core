@@ -11,6 +11,12 @@ if str(src_path) not in sys.path:
 from sqlalchemy import select
 
 from domain.common.schemas.versioning import VersionStatus
+from domain.governance.schemas.rag_policy import (
+    RagPolicyDefinition,
+    RagScopePolicy,
+    RagTaskDefaults,
+)
+from domain.llm.schemas.llm import LLMTaskType
 from infra.database import get_db
 from infra.database.models.governance.active_rag_policy_version import (
     ActiveRagPolicyVersion,
@@ -42,38 +48,38 @@ async def seed_rag_policy() -> None:
             )
             await session.commit()
 
-        policy_definition = {
-            "defaults": {
-                "INTENT_SELECTION": {
-                    "tenant_knowledge": {"enabled": True},
-                    "user_memory_vector": {
-                        "enabled": True,
-                        "allowed_tool_config_ids": [
-                            str(TOOL_CONFIG_DEMO_ID)
-                        ],
-                    },
+        policy_definition = RagPolicyDefinition.model_validate(
+            {
+                "defaults": {
+                    LLMTaskType.INTENT_SELECTION: RagTaskDefaults(
+                        tenant_knowledge=RagScopePolicy(enabled=True),
+                        user_memory_vector=RagScopePolicy(
+                            enabled=True,
+                            allowed_tool_config_ids=[TOOL_CONFIG_DEMO_ID],
+                        ),
+                    ),
+                    LLMTaskType.SLOT_FILLING: RagTaskDefaults(
+                        tenant_knowledge=RagScopePolicy(enabled=True),
+                        user_memory_vector=RagScopePolicy(enabled=True),
+                    ),
+                    LLMTaskType.RESPONSE_RENDER: RagTaskDefaults(
+                        tenant_knowledge=RagScopePolicy(enabled=True),
+                        user_memory_vector=RagScopePolicy(enabled=True),
+                    ),
+                    LLMTaskType.CLARIFICATION: RagTaskDefaults(
+                        tenant_knowledge=RagScopePolicy(enabled=True),
+                        user_memory_vector=RagScopePolicy(enabled=True),
+                    ),
                 },
-                "SLOT_FILLING": {
-                    "tenant_knowledge": {"enabled": True},
-                    "user_memory_vector": {"enabled": True},
+                "require_published_rag_config": True,
+                "top_k_cap": 5,
+                "min_query_chars_by_scope": {
+                    "TENANT_KNOWLEDGE": 8,
+                    "USER_MEMORY_VECTOR": 8,
                 },
-                "RESPONSE_RENDER": {
-                    "tenant_knowledge": {"enabled": True},
-                    "user_memory_vector": {"enabled": True},
-                },
-                "CLARIFICATION": {
-                    "tenant_knowledge": {"enabled": True},
-                    "user_memory_vector": {"enabled": True},
-                },
-            },
-            "require_published_rag_config": True,
-            "top_k_cap": 5,
-            "min_query_chars_by_scope": {
-                "TENANT_KNOWLEDGE": 8,
-                "USER_MEMORY_VECTOR": 8,
-            },
-            "allow_structured_input": False,
-        }
+                "allow_structured_input": False,
+            }
+        ).model_dump(mode="json")
         result = await session.execute(
             select(RagPolicyVersion).where(
                 RagPolicyVersion.rag_policy_version_id == RAG_POLICY_VERSION_V1_ID

@@ -6,7 +6,9 @@ from typing import Any, Dict
 from uuid import UUID
 
 from domain.context.schemas.memory_write import MemoryWriteEventContext
-from domain.context.services.memory_extraction_processor import MemoryExtractionProcessor
+from domain.context.services.memory_extraction_processor import (
+    MemoryExtractionProcessor,
+)
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.events import ExecutionEventType
@@ -313,7 +315,7 @@ class MemoryExtractionHook(ExecutionEventHook):
         payload = kwargs.get("payload")
         causation_id = kwargs.get("causation_id")
         if (
-            not isinstance(tenant_id, UUID)
+            not isinstance(tenant_id, UUID)  # pylint: disable=too-many-boolean-expressions
             or not isinstance(user_id, str)
             or not isinstance(session_id, UUID)
             or not isinstance(flow_run_id, UUID)

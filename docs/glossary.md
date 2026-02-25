@@ -1,4 +1,4 @@
-# Glossario 
+# Glossario
 
 ### Tenant Knowledge (memória organizacional)
 

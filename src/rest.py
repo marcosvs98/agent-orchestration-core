@@ -91,7 +91,7 @@ def init_routes(app: FastAPI, controllers: list[Any]) -> None:
         try:
             try:
                 container = request.app.state.container
-            except AttributeError as e:
+            except AttributeError:
                 container = None
             if container:
                 redis_adapter = container.adapters.redis_adapter()

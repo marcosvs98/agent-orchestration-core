@@ -108,7 +108,9 @@ class MemoryWriteService:
                     new_version=None,
                 )
             else:
-                has_value, preference_value = self._extract_preference_value(memory_item)
+                has_value, preference_value = self._extract_preference_value(
+                    memory_item
+                )
                 if not has_value:
                     await self._emit_memory_updated_outcome(
                         tenant_id=tenant_id,
@@ -230,29 +232,35 @@ class MemoryWriteService:
                 ):
                     pass
             else:
-                prepared_document = await self.rag_runtime_service.prepare_document_for_embedding(
-                tenant_id=tenant_id,
-                rag_config_id=memory_item.rag_config_id,
-                document=RagDocumentCreate(
-                    source=memory_item.source.value,
-                    doc_type="USER_MEMORY_ITEM",
-                    content=json.dumps(memory_item.data, ensure_ascii=True),
-                    metadata={
-                        "scope": ContextLayerScope.USER_MEMORY.value,
-                        "user_id": user_id,
-                        "schema_id": memory_item.schema_id,
-                        "schema_version": memory_item.schema_version,
-                        "policy_version_id": str(resolved_policy.policy_version_id)
-                        if resolved_policy.policy_version_id
-                        else None,
-                        "observed_at": (
-                            memory_item.observed_at.isoformat()
-                            if isinstance(memory_item.observed_at, datetime)
-                            else None
+                prepared_document = (
+                    await self.rag_runtime_service.prepare_document_for_embedding(
+                        tenant_id=tenant_id,
+                        rag_config_id=memory_item.rag_config_id,
+                        document=RagDocumentCreate(
+                            source=memory_item.source.value,
+                            doc_type="USER_MEMORY_ITEM",
+                            content=json.dumps(memory_item.data, ensure_ascii=True),
+                            metadata={
+                                "scope": ContextLayerScope.USER_MEMORY.value,
+                                "user_id": user_id,
+                                "schema_id": memory_item.schema_id,
+                                "schema_version": memory_item.schema_version,
+                                "policy_version_id": str(
+                                    resolved_policy.policy_version_id
+                                )
+                                if resolved_policy.policy_version_id
+                                else None,
+                                "observed_at": (
+                                    memory_item.observed_at.isoformat()
+                                    if isinstance(memory_item.observed_at, datetime)
+                                    else None
+                                ),
+                                "expires_at": expires_at.isoformat()
+                                if expires_at
+                                else None,
+                            },
                         ),
-                        "expires_at": expires_at.isoformat() if expires_at else None,
-                    },
-                ),
+                    )
                 )
                 result.embedded_document_id = prepared_document.id
                 result.targets_applied.append(MemoryWriteTarget.USER_MEMORY_VECTOR)
@@ -325,8 +333,12 @@ class MemoryWriteService:
                             tenant_id=tenant_id,
                             rag_config_id=memory_item.rag_config_id,
                             document_id=prepared_document.id,
-                            flow_run_id=event_context.flow_run_id if event_context else None,
-                            session_id=event_context.session_id if event_context else None,
+                            flow_run_id=event_context.flow_run_id
+                            if event_context
+                            else None,
+                            session_id=event_context.session_id
+                            if event_context
+                            else None,
                             correlation_id=event_context.correlation_id
                             if event_context
                             else None,
@@ -383,7 +395,9 @@ class MemoryWriteService:
                 return allowed_schema
         return None
 
-    def _extract_payload_preference_key(self, memory_item: UserMemoryItem) -> str | None:
+    def _extract_payload_preference_key(
+        self, memory_item: UserMemoryItem
+    ) -> str | None:
         key = memory_item.data.get("preference_key")
         if not isinstance(key, str):
             return None

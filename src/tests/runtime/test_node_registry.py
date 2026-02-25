@@ -3,10 +3,10 @@ import pytest
 from domain.execution.services.graph_runtime.nodes import (
     ClarificationNode,
     FallbackNode,
-    IntentToolSelectionNode,
     ParamExtractionNode,
-    ResponseNode,
+    ResponseComposer,
     ToolExecutionNode,
+    ToolSelectionNode,
 )
 from domain.execution.services.graph_runtime.registry import NodeRegistry
 
@@ -15,9 +15,9 @@ def test_node_registry_resolves_valid_node_types():
     """Test that registry resolves node types to appropriate classes."""
     registry = NodeRegistry()
 
-    intent_cls = registry.resolve("IntentToolSelectionNode")
+    intent_cls = registry.resolve("ToolSelectionNode")
     assert intent_cls is not None
-    assert issubclass(intent_cls, IntentToolSelectionNode)
+    assert issubclass(intent_cls, ToolSelectionNode)
 
     tool_cls = registry.resolve("ToolExecutionNode")
     assert tool_cls is not None
@@ -31,7 +31,7 @@ def test_node_registry_resolves_valid_node_types():
     assert param_cls is not None
     assert issubclass(param_cls, ParamExtractionNode)
 
-    assert registry.resolve("ResponseNode") == ResponseNode
+    assert registry.resolve("ResponseNode") == ResponseComposer
     assert registry.resolve("FallbackNode") == FallbackNode
 
 

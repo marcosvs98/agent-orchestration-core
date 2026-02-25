@@ -4,6 +4,7 @@ import ast
 from collections import defaultdict
 from typing import Dict, List
 
+from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
 from domain.flows.schemas.graph import FlowGraphDefinition, FlowGraphEdge
 from domain.flows.services.flow_graph_validator import FlowGraphValidator
 from exceptions.service_exceptions import DomainValidationException
@@ -23,12 +24,9 @@ class FlowGraphDraftValidator:
     def _validate_edge_syntax(edges: List[FlowGraphEdge]) -> None:
         for edge in edges:
             try:
-                expr = edge.condition.replace("&&", " and ").replace("||", " or ")
-                ast.parse(expr, mode="eval")
-            except SyntaxError as exc:
-                raise DomainValidationException(
-                    message="edge_condition_invalid"
-                ) from exc
+                EdgeEvaluator.compile_condition(edge.condition)
+            except DomainValidationException as exc:
+                raise exc from exc
 
     @staticmethod
     def _validate_mutual_exclusion(edges: List[FlowGraphEdge]) -> None:
@@ -83,7 +81,7 @@ class FlowGraphDraftValidator:
                 right = node.comparators[0]
                 if isinstance(left, ast.Constant) and isinstance(right, ast.Constant):
                     return (
-                        eval(compile(ast.Expression(node), "<ast>", "eval")) is True
+                        eval(compile(ast.Expression(node), "<ast>", "eval")) is True  # pylint: disable=eval-used
                     )  # safe because constants only
         return False
 

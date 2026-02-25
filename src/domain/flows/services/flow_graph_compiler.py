@@ -1,59 +1,16 @@
 from __future__ import annotations
 
-import ast
 import hashlib
 import json
 from typing import Any, Dict, List
 
+from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
 from domain.flows.schemas.graph import FlowGraphDefinition, FlowGraphEdge
-from exceptions.service_exceptions import DomainValidationException
 
 
-class ConditionCompiler(ast.NodeVisitor):
-    ALLOWED_BINOPS = {ast.And, ast.Or}
-    ALLOWED_CMP = {ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE}
-
-    def compile(self, condition: str) -> Dict[str, Any]:
-        expr = condition.replace("&&", " and ").replace("||", " or ")
-        try:
-            parsed = ast.parse(expr, mode="eval")
-        except SyntaxError as exc:
-            raise DomainValidationException(message="edge_condition_invalid") from exc
-        return self.visit(parsed.body)
-
-    def visit(self, node: ast.AST) -> Any:
-        if isinstance(node, ast.BoolOp):
-            if type(node.op) not in self.ALLOWED_BINOPS:
-                raise DomainValidationException(message="edge_condition_not_supported")
-            op = "AND" if isinstance(node.op, ast.And) else "OR"
-            return {
-                "type": "bool_op",
-                "op": op,
-                "values": [self.visit(v) for v in node.values],
-            }
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            return {"type": "not", "value": self.visit(node.operand)}
-        if isinstance(node, ast.Compare):
-            if len(node.ops) != 1 or len(node.comparators) != 1:
-                raise DomainValidationException(message="edge_condition_not_supported")
-            op = node.ops[0]
-            if type(op) not in self.ALLOWED_CMP:
-                raise DomainValidationException(message="edge_condition_not_supported")
-            return {
-                "type": "compare",
-                "op": op.__class__.__name__,
-                "left": self.visit(node.left),
-                "right": self.visit(node.comparators[0]),
-            }
-        if isinstance(node, ast.Name):
-            if node.id == "true":
-                return {"type": "constant", "value": True}
-            if node.id == "false":
-                return {"type": "constant", "value": False}
-            return {"type": "identifier", "value": node.id}
-        if isinstance(node, ast.Constant):
-            return {"type": "constant", "value": node.value}
-        raise DomainValidationException(message="edge_condition_not_supported")
+class ConditionCompiler:
+    def compile(self, condition: str) -> Any:
+        return EdgeEvaluator.compile_condition(condition)
 
 
 class FlowGraphCompiler:

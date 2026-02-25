@@ -66,7 +66,9 @@ class MemoryRetrievalService:
             input={
                 "tenant_id": str(execution_context.tenant_id)
                 if execution_context
-                else (str(tenant_id_for_knowledge) if tenant_id_for_knowledge else None),
+                else (
+                    str(tenant_id_for_knowledge) if tenant_id_for_knowledge else None
+                ),
                 "user_id": user_id_for_memory
                 or (execution_context.user_id if execution_context else None),
                 "flow_run_id": str(execution_context.flow_run_id)
@@ -94,14 +96,16 @@ class MemoryRetrievalService:
                 and tenant_rag_config_id is not None
                 and user_input
             ):
-                tenant_knowledge_context = await self.tenant_knowledge_retriever.retrieve(
-                    query=TenantKnowledgeQuery(
-                        tenant_id=tenant_id_for_knowledge,
-                        rag_config_id=tenant_rag_config_id,
-                        user_input=user_input,
-                    ),
-                    top_k_override=tenant_top_k_override,
-                    filters_override=tenant_filters_override,
+                tenant_knowledge_context = (
+                    await self.tenant_knowledge_retriever.retrieve(
+                        query=TenantKnowledgeQuery(
+                            tenant_id=tenant_id_for_knowledge,
+                            rag_config_id=tenant_rag_config_id,
+                            user_input=user_input,
+                        ),
+                        top_k_override=tenant_top_k_override,
+                        filters_override=tenant_filters_override,
+                    )
                 )
 
             user_memory_context = None
@@ -130,7 +134,9 @@ class MemoryRetrievalService:
                         rag_config_id=tenant_rag_config_id
                         if decision.allow_user_memory_vector
                         else None,
-                        user_input=user_input if decision.allow_user_memory_vector else "",
+                        user_input=user_input
+                        if decision.allow_user_memory_vector
+                        else "",
                     ),
                     task_type=task_type,
                     task_flags=task_flags,
@@ -159,17 +165,25 @@ class MemoryRetrievalService:
             name="domain.context.memory_retrieval.completed",
             input={
                 "session_loaded": result.session_context is not None,
-                "tenant_rag_items": len(result.tenant_knowledge_context.rag_context.context_items)
+                "tenant_rag_items": len(
+                    result.tenant_knowledge_context.rag_context.context_items
+                )
                 if result.tenant_knowledge_context
                 and result.tenant_knowledge_context.rag_context
                 else 0,
-                "user_preferences_count": len(result.user_memory_context.structured.preferences)
+                "user_preferences_count": len(
+                    result.user_memory_context.structured.preferences
+                )
                 if result.user_memory_context
                 else 0,
-                "user_profile_keys_count": len(result.user_memory_context.structured.profile)
+                "user_profile_keys_count": len(
+                    result.user_memory_context.structured.profile
+                )
                 if result.user_memory_context
                 else 0,
-                "user_rag_items": len(result.user_memory_context.rag_context.context_items)
+                "user_rag_items": len(
+                    result.user_memory_context.rag_context.context_items
+                )
                 if result.user_memory_context and result.user_memory_context.rag_context
                 else 0,
                 "ttl_mode": "expires_at",
@@ -224,7 +238,9 @@ class MemoryRetrievalService:
         timestamp_source: TemporalTimestampSource,
     ) -> datetime | None:
         if timestamp_source == TemporalTimestampSource.CREATED_AT:
-            return self._ensure_utc(item.created_at) or self._ensure_utc(item.observed_at)
+            return self._ensure_utc(item.created_at) or self._ensure_utc(
+                item.observed_at
+            )
         return self._ensure_utc(item.observed_at) or self._ensure_utc(item.created_at)
 
     def _ensure_utc(self, value: datetime | None) -> datetime | None:

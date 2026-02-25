@@ -166,6 +166,8 @@ disable=
     C0412,  # ungrouped-imports,
     E0611,  # no-name-in-module,
     C0103,  # invalid-name
+    R0917,  # too-many-positional-arguments,
+    R0911,  # too-many-return-statements,
     R0914,  # too-many-locals
     R0913,  # too-many-arguments
     R0902,  # too-many-instance-attributes

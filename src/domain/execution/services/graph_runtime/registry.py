@@ -6,9 +6,11 @@ from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.nodes import (
     ClarificationNode,
     FallbackNode,
-    IntentToolSelectionNode,
+    IntentDetectionNode,
+    ToolSelectionNode,
     ParamExtractionNode,
-    ResponseNode,
+    ResponseComposer,
+    ToolErrorHandlerNode,
     ToolExecutionNode,
     UserContextEnrichmentNode,
 )
@@ -33,11 +35,13 @@ class NodeRegistry:
         self.execution_repository = execution_repository
         self.tracer = tracer
         self._registry: Dict[str, Type[NodeExecutor]] = {
-            IntentToolSelectionNode.node_type: IntentToolSelectionNode,
+            ToolSelectionNode.node_type: ToolSelectionNode,
+            IntentDetectionNode.node_type: IntentDetectionNode,
             ParamExtractionNode.node_type: ParamExtractionNode,
             ToolExecutionNode.node_type: ToolExecutionNode,
             ClarificationNode.node_type: ClarificationNode,
-            ResponseNode.node_type: ResponseNode,
+            ToolErrorHandlerNode.node_type: ToolErrorHandlerNode,
+            ResponseComposer.node_type: ResponseComposer,
             UserContextEnrichmentNode.node_type: UserContextEnrichmentNode,
             FallbackNode.node_type: FallbackNode,
         }
@@ -53,8 +57,11 @@ class NodeRegistry:
             input={"node_type": node_type},
         ) as agent_handle:
             node_cls = self._registry.get(node_type)
-            if node_type == IntentToolSelectionNode.node_type:
-                base_cls = node_cls or IntentToolSelectionNode
+            if node_type in {
+                ToolSelectionNode.node_type,
+                IntentDetectionNode.node_type,
+            }:
+                base_cls = node_cls or ToolSelectionNode
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
@@ -83,7 +90,9 @@ class NodeRegistry:
                         )
 
                 return _ParamExtractionNode
-            if node_type == ClarificationNode.node_type:
+            if node_type in {
+                ClarificationNode.node_type,
+            }:
                 base_cls = node_cls or ClarificationNode
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
@@ -113,13 +122,13 @@ class NodeRegistry:
                         )
 
                 return _ToolExecutionNode
-            if node_type == ResponseNode.node_type:
-                base_cls = node_cls or ResponseNode
+            if node_type == ResponseComposer.node_type:
+                base_cls = node_cls or ResponseComposer
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
 
-                class _ResponseNode(base_cls):  # type: ignore[misc]
+                class _ResponseComposer(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
                         super().__init__(
                             llm_executor=llm_executor,
@@ -127,7 +136,7 @@ class NodeRegistry:
                             tracer=tracer,
                         )
 
-                return _ResponseNode
+                return _ResponseComposer
             if node_type == UserContextEnrichmentNode.node_type:
                 base_cls = node_cls or UserContextEnrichmentNode
                 tracer = self.tracer

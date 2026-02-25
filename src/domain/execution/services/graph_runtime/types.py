@@ -15,10 +15,14 @@ class NodeExecutionStatus(StrEnum):
     NEEDS_INPUT = "NEEDS_INPUT"
 
 
-class IntentCategory(StrEnum):
-    TRANSACTION = "TRANSACTION"
-    DECLARATION = "DECLARATION"
-    SMALL_TALK = "SMALL_TALK"
+class IntentType(StrEnum):
+    QUERY = "query"
+    EXECUTION = "execution"
+    GENERATION = "generation"
+    TRANSFORMATION = "transformation"
+    ANALYSIS = "analysis"
+    CONVERSATION = "conversation"
+    CONTROL = "control"
 
 
 class IntentValidationStatus(StrEnum):
@@ -29,6 +33,17 @@ class IntentValidationStatus(StrEnum):
 class UserContextEnrichmentMode(StrEnum):
     GATED = "GATED"
     LEGACY = "LEGACY"
+
+
+class OperationStatus(StrEnum):
+    """Lifecycle of an operation (execution level). Aligned with nodes.md §1.1."""
+
+    READY = "ready"
+    INCOMPLETE = "incomplete"
+    SUCCESS = "success"
+    ERROR = "error"
+    SCHEDULED = "scheduled"
+    CANCELLED = "cancelled"
 
 
 class ExecutionContext(BaseModel):
@@ -56,12 +71,16 @@ class ExecutionContext(BaseModel):
     def snapshot(self) -> Dict[str, Any]:
         return self.model_dump(mode="json")
 
+    def get_node_output(self, node_type: NodeType) -> dict[str, Any]:
+        return self.state.get(node_type.value) or {}
+
 
 class NodeResult(BaseModel):
     """Canonical node execution result."""
 
+    node: NodeType
     status: NodeExecutionStatus
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    data: Dict[str, Any] = Field(default_factory=dict)
     error: Dict[str, Any] | None = None
     metrics: Dict[str, Any] | None = None
     next_state: Dict[str, Any] | None = None

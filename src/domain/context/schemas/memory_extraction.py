@@ -3,14 +3,15 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from domain.llm.schemas.llm import LLMProviderType, LLMTaskType
 
 
 class MemoryExtractionLLMConfig(BaseModel):
-    provider: str = "OPENAI"
-    model_alias: str = "gpt-4o-mini"
+    provider: LLMProviderType = LLMProviderType.OPENAI
+    model_alias: str = "gpt-4o-mini"  # Todo: needs-clarification: model aliases are tenant-configurable and do not have a canonical StrEnum yet.
     prompt: str
-    task_type: str = "RESPONSE_RENDER"
+    task_type: LLMTaskType = LLMTaskType.MEMORY_EXTRACTION
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
     max_tokens: int | None = None
@@ -40,6 +41,8 @@ class ExtractedVectorMemoryItem(BaseModel):
 
 
 class MemoryExtractionLLMOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     preferences: list[ExtractedPreferenceItem] = Field(default_factory=list)
     profile_patch: dict[str, object] | None = None
     vector_memory: list[ExtractedVectorMemoryItem] = Field(default_factory=list)

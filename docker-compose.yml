@@ -36,38 +36,38 @@ services:
       timeout: 3s
       retries: 5
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
-      REDIS_URL: redis://redis:6379/3
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      ENVIRONMENT: development
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
-      JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
-      JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      LANGFUSE_BASE_URL: http://langfuse-proxy:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-    ports:
-      - "8000:8000"
-    networks:
-      - network-dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src
-      - ./resources:/app/resources
+  #app:
+  #  build:
+  #    context: .
+  #    dockerfile: Dockerfile
+  #  restart: unless-stopped
+  #  env_file:
+  #    - .env
+  #  environment:
+  #    DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
+  #    REDIS_URL: redis://redis:6379/3
+  #    REDIS_HOST: redis
+  #    REDIS_PORT: 6379
+  #    ENVIRONMENT: development
+  #    JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
+  #    JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
+  #    JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
+  #    JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  #    LANGFUSE_BASE_URL: http://langfuse-proxy:3000
+  #    LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+  #    LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+  #  ports:
+  #    - "8000:8000"
+  #  networks:
+  #    - network-dev
+  #  depends_on:
+  #    postgres:
+  #      condition: service_healthy
+  #    redis:
+  #      condition: service_healthy
+  #  volumes:
+  #    - ./src:/app/src
+  #    - ./resources:/app/resources
 
   langfuse-proxy:
     image: python:3.12-slim

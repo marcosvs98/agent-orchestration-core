@@ -54,7 +54,7 @@ O sistema segue **Domain-Driven Design (DDD)** com separação clara entre **aut
 - Estados de execução (CREATED, RUNNING, COMPLETED, FAILED)
 - Append-only: execução nunca altera definições
 - Rastreabilidade: eventos de execução para observabilidade
-- **Runtime node types**: Execução usa tipos de node do `FlowGraphSnapshot` (ex: `IntentToolSelectionNode`, `ResponseNode`, `ClarificationNode`, `FallbackNode`); não depende de registros `Node` ou `AITask` da tabela de authoring
+- **Runtime node types**: Execução usa tipos de node do `FlowGraphSnapshot` (ex: `IntentToolSelectionNode`, `ResponseComposer`, `ClarificationNode`, `FallbackNode`); não depende de registros `Node` ou `AITask` da tabela de authoring
 - **Node/AITask opcionais**: Na fase atual, `Node` e `AITask` são opcionais para o ciclo de vida de `FlowVersion` (validate/publish/activate); validação baseia-se em `FlowGraphDraft` validado, não em registros `Node`
 
 **Diretórios Principais**:

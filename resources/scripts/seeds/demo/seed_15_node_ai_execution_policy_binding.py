@@ -16,10 +16,12 @@ from infra.database.models.ai_policy.node_ai_execution_policy_binding import (
 )
 
 from seeds.demo.ids import (
+    NODE_AI_EXECUTION_POLICY_BINDING_CLARIFICATION_INTENT_ID,
     NODE_AI_EXECUTION_POLICY_BINDING_INTENT_ID,
     NODE_AI_EXECUTION_POLICY_BINDING_RESPONSE_ID,
     NODE_AI_EXECUTION_POLICY_BINDING_SLOT_ID,
     NODE_AI_EXECUTION_POLICY_BINDING_CLARIFICATION_ID,
+    NODE_CLARIFICATION_INTENT_ID,
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
@@ -49,6 +51,11 @@ async def seed_node_ai_execution_policy_binding() -> None:
             (
                 NODE_AI_EXECUTION_POLICY_BINDING_CLARIFICATION_ID,
                 NODE_CLARIFICATION_ID,
+                POLICY_VERSION_V1_ID,
+            ),
+            (
+                NODE_AI_EXECUTION_POLICY_BINDING_CLARIFICATION_INTENT_ID,
+                NODE_CLARIFICATION_INTENT_ID,
                 POLICY_VERSION_V1_ID,
             ),
         ]

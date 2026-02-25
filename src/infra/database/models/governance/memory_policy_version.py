@@ -20,7 +20,9 @@ class MemoryPolicyVersion(ORMBaseModel):
     version_patch = Column(Integer, nullable=False, server_default="0")
     config_hash = Column(String(length=128), nullable=True)
     retention_ttl_seconds = Column(Integer, nullable=False, server_default="2592000")
-    consent_definition = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    consent_definition = Column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     allowed_sources = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     allowed_schemas = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
 

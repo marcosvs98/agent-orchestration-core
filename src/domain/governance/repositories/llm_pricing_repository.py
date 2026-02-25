@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import desc, select, update
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from utils.query_compiler import compile_query
@@ -23,10 +23,14 @@ class LLMPricingRepository:
         self, *, provider: str, provider_model: str
     ) -> Optional[LLMPricingModel]:
         async with self.db.get_session() as session:
-            stmt = select(LLMPricingModel).where(
-                LLMPricingModel.provider == provider,
-                LLMPricingModel.provider_model == provider_model,
-                LLMPricingModel.status == "ACTIVE",
+            stmt = (
+                select(LLMPricingModel)
+                .where(
+                    LLMPricingModel.provider == provider,
+                    LLMPricingModel.provider_model == provider_model,
+                    LLMPricingModel.status == "ACTIVE",
+                )
+                .order_by(desc(LLMPricingModel.created_at))
             )
             query_sql = compile_query(stmt)
 
@@ -43,7 +47,7 @@ class LLMPricingRepository:
                 metadata={"retriever_name": "get_active_pricing"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                pricing = result.scalar_one_or_none()
+                pricing = result.scalars().first()
 
                 if retriever_handle:
                     retriever_handle.success(
@@ -75,6 +79,7 @@ class LLMPricingRepository:
                     LLMPricingModel.provider_model == provider_model,
                     LLMPricingModel.status == status,
                 )
+                .order_by(desc(LLMPricingModel.created_at))
                 .with_for_update()
             )
             query_sql = compile_query(stmt)
@@ -93,7 +98,7 @@ class LLMPricingRepository:
                 metadata={"retriever_name": "get_existing_pricing"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                instance = result.scalar_one_or_none()
+                instance = result.scalars().first()
 
                 if retriever_handle:
                     retriever_handle.success(

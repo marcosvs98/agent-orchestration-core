@@ -13,6 +13,7 @@ from domain.rag.schemas.embedding_job import EmbeddingStatus
 from domain.rag.schemas.rag import (
     RagConfigOptions,
     RagContext,
+    RagContextReason,
     RagContextItem,
     RagDocument,
     RagDocumentCreate,
@@ -149,11 +150,16 @@ class RagRuntimeService:
             )
             document = await self.repository.get_document_by_id(document_id=document_id)
             if document is None or document.tenant_id != tenant_id:
-                embedder_handle.error(error_type="rag_document_not_found", error_message="rag_document_not_found")
+                embedder_handle.error(
+                    error_type="rag_document_not_found",
+                    error_message="rag_document_not_found",
+                )
                 raise NotFoundServiceException(message="rag_document_not_found")
             current_status = self._as_embedding_status(document.embedding_status)
             if current_status == EmbeddingStatus.COMPLETED:
-                embedder_handle.success(output={"embedding_status": EmbeddingStatus.COMPLETED})
+                embedder_handle.success(
+                    output={"embedding_status": EmbeddingStatus.COMPLETED}
+                )
                 return RagDocument(
                     id=document.document_id,
                     source=document.source,
@@ -163,7 +169,10 @@ class RagRuntimeService:
                     embedding_status=EmbeddingStatus.COMPLETED,
                 )
             if not isinstance(document.content, str) or not document.content:
-                embedder_handle.error(error_type="rag_document_content_required", error_message="rag_document_content_required")
+                embedder_handle.error(
+                    error_type="rag_document_content_required",
+                    error_message="rag_document_content_required",
+                )
                 raise DomainValidationException(message="rag_document_content_required")
             started_at = datetime.now(timezone.utc)
             await self.repository.update_document_embedding_status(
@@ -213,7 +222,13 @@ class RagRuntimeService:
                     completed_at=completed_at,
                     error_code=None,
                 )
-                embedder_handle.success(output={"embedding_status": EmbeddingStatus.COMPLETED, "completed_at": completed_at, "document_id": document.document_id})
+                embedder_handle.success(
+                    output={
+                        "embedding_status": EmbeddingStatus.COMPLETED,
+                        "completed_at": completed_at,
+                        "document_id": document.document_id,
+                    }
+                )
             except Exception as exc:
                 await self.repository.update_document_embedding_status(
                     document_id=document.document_id,
@@ -246,9 +261,7 @@ class RagRuntimeService:
             for item in items
         ]
 
-    async def count_documents_for_user(
-        self, *, tenant_id: UUID, user_id: str
-    ) -> int:
+    async def count_documents_for_user(self, *, tenant_id: UUID, user_id: str) -> int:
         return await self.repository.count_documents_for_user(
             tenant_id=tenant_id, user_id=user_id
         )
@@ -335,7 +348,7 @@ class RagRuntimeService:
         ) as retriever_handle:
             results = await self.repository.search_similar_chunks(
                 tenant_id=tenant_id,
-                user_id=user_id, # Todo: UserId is None
+                user_id=user_id,
                 query_embedding=embedding,
                 top_k=effective_top_k,
                 similarity_threshold=options.retrieval.similarity_threshold,
@@ -347,7 +360,7 @@ class RagRuntimeService:
                 context_items=[],
                 context_summary=None,
                 eligible=False,
-                reason="NO_MATCHES",
+                reason=RagContextReason.NO_MATCHES,
                 generation_contract=options.generation_contract,
             )
 
@@ -369,7 +382,7 @@ class RagRuntimeService:
             context_items=items,
             context_summary=None,
             eligible=True,
-            reason="OK", # Todo: To use StrEnum here
+            reason=RagContextReason.OK,
             generation_contract=options.generation_contract,
         )
 
@@ -395,7 +408,7 @@ class RagRuntimeService:
             chunk_text = tiktoken.get_encoding("cl100k_base").decode(chunk_tokens)
             chunks.append(chunk_text)
             start = end - overlap_tokens
-            if start < 0:
+            if start < 0:  # pylint: disable=consider-using-max-builtin
                 start = 0
             if start >= len(tokens):
                 break

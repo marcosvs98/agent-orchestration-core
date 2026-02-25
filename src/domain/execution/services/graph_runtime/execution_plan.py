@@ -11,7 +11,7 @@ class CompiledEdge(BaseModel):
     from_node: str
     to_node: str
     edge_kind: EdgeKind
-    compiled_condition: dict
+    compiled_condition: list
     order: int
 
     model_config = {"frozen": True}

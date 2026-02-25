@@ -5,16 +5,16 @@ import pytest
 from domain.execution.services.graph_runtime.nodes import (
     ClarificationNode,
     FallbackNode,
-    IntentToolSelectionNode,
-    ResponseNode,
+    ResponseComposer,
     ToolExecutionNode,
+    ToolSelectionNode,
 )
 from domain.execution.services.graph_runtime.types import ExecutionContext
 
 
 @pytest.mark.asyncio
 async def test_intent_tool_selection_node_executes_with_default():
-    node = IntentToolSelectionNode()
+    node = ToolSelectionNode()
     context = ExecutionContext(
         tenant_id=uuid.uuid4(),
         session_id=uuid.uuid4(),
@@ -32,7 +32,7 @@ async def test_intent_tool_selection_node_executes_with_default():
 
 @pytest.mark.asyncio
 async def test_intent_tool_selection_node_executes_with_config():
-    node = IntentToolSelectionNode()
+    node = ToolSelectionNode()
     context = ExecutionContext(
         tenant_id=uuid.uuid4(),
         session_id=uuid.uuid4(),
@@ -124,7 +124,7 @@ async def test_clarification_node_executes_with_config():
 
 @pytest.mark.asyncio
 async def test_response_node_executes():
-    node = ResponseNode()
+    node = ResponseComposer()
     context = ExecutionContext(
         tenant_id=uuid.uuid4(),
         session_id=uuid.uuid4(),
@@ -142,7 +142,7 @@ async def test_response_node_executes():
 
 @pytest.mark.asyncio
 async def test_response_node_executes_with_config():
-    node = ResponseNode()
+    node = ResponseComposer()
     context = ExecutionContext(
         tenant_id=uuid.uuid4(),
         session_id=uuid.uuid4(),
@@ -197,9 +197,9 @@ async def test_fallback_node_executes_with_config():
 
 
 def test_node_attributes():
-    assert IntentToolSelectionNode.node_type == "IntentToolSelectionNode"
-    assert IntentToolSelectionNode.side_effect is False
-    assert IntentToolSelectionNode.deterministic is False
+    assert ToolSelectionNode.node_type == "ToolSelectionNode"
+    assert ToolSelectionNode.side_effect is False
+    assert ToolSelectionNode.deterministic is False
 
     assert ToolExecutionNode.node_type == "ToolExecutionNode"
     assert ToolExecutionNode.side_effect is True
@@ -209,9 +209,9 @@ def test_node_attributes():
     assert ClarificationNode.side_effect is False
     assert ClarificationNode.deterministic is True
 
-    assert ResponseNode.node_type == "ResponseNode"
-    assert ResponseNode.side_effect is False
-    assert ResponseNode.deterministic is True
+    assert ResponseComposer.node_type == "ResponseNode"
+    assert ResponseComposer.side_effect is False
+    assert ResponseComposer.deterministic is True
 
     assert FallbackNode.node_type == "FallbackNode"
     assert FallbackNode.side_effect is False

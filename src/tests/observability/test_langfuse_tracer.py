@@ -123,7 +123,7 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
                 as_type="generation",
                 name="llm.INTENT_SELECTION",
                 input={"prompt": "prompt", "system_prompt": None},
-                metadata={"llm_task": "INTENT_SELECTION"},
+                metadata={"llm_task": "intent_selection"},
                 model="gpt-4",
             ) as handle:
                 handle.success(

@@ -11,6 +11,7 @@ if str(src_path) not in sys.path:
 from sqlalchemy import select
 
 from domain.common.schemas.versioning import VersionStatus
+from domain.governance.schemas.memory_policy import MemoryPolicyDefinition
 from infra.database import get_db
 from infra.database.models.governance.active_memory_policy_version import (
     ActiveMemoryPolicyVersion,
@@ -48,33 +49,31 @@ async def seed_memory_policy() -> None:
             )
         )
         existing_version = result.scalar_one_or_none()
-        if existing_version is None:
-            policy_version = MemoryPolicyVersion(
-                memory_policy_version_id=MEMORY_POLICY_VERSION_V1_ID,
-                memory_policy_id=MEMORY_POLICY_DEMO_ID,
-                status=VersionStatus.PUBLISHED.value,
-                version_major=1,
-                version_minor=0,
-                version_patch=0,
-                retention_ttl_seconds=2_592_000,
-                consent_definition={
+        memory_policy_definition = MemoryPolicyDefinition.model_validate(
+            {
+                "retention_ttl_seconds": 2_592_000,
+                "consent": {
                     "required": False,
                     "preference_key": "memory.consent",
                     "required_for_sources": ["inferred_llm", "tool_output"],
                 },
-                allowed_sources=[
+                "allowed_sources": [
                     "explicit_user",
                     "inferred_llm",
                     "tool_output",
                     "admin_seed",
                 ],
-                allowed_schemas=[
+                "allowed_schemas": [
                     {
                         "schema_id": "user.preference.v1",
                         "max_item_bytes": 4096,
                         "preference_update": {
                             "fixed_key": None,
-                            "allowed_keys": ["style.tone", "style.depth", "style.formality"],
+                            "allowed_keys": [
+                                "style.tone",
+                                "style.depth",
+                                "style.formality",
+                            ],
                             "ignore_if_unchanged": True,
                             "overwrite_mode": "SOURCE_PRIORITY",
                         },
@@ -84,6 +83,20 @@ async def seed_memory_policy() -> None:
                         "max_item_bytes": 4096,
                     },
                 ],
+            }
+        ).model_dump(mode="json")
+        if existing_version is None:
+            policy_version = MemoryPolicyVersion(
+                memory_policy_version_id=MEMORY_POLICY_VERSION_V1_ID,
+                memory_policy_id=MEMORY_POLICY_DEMO_ID,
+                status=VersionStatus.PUBLISHED.value,
+                version_major=1,
+                version_minor=0,
+                version_patch=0,
+                retention_ttl_seconds=memory_policy_definition["retention_ttl_seconds"],
+                consent_definition=memory_policy_definition["consent"],
+                allowed_sources=memory_policy_definition["allowed_sources"],
+                allowed_schemas=memory_policy_definition["allowed_schemas"],
             )
             session.add(policy_version)
             await session.commit()

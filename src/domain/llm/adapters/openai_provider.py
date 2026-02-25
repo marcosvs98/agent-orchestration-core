@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, Optional, NewType
 
 from openai import AsyncOpenAI
@@ -89,18 +90,46 @@ class OpenAIProviderAdapter(LLMProviderPort):
     async def infer(self, request: LLMRequest) -> LLMResult:
         client = await self._client_instance()
 
+        messages: list[dict[str, str]] = [
+            message.model_dump(mode="json") for message in request.messages
+        ]
+        if not messages:
+            if request.system_prompt:
+                messages.append({"role": "system", "content": request.system_prompt})
+            if request.prompt:
+                messages.append({"role": "system", "content": request.prompt})
+            # user_content = request.user_message
+            # if not user_content and request.user_payload:
+            #    user_content = json.dumps(request.user_payload, ensure_ascii=True)
+            # if not user_content and request.input_payload:
+            #    user_content = json.dumps(request.input_payload, ensure_ascii=True)
+            if request.user_message:
+                messages.append({"role": "user", "content": request.user_message})
+
+        schema_payload = request.json_schema or request.output_schema or {}
         payload: Dict[str, Any] = {
             "model": request.model_alias,
-            "input": request.prompt,
+            "input": messages if messages else request.prompt,
             "temperature": request.temperature
             if request.temperature is not None
             else 0.2,
-            "truncation": "auto",
-            "text": {"format": {"type": "json_object"}},
         }
 
-        if request.system_prompt:
-            payload["instructions"] = request.system_prompt
+        if schema_payload:
+            payload["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": request.json_schema_name
+                    or (
+                        f"{request.task_type.value.lower()}_output"
+                        if request.task_type
+                        else "llm_output"
+                    ),
+                    "schema": schema_payload,
+                }
+            }
+        else:
+            payload["text"] = {"format": {"type": request.text_format or "json_object"}}
 
         if request.max_tokens is not None:
             payload["max_output_tokens"] = request.max_tokens
@@ -134,13 +163,13 @@ class OpenAIProviderAdapter(LLMProviderPort):
         try:
             response: Response = await client.responses.create(
                 **payload,
-                store=bool(request.conversation_key),
                 service_tier="auto",
             )
         except Exception as exc:
             raise DomainValidationException(
                 "llm_provider_error",
-                detail=str(exc),
+                input_data=payload,
+                errors=[getattr(exc, "body", str(exc))],
             )
 
         if request.conversation_key and response.id:
@@ -149,27 +178,42 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 ConversationResponseID(response.id),
             )
 
-        # output: Any = {}
+        output_json: Dict[str, Any] | None = None
         output_text: Optional[str] = None
 
         if response.output:
             for block in response.output:
                 for item in block.content or []:
-                    # if item.type == "output_json":
-                    #    output = item.json
+                    if item.type == "output_json":
+                        if isinstance(item.json, dict):
+                            output_json = item.json
                     if item.type == "output_text":
                         output_text = item.text
 
-        usage: ResponseUsage = response.usage or {}
+        if output_json is None and output_text:
+            try:
+                parsed_output = json.loads(output_text)
+                if isinstance(parsed_output, dict):
+                    output_json = parsed_output
+            except json.JSONDecodeError:
+                output_json = None
+
+        usage: ResponseUsage | None = response.usage
+        input_tokens = usage.input_tokens if usage else 0
+        output_tokens = usage.output_tokens if usage else 0
+        total_tokens = usage.total_tokens if usage else 0
+        cached_tokens = 0
+        if usage and usage.input_tokens_details:
+            cached_tokens = usage.input_tokens_details.cached_tokens or 0
         token_usage = {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "cached_input_tokens": (usage.input_tokens_details.cached_tokens),
-            "total_tokens": usage.total_tokens,
+            "input_tokens": input_tokens or 0,
+            "output_tokens": output_tokens or 0,
+            "cached_input_tokens": cached_tokens,
+            "total_tokens": total_tokens or 0,
         }
 
         return LLMResult(
-            output={"content": output_text},
+            output=output_json if output_json is not None else {"content": output_text},
             token_usage=token_usage,
             cost_usd=None,
             latency_ms=None,
@@ -217,13 +261,16 @@ class OpenAIProviderAdapter(LLMProviderPort):
                     if item.type == "output_text":
                         output_text = item.text
 
-        usage = response.usage or {}
+        usage = response.usage
+        input_tokens = usage.input_tokens if usage else 0
+        output_tokens = usage.output_tokens if usage else 0
+        cached_tokens = 0
+        if usage and usage.input_tokens_details:
+            cached_tokens = usage.input_tokens_details.cached_tokens or 0
         token_usage = {
-            "input_tokens": usage.get("input_tokens", 0),
-            "output_tokens": usage.get("output_tokens", 0),
-            "cached_input_tokens": (
-                usage.get("input_tokens_details", {}).get("cached_tokens", 0)
-            ),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_input_tokens": cached_tokens,
         }
 
         return LLMResult(

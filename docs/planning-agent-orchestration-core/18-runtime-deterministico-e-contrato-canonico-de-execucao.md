@@ -44,7 +44,7 @@ O runtime é uma **máquina de estados linear**, step-based:
 2. Executa exatamente **um node**
 3. Avalia edges condicionais
 4. Avança para o próximo node
-5. Repete até `ResponseNode` ou `FallbackNode`
+5. Repete até `ResponseComposer` ou `FallbackNode`
 
 Não existe paralelismo implícito.
 Não existe branching concorrente.

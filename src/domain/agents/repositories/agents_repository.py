@@ -651,10 +651,14 @@ class AgentsRepository:
                     )
 
                 agent_version_id = binding.agent_version_id if binding else None
-                
+
                 await self.cache_adapter.set(
                     key,
-                    {"agent_version_id": str(agent_version_id) if agent_version_id else None},
+                    {
+                        "agent_version_id": str(agent_version_id)
+                        if agent_version_id
+                        else None
+                    },
                     ttl=AGENT_VERSION_BY_NODE_CACHE_TTL,
                 )
                 return agent_version_id

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sys
 from pathlib import Path
 
@@ -21,6 +20,7 @@ from seeds.demo.ids import (
     PROMPT_INTENT_ID,
     PROMPT_RESPONSE_ID,
     PROMPT_SLOT_ID,
+    PROMPT_TOOL_SELECTION_ID,
 )
 
 
@@ -31,81 +31,46 @@ def _calculate_frozen_hash(template_text: str) -> str:
 async def seed_prompts() -> None:
     async with get_db() as session:
         intent_template = """# Task
-Select exactly one tool that best matches the user input and classify the user intention.
+Classify all user intents types and confidence.
 
-# Intent categories
-- TRANSACTION: The user is giving data or a clear instruction to execute the tool now (e.g. "Registrar 50 reais no mercado", "Criar despesa de 100").
-- DECLARATION: The user is asking for information (how, what, whether), e.g. "Como registro uma despesa?", "Posso registrar despesa parcelada?", "O que preciso para registrar?".
-- SMALL_TALK: Greetings, thanks, or off-topic.
+# Persona
+{{ ctx.persona | tojson }}
 
-Mentioning a topic does not imply execution. "Como registrar uma despesa?" is DECLARATION even if a createExpense tool exists.
-
-# Input
-User message: {ctx[user_input]}
-
-Available tools:
-{ctx[context][available_tools]}
-
-# Output Format
-Return a JSON object:
-{{
-  "intent": "tool_name_or_null",
-  "tool_config_id": "uuid_or_null",
-  "clarification": true_or_false,
-  "intent_category": "TRANSACTION" or "DECLARATION" or "SMALL_TALK"
-}}
+# Available tools:
+{{ ctx.meta.available_tools | tojson }}
 
 # Constraints
-- Do not invent tools.
-- intent MUST be the exact tool name from available_tools.
-- If unsure, return intent=null and clarification=true.
-- intent_category MUST be one of: TRANSACTION, DECLARATION, SMALL_TALK.
+- Do not return tool_config_id.
+- Do not return intent_category.
 """
 
         slot_template = """# Task
 Extract parameters from user input to fill the request schema.
 
-# Intent
-{ctx[intent]}
+# Persona
+{{ ctx.persona | tojson }}
 
-# Request Schema
-{ctx[request_schema]}
-
-# User Input
-{ctx[user_input]}
-
-# Output Format
-JSON object:
-{{
-  "payload": {{ ... }},
-  "missing_fields": [ ... ],
-  "missing_fields_count": 0,
-  "execution_ready": true
-}}
+# Selected Tools
+{{ ctx.derived.selected_tools | tojson }}
 
 # Constraints
 - Do not invent values.
-- List missing required fields in "missing_fields".
-- Optional missing fields can be null or omitted.
 """
+
+        ##{ % if ctx.output_schema %}
+        ## Request Schema
+        #{{ctx.output_schema | tojson}}
+        #{ % endif %}
 
         clarification_template = """# Task
 Ask the user for missing required information.
 
 # Intent
-{ctx[intent]}
-
-# Missing Fields
-{ctx[missing_fields]}
+{{ ctx.input.input_payload.intent | default('') }}
 
 # Persona
-{ctx[persona]}
+{{ ctx.persona | tojson }}
 
-# Output Format
-JSON object:
-{{
-  "system_output": "Please provide ..."
-}}
 
 # Constraints
 - Be concise and polite.
@@ -117,54 +82,103 @@ JSON object:
 If tool_response is present and non-empty: format it as a natural language message for the user in one concise sentence.
 If tool_response is empty or absent: the user asked an informative question (e.g. how to do something). Answer using the retrieved context and user_input; be short and helpful.
 
+{% if ctx.input.input_payload.original_intent %}
 # Intent
-{ctx[original_intent]}
+{{ ctx.input.input_payload.original_intent }}
+{% endif %}
 
-# User Input
-{ctx[user_input]}
-
+{% if ctx.tool_response %}
 # Tool Response
-{ctx[tool_response]}
+{{ ctx.tool_response | tojson }}
+{% endif %}
 
 # Persona
-{ctx[persona]}
+{{ ctx.persona | tojson }}
+
+{% if ctx.layers.tenant_knowledge %}
+# RAG Context (Optional)
+{{ ctx.layers.tenant_knowledge | tojson }}
+{% endif %}
+
+{% if ctx.layers.user_memory_structured or ctx.layers.user_memory_vector %}
+# User Memory (Optional)
+{{ {
+  "structured": ctx.layers.user_memory_structured,
+  "vector": ctx.layers.user_memory_vector
+} | tojson }}
+{% endif %}
 
 # Output Guidelines
 - When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the expense was registered.
 - When tool_response is empty: answer the user question using the provided context; be concise.
 - Do not mention status codes, endpoints, requests, or payloads.
 
-# Output Format
-JSON object:
-{{
-  "system_output": "..."
-}}
-
 # Constraints
 - Respect persona language, tone, style.
 - Be concise, clear and helpful.
 """
 
+        tool_selection_template = """# Task
+Select the best matching tool(s) for each user intent. Return one entry per intent type when the user has multiple intents.
+
+# Persona
+{{ ctx.persona | tojson }}
+
+# Available tools
+{{ ctx.meta.available_tools | tojson }}
+
+# Constraints
+- selected_tool must reference a tool from available_tools by name and tool_config_id.
+- confidence between 0 and 1.
+"""
+
         prompts = [
             (
                 PROMPT_INTENT_ID,
-                "IntentToolSelectionNode",
+                "IntentDetectionNode",
                 intent_template,
                 {
                     "type": "object",
+                    "additionalProperties": False,
                     "properties": {
-                        "intent": {"type": ["string", "null"]},
-                        "tool_config_id": {
-                            "type": ["string", "null"],
-                            "format": "uuid",
+                        "result": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "intent_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "query",
+                                            "execution",
+                                            "generation",
+                                            "transformation",
+                                            "analysis",
+                                            "conversation",
+                                            "control",
+                                        ],
+                                    },
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                    },
+                                    "priority": {"type": "integer", "minimum": 1},
+                                },
+                                "required": ["intent_type", "confidence", "priority"],
+                            },
                         },
-                        "clarification": {"type": "boolean"},
-                        "intent_category": {
-                            "type": "string",
-                            "enum": ["TRANSACTION", "DECLARATION", "SMALL_TALK"],
+                        "overall_confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
                         },
                     },
-                    "required": ["intent", "tool_config_id", "clarification"],
+                    "required": [
+                        "result",
+                        "overall_confidence",
+                    ],
                 },
             ),
             (
@@ -173,41 +187,186 @@ JSON object:
                 slot_template,
                 {
                     "type": "object",
+                    "additionalProperties": False,
                     "properties": {
-                        "payload": {"type": "object"},
-                        "missing_fields": {
+                        "result": {
                             "type": "array",
-                            "items": {"type": "string"},
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "operation_id": {"type": "string"},
+                                    "tool_name": {"type": "string"},
+                                    "status": {
+                                        "type": "string",
+                                        "enum": ["ready", "incomplete"],
+                                    },
+                                    "params": {
+                                        "type": "object",
+                                    },
+                                    "missing_fields": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": False,
+                                            "properties": {
+                                                "field": {"type": "string"},
+                                                "reason": {"type": "string"},
+                                            },
+                                            "required": ["field", "reason"],
+                                        },
+                                    },
+                                    "depends_on": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "blocking": {"type": "boolean"},
+                                },
+                                "required": [
+                                    "operation_id",
+                                    "tool_name",
+                                    "status",
+                                    "params",
+                                    "missing_fields",
+                                    "depends_on",
+                                    "blocking",
+                                ],
+                            },
                         },
-                        "missing_fields_count": {"type": "integer"},
-                        "execution_ready": {"type": "boolean"},
                     },
-                    "required": [
-                        "payload",
-                        "missing_fields",
-                        "missing_fields_count",
-                        "execution_ready",
-                    ],
+                    "required": ["result"],
                 },
             ),
             (
                 PROMPT_CLARIFICATION_ID,
-                "ClarificationNode",
+                "ClarificationSlotNode",
                 clarification_template,
                 {
                     "type": "object",
-                    "properties": {"system_output": {"type": "string"}},
-                    "required": ["system_output"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "system_output": {"type": "string"},
+                        "result": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "operation_id": {"type": "string"},
+                                    "tool_name": {"type": "string"},
+                                    "missing_fields": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": False,
+                                            "properties": {
+                                                "field": {"type": "string"},
+                                                "reason": {"type": "string"},
+                                            },
+                                            "required": ["field", "reason"],
+                                        },
+                                    },
+                                },
+                                "required": [
+                                    "operation_id",
+                                    "tool_name",
+                                    "missing_fields",
+                                ],
+                            },
+                        },
+                    },
+                    "required": ["system_output", "result"],
                 },
             ),
             (
                 PROMPT_RESPONSE_ID,
-                "ResponseNode",
+                "ResponseComposer",
                 response_template,
                 {
                     "type": "object",
-                    "properties": {"system_output": {"type": "string"}},
-                    "required": ["system_output"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "system_output": {"type": "string"},
+                        "operations_summary": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "operation_id": {"type": "string"},
+                                    "status": {"type": "string"},
+                                },
+                                "required": ["operation_id", "status"],
+                            },
+                        },
+                        "turn_status": {
+                            "type": "string",
+                            "enum": [
+                                "completed",
+                                "partial_success",
+                                "clarification_required",
+                                "escalated",
+                                "failed",
+                            ],
+                        },
+                    },
+                    "required": [
+                        "system_output",
+                        "operations_summary",
+                        "turn_status",
+                    ],
+                },
+            ),
+            (
+                PROMPT_TOOL_SELECTION_ID,
+                "ToolSelectionNode",
+                tool_selection_template,
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "result": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "intent_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "query",
+                                            "execution",
+                                            "generation",
+                                            "transformation",
+                                            "analysis",
+                                            "conversation",
+                                            "control",
+                                        ],
+                                    },
+                                    "selected_tool": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "tool_config_id": {"type": "string"},
+                                        },
+                                        "required": ["name", "tool_config_id"],
+                                    },
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                    },
+                                },
+                                "required": [
+                                    "intent_type",
+                                    "selected_tool",
+                                    "confidence",
+                                ],
+                            },
+                        },
+                    },
+                    "required": ["result"],
                 },
             ),
         ]
@@ -219,18 +378,14 @@ JSON object:
                 )
             )
             existing = result.scalar_one_or_none()
+            frozen_hash = _calculate_frozen_hash(template_text)
 
             if existing is None:
-                frozen_hash = _calculate_frozen_hash(template_text)
-                output_schema_str = json.dumps(output_schema, separators=(",", ":"))
-                output_schema_id = (
-                    output_schema_str if len(output_schema_str) <= 128 else None
-                )
                 prompt = NodePrompt(
                     prompt_id=prompt_id,
                     node_type=node_type,
                     template_text=template_text,
-                    output_schema_id=output_schema_id,
+                    output_schema=output_schema,
                     version=1,
                     frozen_hash=frozen_hash,
                     is_active=True,
@@ -238,5 +393,15 @@ JSON object:
                     created_by=PRINCIPAL_SYSTEM,
                 )
                 session.add(prompt)
+            else:
+                existing.node_type = node_type
+                existing.template_text = template_text
+                existing.output_schema = output_schema
+                existing.version = max(int(existing.version or 1), 1)
+                existing.frozen_hash = frozen_hash
+                existing.is_active = True
+                existing.description = f"Prompt for {node_type}"
+                existing.created_by = PRINCIPAL_SYSTEM
+                session.add(existing)
 
         await session.commit()

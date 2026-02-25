@@ -42,12 +42,9 @@ class ORMBaseModel(DeclarativeBase):
         return {c.key: getattr(self, c.key) for c in mapper.column_attrs}
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'ORMBaseModel':
+    def from_dict(cls, data: dict) -> "ORMBaseModel":
         mapper = sa_inspect(cls).mapper
-        filtered = {
-            k: v for k, v in data.items()
-            if k in mapper.columns
-        }
+        filtered = {k: v for k, v in data.items() if k in mapper.columns}
         return cls(**filtered)
 
     def __repr__(self):

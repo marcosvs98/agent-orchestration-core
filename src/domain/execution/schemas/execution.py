@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from enum import StrEnum
@@ -20,6 +20,7 @@ class FlowFailureReason(StrEnum):
     NODE_NOT_FOUND = "NODE_NOT_FOUND"
     UNKNOWN_NODE_TYPE = "UNKNOWN_NODE_TYPE"
     NO_MATCHING_EDGE = "NO_MATCHING_EDGE"
+    EDGE_EVALUATION_ERROR = "EDGE_EVALUATION_ERROR"
     MULTIPLE_MATCHING_EDGES = "MULTIPLE_MATCHING_EDGES"
 
 

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select, update
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
 from infra.database.models.governance.llm_model_mapping import (
     LLMModelMapping as LLMModelMappingModel,
 )
+from utils.query_compiler import compile_query
+
+
+class LLMModelMappingStatus(StrEnum):
+    ACTIVE = "ACTIVE"
 
 
 class LLMModelMappingRepository:
@@ -24,11 +29,19 @@ class LLMModelMappingRepository:
         self, *, tenant_id: UUID, provider: str, model_alias: str
     ) -> Optional[LLMModelMappingModel]:
         async with self.db.get_session() as session:
-            stmt = select(LLMModelMappingModel).where(
-                LLMModelMappingModel.tenant_id == tenant_id,
-                LLMModelMappingModel.provider == provider,
-                LLMModelMappingModel.model_alias == model_alias,
-                LLMModelMappingModel.status == "ACTIVE",
+            stmt = (
+                select(LLMModelMappingModel)
+                .where(
+                    LLMModelMappingModel.tenant_id == tenant_id,
+                    LLMModelMappingModel.provider == provider,
+                    LLMModelMappingModel.model_alias == model_alias,
+                    LLMModelMappingModel.status == LLMModelMappingStatus.ACTIVE.value,
+                )
+                .order_by(
+                    LLMModelMappingModel.created_at.desc(),
+                    LLMModelMappingModel.llm_model_mapping_id.desc(),
+                )
+                .limit(1)
             )
             query_sql = compile_query(stmt)
 
@@ -46,7 +59,7 @@ class LLMModelMappingRepository:
                 metadata={"retriever_name": "get_active_mapping"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                mapping = result.scalar_one_or_none()
+                mapping = result.scalars().first()
 
                 if retriever_handle:
                     retriever_handle.success(

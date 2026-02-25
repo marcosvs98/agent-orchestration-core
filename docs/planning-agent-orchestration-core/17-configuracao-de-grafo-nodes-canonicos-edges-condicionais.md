@@ -73,7 +73,7 @@ Motivo: versionamento simples + replay determinístico.
       "type": "ClarificationNode"
     },
     "respond": {
-      "type": "ResponseNode"
+      "type": "ResponseComposer"
     },
     "fallback": {
       "type": "FallbackNode"
@@ -165,7 +165,7 @@ Output obrigatório:
 
 ---
 
-#### ResponseNode
+#### ResponseComposer
 
 Output obrigatório:
 • `message: string`

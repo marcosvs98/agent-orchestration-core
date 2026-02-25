@@ -10,6 +10,7 @@ if str(src_path) not in sys.path:
 
 from sqlalchemy import select
 
+from domain.governance.schemas.runtime_policy import RuntimePolicyDefinition
 from infra.database import get_db
 from infra.database.models.governance.runtime_policy import RuntimePolicy
 
@@ -22,7 +23,7 @@ from seeds.demo.ids import (
 
 
 def _policy_definition() -> dict:
-    return {
+    definition = {
         "limits": {
             "max_nodes": 50,
             "max_depth": 20,
@@ -30,11 +31,13 @@ def _policy_definition() -> dict:
             "max_total_duration_ms": 60000,
             "max_node_duration_ms": 15000,
             "max_loop_iterations": 10,
+            "tool_fanout_max_concurrency": 4,
         },
         "execution": {
             "fail_on_multiple_true_edges": True,
             "fail_on_missing_graph": True,
             "allow_parallel_nodes": False,
+            "strict_contract_mode": True,
         },
         "tools": {
             "max_retries": 2,
@@ -46,6 +49,9 @@ def _policy_definition() -> dict:
         "llm": {
             "max_retries": 3,
             "timeout_ms": 30000,
+            "history_enabled_tasks": ["RESPONSE_RENDER"],
+            "temperature": 0,
+            "max_tokens": 1024,
         },
         "user_context_enrichment": {
             "enabled": True,
@@ -63,9 +69,9 @@ def _policy_definition() -> dict:
             "profile_schema_id": "user.profile_signal.v1",
             "llm": {
                 "provider": "OPENAI",
-                "model_alias": "fake-model",
+                "model_alias": "gpt-4o-mini",
                 "prompt": "Extract user preferences from flow output.",
-                "task_type": "RESPONSE_RENDER",
+                "task_type": "MEMORY_EXTRACTION",
             },
         },
         "memory_retrieval": {
@@ -77,6 +83,7 @@ def _policy_definition() -> dict:
             },
         },
     }
+    return RuntimePolicyDefinition.model_validate(definition).model_dump(mode="json")
 
 
 async def seed_runtime_policy() -> None:

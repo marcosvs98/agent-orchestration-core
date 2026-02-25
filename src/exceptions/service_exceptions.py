@@ -15,6 +15,7 @@ class BaseServiceException(HTTPException):
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     name = "INTERNAL_ERROR"
     service = APPLICATION_NAME
+    input_data = {}
 
     def __init__(
         self,
@@ -22,6 +23,7 @@ class BaseServiceException(HTTPException):
         status_code: int | None = None,
         detail: Any | None = None,
         name: str | None = None,
+        input_data: dict | None = {},
         service: str | None = None,
         headers: dict[str, str] | None = None,
         errors: Sequence[Any] | None = None,
@@ -30,6 +32,7 @@ class BaseServiceException(HTTPException):
         self.service = service or self.service
         self.name = name or self.name
         self.status_code = status_code or self.status_code
+        self.input_data = input_data or self.input_data
         self.headers = headers
         self._errors = errors or []
         super().__init__(self.status_code, self.message or self.detail, self.headers)
@@ -181,9 +184,23 @@ async def router_http_exception_handler(
             "resource": request.url.path,
             "errors": jsonable_encoder(exc.errors()),
         },
+        "input_data": exc.input_data,
     }
 
     return JSONResponse(response_data, status_code=exc.status_code, headers=headers)
+
+
+async def format_exception(
+    reason: str, correlation_id: str, exc: BaseServiceException
+) -> dict:
+    return {
+        "correlation_id": correlation_id,
+        "reason": reason,
+        "code": exc.name,
+        "message": exc.message,
+        "errors": exc.errors(),
+        "input_data": exc.input_data,
+    }
 
 
 ServiceValidationException = RouterValidationException
