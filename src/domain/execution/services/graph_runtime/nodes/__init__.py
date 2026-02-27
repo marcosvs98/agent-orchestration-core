@@ -13,7 +13,9 @@ IntentToolSelectionNode = ToolSelectionNode
 from domain.execution.services.graph_runtime.nodes.param_extraction import (
     ParamExtractionNode,
 )
-from domain.execution.services.graph_runtime.nodes.response_composer import ResponseComposer
+from domain.execution.services.graph_runtime.nodes.response_composer import (
+    ResponseComposer,
+)
 from domain.execution.services.graph_runtime.nodes.tool_error_handler import (
     ToolErrorHandlerNode,
 )

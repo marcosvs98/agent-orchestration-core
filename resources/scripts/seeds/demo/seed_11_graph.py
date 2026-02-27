@@ -155,7 +155,7 @@ async def seed_graph() -> None:
                     ),
                 ),
                 str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
-                    type="ClarificationIntentNode",
+                    type="ClarificationNode",
                     config=_resume_llm_node_config(
                         resume_to_node_id=str(NODE_INTENT_ID),
                         task_type="CLARIFICATION",
@@ -186,7 +186,7 @@ async def seed_graph() -> None:
                     ),
                 ),
                 str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
-                    type="ClarificationSlotNode",
+                    type="ClarificationNode",
                     config=_resume_llm_node_config(
                         resume_to_node_id=str(NODE_SLOT_ID),
                         task_type="CLARIFICATION",

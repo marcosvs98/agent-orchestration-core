@@ -33,9 +33,6 @@ async def seed_prompts() -> None:
         intent_template = """# Task
 Classify all user intents types and confidence.
 
-# Persona
-{{ ctx.persona | tojson }}
-
 # Available tools:
 {{ ctx.meta.available_tools | tojson }}
 
@@ -46,9 +43,6 @@ Classify all user intents types and confidence.
 
         slot_template = """# Task
 Extract parameters from user input to fill the request schema.
-
-# Persona
-{{ ctx.persona | tojson }}
 
 # Selected Tools
 {{ ctx.derived.selected_tools | tojson }}
@@ -67,10 +61,6 @@ Ask the user for missing required information.
 
 # Intent
 {{ ctx.input.input_payload.intent | default('') }}
-
-# Persona
-{{ ctx.persona | tojson }}
-
 
 # Constraints
 - Be concise and polite.
@@ -92,37 +82,26 @@ If tool_response is empty or absent: the user asked an informative question (e.g
 {{ ctx.tool_response | tojson }}
 {% endif %}
 
-# Persona
-{{ ctx.persona | tojson }}
-
-{% if ctx.layers.tenant_knowledge %}
-# RAG Context (Optional)
-{{ ctx.layers.tenant_knowledge | tojson }}
-{% endif %}
-
-{% if ctx.layers.user_memory_structured or ctx.layers.user_memory_vector %}
-# User Memory (Optional)
-{{ {
-  "structured": ctx.layers.user_memory_structured,
-  "vector": ctx.layers.user_memory_vector
-} | tojson }}
-{% endif %}
-
 # Output Guidelines
 - When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the expense was registered.
 - When tool_response is empty: answer the user question using the provided context; be concise.
-- Do not mention status codes, endpoints, requests, or payloads.
+- Do not mention status codes, endpoints, requests, or payloads."""
 
-# Constraints
-- Respect persona language, tone, style.
-- Be concise, clear and helpful.
-"""
+        # {% if ctx.layers.tenant_knowledge %}
+        # # RAG Context (Optional)
+        # {{ ctx.layers.tenant_knowledge | tojson }}
+        # {% endif %}
+        #
+        # {% if ctx.layers.user_memory_structured or ctx.layers.user_memory_vector %}
+        # # User Memory (Optional)
+        # {{ {
+        #   "structured": ctx.layers.user_memory_structured,
+        #   "vector": ctx.layers.user_memory_vector
+        # } | tojson }}
+        # {% endif %}
 
         tool_selection_template = """# Task
 Select the best matching tool(s) for each user intent. Return one entry per intent type when the user has multiple intents.
-
-# Persona
-{{ ctx.persona | tojson }}
 
 # Available tools
 {{ ctx.meta.available_tools | tojson }}
@@ -239,7 +218,7 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
             ),
             (
                 PROMPT_CLARIFICATION_ID,
-                "ClarificationSlotNode",
+                "ClarificationNode",
                 clarification_template,
                 {
                     "type": "object",

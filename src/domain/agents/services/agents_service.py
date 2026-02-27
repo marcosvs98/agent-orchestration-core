@@ -82,7 +82,7 @@ class AgentsService(AgentsServicePort):
                     supported_tool_schema_version=version.supported_tool_schema_version,
                     supported_tool_config_hash_prefix=version.supported_tool_config_hash_prefix,
                     persona_config=persona_config,
-                    system_prompt_template_id=version.system_prompt_template_id,
+                    system_prompt=version.system_prompt,
                 )
             )
         return result
@@ -113,6 +113,7 @@ class AgentsService(AgentsServicePort):
             supported_tool_schema_version=agent_version_create.supported_tool_schema_version,
             supported_tool_config_hash_prefix=agent_version_create.supported_tool_config_hash_prefix,
             persona_config=persona_config_dict,
+            system_prompt=agent_version_create.system_prompt,
             created_by=principal_id,
         )
         await self.authoring_events.append_event(
@@ -142,6 +143,7 @@ class AgentsService(AgentsServicePort):
             supported_tool_schema_version=model.supported_tool_schema_version,
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
+            system_prompt=model.system_prompt,
         )
 
     async def create_node_agent_binding(

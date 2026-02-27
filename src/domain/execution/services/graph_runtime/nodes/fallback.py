@@ -23,4 +23,6 @@ class FallbackNode(NodeExecutor):
         data = payload_from_config(
             config, {"reason": "fallback", "message": "fallback"}
         )
-        return NodeResult(node=self.node_type, status=NodeExecutionStatus.SUCCESS, data=data)
+        return NodeResult(
+            node=self.node_type, status=NodeExecutionStatus.SUCCESS, data=data
+        )

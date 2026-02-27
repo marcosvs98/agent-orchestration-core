@@ -5,6 +5,9 @@ from uuid import UUID
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.trace import TraceContext
+from domain.execution.services.graph_runtime.agent_runtime_resolver import (
+    AgentRuntimeResolver,
+)
 from domain.execution.services.graph_runtime.nodes._common import (
     conversation_key_and_stateless,
     read_user_input,
@@ -33,10 +36,12 @@ class ResponseComposer(NodeExecutor):
         tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort,
         prompt_resolver: PromptResolver,
+        agent_runtime_resolver: AgentRuntimeResolver | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
         self.tracer = tracer
+        self.agent_runtime_resolver = agent_runtime_resolver
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -73,17 +78,26 @@ class ResponseComposer(NodeExecutor):
             if chain_handle:
                 chain_handle.success(output=resolved_prompt.model_dump(mode="json"))
 
+        if self.agent_runtime_resolver and node_uuid:
+            system_prompt = await self.agent_runtime_resolver.resolve_system_prompt(
+                context.flow_run_id, node_uuid, context.state
+            )
+        else:
+            system_prompt = context.system_prompt
+
         llm_request = LLMRequest(
             prompt=resolved_prompt.prompt_text,
-            system_prompt=context.system_prompt,
+            system_prompt=system_prompt,
             user_message=read_user_input(context),
             input_schema=resolved_prompt.input_schema,
             output_schema=resolved_prompt.output_schema,
-            json_schema=resolved_prompt.output_schema or llm_cfg.get("output_schema", {}),
+            json_schema=resolved_prompt.output_schema
+            or llm_cfg.get("output_schema", {}),
             json_schema_name="intent_selection_output",
             model_alias=model_alias,
-            temperature=llm_cfg.get("temperature") if (llm_cfg and "temperature" in llm_cfg) else llm_policy.get(
-                "temperature"),
+            temperature=llm_cfg.get("temperature")
+            if (llm_cfg and "temperature" in llm_cfg)
+            else llm_policy.get("temperature"),
             max_tokens=llm_policy.get("max_tokens"),
             max_latency_ms=llm_policy.get("max_latency_ms"),
             max_cost_usd=llm_policy.get("max_cost_usd"),

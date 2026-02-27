@@ -33,7 +33,7 @@ class AgentVersion(BaseModel):
     supported_tool_schema_version: int | None = None
     supported_tool_config_hash_prefix: str | None = None
     persona_config: PersonaConfig | None = None
-    system_prompt_template_id: UUID | None = None
+    system_prompt: str | None = None
 
 
 class AgentVersionCreate(BaseModel):
@@ -45,6 +45,7 @@ class AgentVersionCreate(BaseModel):
     supported_tool_schema_version: int | None = None
     supported_tool_config_hash_prefix: str | None = None
     persona_config: PersonaConfig | None = None
+    system_prompt: str | None = None
 
 
 class NodeAgentBinding(BaseModel):

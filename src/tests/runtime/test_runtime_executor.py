@@ -105,7 +105,7 @@ class _FakeTracer:
 
 
 _compiler = FlowGraphCompiler()
-_plan_compiler = GraphCompiler()
+_plan_compiler = GraphCompiler(_FakeTracer())
 
 
 def _compile_plan(definition: FlowGraphDefinition):
@@ -527,7 +527,7 @@ async def test_runtime_executor_handles_next_state_and_memory_append():
             )
 
     repo = _FakeRepository()
-    registry = NodeRegistry()
+    registry = NodeRegistry(tracer=_FakeTracer())
     registry._registry["IntentToolSelectionNode"] = CustomNode
     executor = RuntimeExecutor(repo, _FakeTracer(), registry)
     node_a = str(uuid.uuid4())

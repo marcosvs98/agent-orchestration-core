@@ -40,7 +40,6 @@ class UserContextEnrichmentNode(NodeExecutor):
         config: Dict[str, Any],
         runtime_policy: dict[str, Any],
     ) -> dict[str, bool]:
-
         candidate = config.get("layers")
         if not isinstance(candidate, dict):
             candidate = runtime_policy.get("default_layers_when_published")

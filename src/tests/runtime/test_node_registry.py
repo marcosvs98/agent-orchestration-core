@@ -11,9 +11,13 @@ from domain.execution.services.graph_runtime.nodes import (
 from domain.execution.services.graph_runtime.registry import NodeRegistry
 
 
+class _FakeTracer:
+    def observe(self, *, as_type=None, name=None, input=None, metadata=None):
+        return __import__("contextlib").nullcontext()
+
+
 def test_node_registry_resolves_valid_node_types():
-    """Test that registry resolves node types to appropriate classes."""
-    registry = NodeRegistry()
+    registry = NodeRegistry(tracer=_FakeTracer())
 
     intent_cls = registry.resolve("ToolSelectionNode")
     assert intent_cls is not None
@@ -31,23 +35,26 @@ def test_node_registry_resolves_valid_node_types():
     assert param_cls is not None
     assert issubclass(param_cls, ParamExtractionNode)
 
-    assert registry.resolve("ResponseNode") == ResponseComposer
-    assert registry.resolve("FallbackNode") == FallbackNode
+    response_cls = registry.resolve("ResponseComposer")
+    assert response_cls is not None
+    assert issubclass(response_cls, ResponseComposer)
+    fallback_cls = registry.resolve("FallbackNodeSLA")
+    assert fallback_cls is not None
+    assert fallback_cls == FallbackNode
 
 
 def test_node_registry_returns_none_for_unknown_type():
-    """Test that registry returns None for unknown node types."""
-    registry = NodeRegistry()
+    registry = NodeRegistry(tracer=_FakeTracer())
     assert registry.resolve("UnknownNodeType") is None
     assert registry.resolve("") is None
 
 
 def test_node_registry_injects_dependencies():
-    """Test that registry injects dependencies into nodes that require them."""
     mock_orchestrator = object()
     mock_repository = object()
 
     registry = NodeRegistry(
+        tracer=_FakeTracer(),
         tool_orchestrator=mock_orchestrator,
         execution_repository=mock_repository,
     )

@@ -80,7 +80,7 @@ from infra.database.models.onboarding import (
     OnboardingVersion,
     StepRun,
 )
-from infra.database.models.prompts import NodePrompt, SystemPromptTemplate
+from infra.database.models.prompts import NodePrompt
 
 __all__ = [
     "ORMBaseModel",
@@ -147,5 +147,4 @@ __all__ = [
     "OnboardingStep",
     "StepRun",
     "NodePrompt",
-    "SystemPromptTemplate",
 ]

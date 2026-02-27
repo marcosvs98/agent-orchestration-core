@@ -38,6 +38,9 @@ from domain.execution.services.state_machine import (
 from domain.execution.services.graph_runtime.executor import RuntimeExecutor
 from domain.tools.schemas.tools import AvailableTool
 from domain.execution.services.graph_runtime.graph_compiler import GraphCompiler
+from domain.execution.services.graph_runtime.agent_runtime_resolver import (
+    AgentRuntimeResolver,
+)
 from domain.execution.services.graph_runtime.registry import NodeRegistry
 from domain.execution.services.observability.hooks import (
     DbExecutionEventHook,
@@ -78,9 +81,7 @@ from adapters.jobs.arq_embedding_queue import ArqEmbeddingQueueAdapter
 from domain.prompts.services.prompt_service import PromptService
 from domain.prompts.repositories.prompt_repository import PromptRepository
 from domain.agents.repositories.agents_repository import AgentsRepository
-from domain.agents.schemas.agents import PersonaConfig
 from application.prompts.prompt_resolver import PromptResolver
-from application.prompts.system_prompt_compiler import SystemPromptCompiler
 from domain.llm.services.context_builder import ContextBuilder
 from domain.llm.services.structured_output_schema_composer import (
     StructuredOutputSchemaComposer,
@@ -156,7 +157,7 @@ class ExecutionService(ExecutionServicePort):
         prompt_service = PromptService(
             repository=prompt_repository, execution_repository=repository, tracer=tracer
         )
-        agents_repository = AgentsRepository(
+        self.agents_repository = AgentsRepository(
             repository.db,
             tracer=tracer,
             cache_adapter=repository.cache_adapter,
@@ -170,7 +171,7 @@ class ExecutionService(ExecutionServicePort):
             )
             self.tools_service = ToolsService(
                 repository=self.tools_repository,
-                agents_repository=agents_repository,
+                agents_repository=self.agents_repository,
                 authoring_events=authoring_events,
                 tracer=tracer,
             )
@@ -232,7 +233,7 @@ class ExecutionService(ExecutionServicePort):
         )
         runtime_context_policy = RuntimeContextLayerPolicy()
         context_builder = ContextBuilder(
-            agents_repository,
+            self.agents_repository,
             self.tools_repository,
             memory_retrieval_service=memory_retrieval_service,
             rag_activation_service=rag_activation_service,
@@ -243,7 +244,6 @@ class ExecutionService(ExecutionServicePort):
             tools_repository=self.tools_repository,
             tracer=tracer,
         )
-        system_prompt_compiler = SystemPromptCompiler(tracer)
         prompt_resolver = PromptResolver(
             prompt_service=prompt_service,
             context_builder=context_builder,
@@ -252,7 +252,6 @@ class ExecutionService(ExecutionServicePort):
             structured_output_schema_composer=structured_output_schema_composer,
         )
         self.prompt_repository = prompt_repository
-        self.system_prompt_compiler = system_prompt_compiler
         base_hook = DbExecutionEventHook(repository, tracer=self.tracer)
         memory_extraction_processor = MemoryExtractionProcessor(
             llm_executor=self.llm_executor,
@@ -272,6 +271,7 @@ class ExecutionService(ExecutionServicePort):
             tracer=self.tracer,
             tools_repository=self.tools_repository,
         )
+        agent_runtime_resolver = AgentRuntimeResolver(self.agents_repository)
         self.runtime = RuntimeExecutor(
             repository,
             registry=NodeRegistry(
@@ -280,6 +280,7 @@ class ExecutionService(ExecutionServicePort):
                 tool_orchestrator=tool_orchestrator,
                 execution_repository=repository,
                 tracer=tracer,
+                agent_runtime_resolver=agent_runtime_resolver,
             ),
             tracer=self.tracer,
             hook=self.hook,
@@ -1020,23 +1021,9 @@ class ExecutionService(ExecutionServicePort):
             raise ResourceBlockedServiceException(message="billing_policy_not_active")
 
         system_prompt_hash = None
-        if agent_version.system_prompt_template_id:
-            template = await self.prompt_repository.get_system_prompt_template(
-                agent_version.system_prompt_template_id
-            )
-            if template is None:
-                raise NotFoundServiceException(
-                    message="system_prompt_template_not_found"
-                )
-
-            persona = (
-                PersonaConfig.model_validate(agent_version.persona_config)
-                if agent_version.persona_config
-                else PersonaConfig()
-            )
-
-            system_prompt = self.system_prompt_compiler.render(template, persona)
-            system_prompt_hash = self.system_prompt_compiler.compute_hash(system_prompt)
+        base_text = (agent_version.system_prompt or "").strip()
+        if base_text:
+            system_prompt_hash = hashlib.sha256(base_text.encode()).hexdigest()
 
         key = self.idempotency.build_key(
             tenant_id=tenant_id, endpoint=endpoint, idempotency_key=idempotency_key

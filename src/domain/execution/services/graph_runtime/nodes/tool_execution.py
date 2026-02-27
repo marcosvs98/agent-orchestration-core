@@ -80,7 +80,9 @@ class ToolExecutionNode(NodeExecutor):
             )
 
         runtime_policy = (context.metadata or {}).get("runtime_policy") or {}
-        limits = runtime_policy.get("limits") if isinstance(runtime_policy, dict) else {}
+        limits = (
+            runtime_policy.get("limits") if isinstance(runtime_policy, dict) else {}
+        )
 
         max_concurrency = max(
             1,
@@ -117,9 +119,7 @@ class ToolExecutionNode(NodeExecutor):
         context: ExecutionContext,
         tool_run: ToolRunInput,
     ) -> ToolRunResult:
-        idempotency_key = (
-            f"{context.flow_run_id}:{context.current_node_run_id}:{tool_run.operation_id}"
-        )
+        idempotency_key = f"{context.flow_run_id}:{context.current_node_run_id}:{tool_run.operation_id}"
         async with semaphore:
             tool_run_id: UUID | None = None
             try:
@@ -219,9 +219,7 @@ class ToolExecutionNode(NodeExecutor):
 
         for item in raw_result:
             try:
-                parsed_operations.append(
-                    _ParamExtractionOperation.model_validate(item)
-                )
+                parsed_operations.append(_ParamExtractionOperation.model_validate(item))
             except ValidationError as exc:
                 if strict_mode:
                     raise DomainValidationException(
@@ -313,9 +311,7 @@ class ToolExecutionNode(NodeExecutor):
 
         if not isinstance(raw_result, list):
             if strict_mode:
-                raise DomainValidationException(
-                    message="tool_selection_result_invalid"
-                )
+                raise DomainValidationException(message="tool_selection_result_invalid")
             raw_result = []
 
         configs_by_name: dict[str, set[str]] = {}

@@ -50,7 +50,7 @@ class RuntimeExecutor:
         memory_write_service: MemoryWriteServicePort | None = None,
     ) -> None:
         self.repository = repository
-        self.registry = registry or NodeRegistry()
+        self.registry = registry or NodeRegistry(tracer=tracer)
         self.tracer = tracer
         self.hook = hook
         self.memory_write_service = memory_write_service

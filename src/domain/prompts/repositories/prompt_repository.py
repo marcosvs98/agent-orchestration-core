@@ -8,12 +8,8 @@ from sqlalchemy import select, update
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from utils.query_compiler import compile_query
 from domain.prompts.schemas.prompt import NodePrompt, NodePromptCreate, NodePromptUpdate
-from domain.prompts.schemas.system_prompt_template import SystemPromptTemplate
 from infra.database import DatabaseConnection
 from infra.database.models.prompts.node_prompt import NodePrompt as NodePromptModel
-from infra.database.models.prompts.system_prompt_template import (
-    SystemPromptTemplate as SystemPromptTemplateModel,
-)
 
 
 class PromptRepository:
@@ -248,36 +244,3 @@ class PromptRepository:
                     )
 
                 return [NodePrompt.model_validate(model.to_dict()) for model in models]
-
-    async def get_system_prompt_template(
-        self, template_id: UUID
-    ) -> Optional[SystemPromptTemplate]:
-        async with self.db.get_session() as session:
-            stmt = select(SystemPromptTemplateModel).where(
-                SystemPromptTemplateModel.template_id == template_id
-            )
-            query_sql = compile_query(stmt)
-
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.prompts.prompt_repository.get_system_prompt_template",
-                input={
-                    "query": query_sql,
-                    "params": {"template_id": str(template_id)},
-                },
-                metadata={"retriever_name": "get_system_prompt_template"},
-            ) as retriever_handle:
-                result = await session.execute(stmt)
-                model = result.scalar_one_or_none()
-
-                if retriever_handle:
-                    retriever_handle.success(
-                        output={
-                            "result_count": 1 if model else 0,
-                            "found": model is not None,
-                        }
-                    )
-
-                if model:
-                    return SystemPromptTemplate.model_validate(model.to_dict())
-                return None

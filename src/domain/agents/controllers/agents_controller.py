@@ -174,7 +174,7 @@ class AgentsController:
             supported_tool_schema_version=model.supported_tool_schema_version,
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
-            system_prompt_template_id=model.system_prompt_template_id,
+            system_prompt=model.system_prompt,
         )
 
     async def publish_agent_version(
@@ -206,7 +206,7 @@ class AgentsController:
             supported_tool_schema_version=model.supported_tool_schema_version,
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
-            system_prompt_template_id=model.system_prompt_template_id,
+            system_prompt=model.system_prompt,
         )
 
     async def activate_agent_version(
@@ -238,7 +238,7 @@ class AgentsController:
             supported_tool_schema_version=model.supported_tool_schema_version,
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
-            system_prompt_template_id=model.system_prompt_template_id,
+            system_prompt=model.system_prompt,
         )
 
     async def rollback_agent_version(
@@ -270,7 +270,7 @@ class AgentsController:
             supported_tool_schema_version=model.supported_tool_schema_version,
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
-            system_prompt_template_id=model.system_prompt_template_id,
+            system_prompt=model.system_prompt,
         )
 
     async def deprecate_agent_version(

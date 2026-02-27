@@ -168,35 +168,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("prompt_id", name=op.f("pk_node_prompt")),
     )
     op.create_table(
-        "system_prompt_template",
-        sa.Column("template_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("template_text", sa.Text(), nullable=False),
-        sa.Column(
-            "allowed_placeholders",
-            postgresql.JSONB(astext_type=sa.Text()),
-            nullable=True,
-        ),
-        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
-        sa.Column(
-            "status", sa.String(length=32), server_default="DRAFT", nullable=False
-        ),
-        sa.Column("description", sa.Text(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("template_id", name=op.f("pk_system_prompt_template")),
-    )
-    op.create_table(
         "tenant",
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("external_id", sa.UUID(), nullable=True),
@@ -2078,7 +2049,7 @@ def upgrade() -> None:
         sa.Column(
             "persona_config", postgresql.JSONB(astext_type=sa.Text()), nullable=True
         ),
-        sa.Column("system_prompt_template_id", sa.UUID(), nullable=True),
+        sa.Column("system_prompt", sa.Text(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -2109,14 +2080,6 @@ def upgrade() -> None:
             ["rag_config_id"],
             ["rag_config.rag_config_id"],
             name=op.f("fk_agent_version_rag_config_id_rag_config"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["system_prompt_template_id"],
-            ["system_prompt_template.template_id"],
-            name=op.f(
-                "fk_agent_version_system_prompt_template_id_system_prompt_template"
-            ),
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("agent_version_id", name=op.f("pk_agent_version")),
@@ -3022,7 +2985,6 @@ def downgrade() -> None:
         postgresql_where=sa.text("external_id IS NOT NULL"),
     )
     op.drop_table("tenant")
-    op.drop_table("system_prompt_template")
     op.drop_table("node_prompt")
     op.drop_table("model")
     op.drop_table("llm_pricing")

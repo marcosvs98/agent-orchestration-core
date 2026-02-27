@@ -5,6 +5,9 @@ from uuid import UUID
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.trace import TraceContext
+from domain.execution.services.graph_runtime.agent_runtime_resolver import (
+    AgentRuntimeResolver,
+)
 from domain.execution.services.graph_runtime.nodes._common import (
     conversation_key_and_stateless,
     payload_from_config,
@@ -47,6 +50,8 @@ def _missing_fields_from_param_slice(param_slice: dict) -> list[str]:
             elif isinstance(field, dict) and field.get("field"):
                 fields.append(str(field["field"]))
     return fields
+
+
 from exceptions.service_exceptions import DomainValidationException
 
 
@@ -60,10 +65,12 @@ class ClarificationNode(NodeExecutor):
         tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
+        agent_runtime_resolver: AgentRuntimeResolver | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
         self.tracer = tracer
+        self.agent_runtime_resolver = agent_runtime_resolver
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -95,11 +102,17 @@ class ClarificationNode(NodeExecutor):
                     context=context,
                     node_id=node_uuid,
                 )
+            if self.agent_runtime_resolver and node_uuid:
+                system_prompt = await self.agent_runtime_resolver.resolve_system_prompt(
+                    context.flow_run_id, node_uuid, context.state
+                )
+            else:
+                system_prompt = context.system_prompt
             intent_slice = context.get_node_output(NodeType.IntentDetectionNode)
             param_slice = context.get_node_output(NodeType.ParamExtractionNode)
             request = LLMRequest(
                 prompt=resolved_prompt.prompt_text,
-                system_prompt=context.system_prompt,
+                system_prompt=system_prompt,
                 user_message=read_user_input(context),
                 user_payload={
                     "user_input": read_user_input(context),
@@ -174,4 +187,3 @@ class ClarificationNode(NodeExecutor):
             status=NodeExecutionStatus.NEEDS_INPUT,
             data=payload,
         )
-

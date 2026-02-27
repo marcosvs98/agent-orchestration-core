@@ -332,6 +332,7 @@ class AgentsRepository:
         supported_tool_schema_version: int | None = None,
         supported_tool_config_hash_prefix: str | None = None,
         persona_config: dict | None = None,
+        system_prompt: str | None = None,
         created_by: str,
     ) -> AgentVersionModel:
         async with self.db.get_session() as session:
@@ -379,6 +380,8 @@ class AgentsRepository:
                     )
                 if persona_config is None:
                     persona_config = source.persona_config
+                if system_prompt is None:
+                    system_prompt = source.system_prompt
 
             if version_major is None or version_minor is None or version_patch is None:
                 stmt_last = (
@@ -440,6 +443,7 @@ class AgentsRepository:
                     supported_tool_schema_version=supported_tool_schema_version,
                     supported_tool_config_hash_prefix=supported_tool_config_hash_prefix,
                     persona_config=persona_config,
+                    system_prompt=system_prompt,
                 )
                 session.add(instance)
                 await session.commit()

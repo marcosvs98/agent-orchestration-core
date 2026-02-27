@@ -1,4 +1,4 @@
-'''
+"""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -131,8 +131,7 @@ class StructuredOutputSchemaComposer:
             value.get
         except AttributeError:
             return {}
-        return value'''
-
+        return value"""
 
 from __future__ import annotations
 
@@ -204,10 +203,17 @@ class StructuredOutputSchemaComposer:
 
             return composed
 
-    def _extract_tool_config_id(self, execution_context: ExecutionContext) -> UUID | None:
+    def _extract_tool_config_id(
+        self, execution_context: ExecutionContext
+    ) -> UUID | None:
         try:
-            tool_selection = execution_context.get_node_output(NodeType.ToolSelectionNode) or {}
-            selected_tool = next(iter(tool_selection.get("result", [{}])), {}).get("selected_tool") or {}
+            tool_selection = (
+                execution_context.get_node_output(NodeType.ToolSelectionNode) or {}
+            )
+            selected_tool = (
+                next(iter(tool_selection.get("result", [{}])), {}).get("selected_tool")
+                or {}
+            )
             tool_config_id = selected_tool.get("tool_config_id")
             return UUID(str(tool_config_id)) if tool_config_id else None
         except (AttributeError, TypeError, ValueError):

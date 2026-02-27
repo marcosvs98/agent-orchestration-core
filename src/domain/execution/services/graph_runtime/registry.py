@@ -14,6 +14,9 @@ from domain.execution.services.graph_runtime.nodes import (
     ToolExecutionNode,
     UserContextEnrichmentNode,
 )
+from domain.execution.services.graph_runtime.agent_runtime_resolver import (
+    AgentRuntimeResolver,
+)
 from domain.execution.services.graph_runtime.types import NodeExecutor
 from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
@@ -28,12 +31,14 @@ class NodeRegistry:
         prompt_resolver: Any | None = None,
         tool_orchestrator: ToolOrchestrator | None = None,
         execution_repository: ExecutionRepository | None = None,
+        agent_runtime_resolver: AgentRuntimeResolver | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
         self.tool_orchestrator = tool_orchestrator
         self.execution_repository = execution_repository
         self.tracer = tracer
+        self.agent_runtime_resolver = agent_runtime_resolver
         self._registry: Dict[str, Type[NodeExecutor]] = {
             ToolSelectionNode.node_type: ToolSelectionNode,
             IntentDetectionNode.node_type: IntentDetectionNode,
@@ -65,6 +70,7 @@ class NodeRegistry:
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
+                agent_runtime_resolver = self.agent_runtime_resolver
 
                 class _IntentNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -72,6 +78,7 @@ class NodeRegistry:
                             llm_executor=llm_executor,
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
+                            agent_runtime_resolver=agent_runtime_resolver,
                         )
 
                 return _IntentNode
@@ -80,6 +87,7 @@ class NodeRegistry:
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
+                agent_runtime_resolver = self.agent_runtime_resolver
 
                 class _ParamExtractionNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -87,6 +95,7 @@ class NodeRegistry:
                             llm_executor=llm_executor,
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
+                            agent_runtime_resolver=agent_runtime_resolver,
                         )
 
                 return _ParamExtractionNode
@@ -97,6 +106,7 @@ class NodeRegistry:
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
+                agent_runtime_resolver = self.agent_runtime_resolver
 
                 class _ClarificationNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -104,6 +114,7 @@ class NodeRegistry:
                             llm_executor=llm_executor,
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
+                            agent_runtime_resolver=agent_runtime_resolver,
                         )
 
                 return _ClarificationNode
@@ -127,6 +138,7 @@ class NodeRegistry:
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
+                agent_runtime_resolver = self.agent_runtime_resolver
 
                 class _ResponseComposer(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -134,6 +146,7 @@ class NodeRegistry:
                             llm_executor=llm_executor,
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
+                            agent_runtime_resolver=agent_runtime_resolver,
                         )
 
                 return _ResponseComposer
@@ -146,6 +159,6 @@ class NodeRegistry:
                         super().__init__(tracer=tracer)
 
                 return _UserContextEnrichmentNode
-            if agent_handle:
+            if agent_handle and node_cls:
                 agent_handle.success(output={"node_cls": node_cls.__name__})
             return node_cls

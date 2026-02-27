@@ -23,8 +23,6 @@ class NodeType(StrEnum):
     ParamExtractionNode = "ParamExtractionNode"
 
     ClarificationNode = "ClarificationNode"
-    ClarificationIntentNode = "ClarificationIntentNode"
-    ClarificationSlotNode = "ClarificationSlotNode"
 
     ToolSelectionNode = "ToolSelectionNode"
     ToolExecutionNode = "ToolExecutionNode"

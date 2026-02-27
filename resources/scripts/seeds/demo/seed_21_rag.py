@@ -181,7 +181,6 @@ async def seed_rag() -> None:
         embedding_adapter=embedding_adapter,
         tracer=tracer,
     )
-    '''
     documents = [
         RagDocumentCreate(
             source="assistente-bolso",
@@ -337,7 +336,6 @@ async def seed_rag() -> None:
             metadata={"topic": "policy"},
         ),
     ]
-    '''
     documents = []
     for document in documents:
         await rag_runtime_service.ingest_document(

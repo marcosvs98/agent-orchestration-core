@@ -44,11 +44,7 @@ class AgentVersion(ORMBaseModel):
     supported_tool_schema_version = Column(Integer, nullable=True)
     supported_tool_config_hash_prefix = Column(String(length=128), nullable=True)
     persona_config = Column(JSONB, nullable=True)
-    system_prompt_template_id = Column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("system_prompt_template.template_id", ondelete="RESTRICT"),
-        nullable=True,
-    )
+    system_prompt = Column(Text(), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

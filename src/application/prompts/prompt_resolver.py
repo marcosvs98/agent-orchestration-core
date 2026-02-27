@@ -135,7 +135,7 @@ class PromptResolver:
         mapping = {
             PromptIntent.INTENT_TOOL_SELECTION: NodeType.ToolSelectionNode,
             PromptIntent.SLOT_FILLING: NodeType.ParamExtractionNode,
-            PromptIntent.CLARIFICATION: NodeType.ClarificationSlotNode,
+            PromptIntent.CLARIFICATION: NodeType.ClarificationNode,
             PromptIntent.RESPONSE_RENDER: NodeType.ResponseComposer,
         }
 
@@ -155,7 +155,7 @@ class PromptResolver:
             NodeType.IntentDetectionNode: LLMTaskType.INTENT_SELECTION,
             NodeType.ToolSelectionNode: LLMTaskType.INTENT_SELECTION,
             NodeType.ParamExtractionNode: LLMTaskType.SLOT_FILLING,
-            NodeType.ClarificationSlotNode: LLMTaskType.CLARIFICATION,
+            NodeType.ClarificationNode: LLMTaskType.CLARIFICATION,
             NodeType.ResponseComposer: LLMTaskType.RESPONSE_RENDER,
         }
 

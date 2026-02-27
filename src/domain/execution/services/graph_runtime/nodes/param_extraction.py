@@ -5,8 +5,11 @@ from uuid import UUID
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.trace import TraceContext
+from domain.execution.services.graph_runtime.agent_runtime_resolver import (
+    AgentRuntimeResolver,
+)
 from domain.execution.services.graph_runtime.nodes._common import (
-    #ExtractionResult,
+    # ExtractionResult,
     conversation_key_and_stateless,
     payload_from_config,
     read_user_input,
@@ -39,17 +42,18 @@ class ParamExtractionNode(NodeExecutor):
         tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort | None = None,
         prompt_resolver: Any | None = None,
+        agent_runtime_resolver: AgentRuntimeResolver | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
         self.tracer = tracer
+        self.agent_runtime_resolver = agent_runtime_resolver
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
     ) -> NodeResult:
         config = config or {}
         llm_cfg = config.get("llm")
-
 
         if llm_cfg and self.llm_executor:
             runtime_policy = (
@@ -74,9 +78,9 @@ class ParamExtractionNode(NodeExecutor):
 
             task_type_raw = llm_cfg.get("task_type", LLMTaskType.SLOT_FILLING.value)
             try:
-                task_type = LLMTaskType(task_type_raw)
+                LLMTaskType(task_type_raw)
             except ValueError:
-                task_type = LLMTaskType.SLOT_FILLING
+                pass
 
             with self.tracer.observe(
                 as_type="chain",
@@ -88,9 +92,15 @@ class ParamExtractionNode(NodeExecutor):
                     context=context,
                     node_id=node_uuid,
                 )
+            if self.agent_runtime_resolver and node_uuid:
+                system_prompt = await self.agent_runtime_resolver.resolve_system_prompt(
+                    context.flow_run_id, node_uuid, context.state
+                )
+            else:
+                system_prompt = context.system_prompt
             request = LLMRequest(
                 prompt=resolved_prompt.prompt_text,
-                system_prompt=context.system_prompt,
+                system_prompt=system_prompt,
                 user_message=read_user_input(context),
                 input_schema=resolved_prompt.input_schema
                 or llm_cfg.get("input_schema", {}),
@@ -166,5 +176,5 @@ class ParamExtractionNode(NodeExecutor):
             node=self.node_type,
             status=NodeExecutionStatus.ERROR,
             data={},
-            next_state=next_state
+            next_state=next_state,
         )

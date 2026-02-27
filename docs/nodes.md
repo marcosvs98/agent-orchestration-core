@@ -44,7 +44,7 @@ Nomes canônicos alinhados ao enum `NodeType` (fonte única de verdade para doc 
 | IntentDetectionNode | IntentDetectionNode |
 | ToolSelectionNode | ToolSelectionNode |
 | ParamExtractionNode (slot filling) | ParamExtractionNode |
-| ClarificationNode | ClarificationNode, ClarificationSlotNode, ClarificationIntentNode |
+| ClarificationNode | ClarificationNode |
 | ToolExecutionNode (LLM-less) | ToolExecutionNode |
 | ResponseComposer | ResponseComposer |
 | FallbackNode | FallbackNodeSLA |
@@ -488,4 +488,3 @@ flowchart TB
     D -. critical failure .-> F
     G -. render failure .-> F
 ```
-
