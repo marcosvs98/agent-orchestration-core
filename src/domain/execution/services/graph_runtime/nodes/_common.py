@@ -6,14 +6,6 @@ from domain.execution.services.graph_runtime.types import ExecutionContext
 from domain.llm.schemas.llm import LLMTaskType
 
 
-def payload_from_config(
-    config: Dict[str, Any] | None, default: Dict[str, Any]
-) -> Dict[str, Any]:
-    if config is None:
-        return default
-    return config.get("output", default) or default
-
-
 def conversation_key_and_stateless(
     task_type: LLMTaskType | None,
     llm_policy: Dict[str, Any],
@@ -31,10 +23,3 @@ def read_user_input(context: ExecutionContext) -> str:
         return ""
     user_input = context.input_payload.get("user_input")
     return user_input if isinstance(user_input, str) else ""
-
-
-def serialize_available_tools(context: ExecutionContext) -> list[dict[str, Any]]:
-    serialized: list[dict[str, Any]] = []
-    for tool in context.available_tools:
-        serialized.append(tool.model_dump(mode="json"))
-    return serialized

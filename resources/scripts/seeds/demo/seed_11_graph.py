@@ -149,20 +149,9 @@ async def seed_graph() -> None:
                     config=_llm_node_config(
                         task_type="INTENT_SELECTION",
                         provider="OPENAI",
-                        model_alias="gpt-4o-mini",
+                        model_alias="gpt-4.1-mini",
                         temperature=0.1,
                         top_p=0.1,
-                    ),
-                ),
-                str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
-                    type="ClarificationNode",
-                    config=_resume_llm_node_config(
-                        resume_to_node_id=str(NODE_INTENT_ID),
-                        task_type="CLARIFICATION",
-                        provider="OPENAI",
-                        model_alias="gpt-4.1-mini",
-                        temperature=0.4,
-                        top_p=0.3,
                     ),
                 ),
                 str(NODE_TOOL_SELECTION_ID): FlowGraphNodeSpec(
@@ -170,7 +159,7 @@ async def seed_graph() -> None:
                     config=_llm_node_config(
                         task_type="TOOL_SELECTION",
                         provider="OPENAI",
-                        model_alias="gpt-4o-mini",
+                        model_alias="gpt-4.1-mini",
                         temperature=0.1,
                         top_p=0.2,
                     ),
@@ -183,6 +172,17 @@ async def seed_graph() -> None:
                         model_alias="gpt-4.1-mini",
                         temperature=0.2,
                         top_p=0.2,
+                    ),
+                ),
+                str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
+                    type="ClarificationNode",
+                    config=_resume_llm_node_config(
+                        resume_to_node_id=str(NODE_INTENT_ID),
+                        task_type="CLARIFICATION",
+                        provider="OPENAI",
+                        model_alias="gpt-4.1-mini",
+                        temperature=0.4,
+                        top_p=0.3,
                     ),
                 ),
                 str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
@@ -213,7 +213,7 @@ async def seed_graph() -> None:
                     config=_llm_node_config(
                         task_type="RESPONSE_RENDER",
                         provider="OPENAI",
-                        model_alias="gpt-4o",
+                        model_alias="gpt-4.1-mini",
                         temperature=0.3,
                         top_p=0.4,
                     ),

@@ -21,7 +21,6 @@ from domain.execution.services.graph_runtime.types import (
 from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.llm.schemas.llm import LLMProviderType, LLMRequest, LLMResult, LLMTaskType
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
-from exceptions.service_exceptions import DomainValidationException
 from application.prompts.prompt_resolver import PromptResolver
 
 
@@ -85,10 +84,11 @@ class IntentDetectionNode(NodeExecutor):
         else:
             system_prompt = context.system_prompt
 
+        user_message = read_user_input(context)
         llm_request = LLMRequest(
             prompt=resolved_prompt.prompt_text,
             system_prompt=system_prompt,
-            user_message=read_user_input(context),
+            user_message=user_message,
             input_schema=resolved_prompt.input_schema,
             output_schema=resolved_prompt.output_schema,
             json_schema=resolved_prompt.output_schema
@@ -144,9 +144,6 @@ class IntentDetectionNode(NodeExecutor):
             )
             if chain_handle:
                 chain_handle.success(output=llm_result.model_dump(mode="json"))
-
-        if not isinstance(llm_result.output, dict):
-            raise DomainValidationException(message="invalid_intent_output_contract")
 
         next_state = {**(context.state or {}), self.node_type: llm_result.output}
 

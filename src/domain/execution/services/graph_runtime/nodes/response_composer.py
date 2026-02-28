@@ -22,7 +22,6 @@ from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.llm.schemas.llm import LLMRequest, LLMResult, LLMTaskType, LLMProviderType
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
 from application.prompts.prompt_resolver import PromptResolver
-from exceptions.service_exceptions import DomainValidationException
 
 
 class ResponseComposer(NodeExecutor):
@@ -144,9 +143,6 @@ class ResponseComposer(NodeExecutor):
             )
             if chain_handle:
                 chain_handle.success(output=llm_result.model_dump(mode="json"))
-
-        if not isinstance(llm_result.output, dict):
-            raise DomainValidationException(message="invalid_intent_output_contract")
 
         next_state = {**(context.state or {}), self.node_type: llm_result.output}
 

@@ -148,7 +148,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             conversation_id = await self._get_or_create_conversation_id(
                 request.conversation_key
             )
-
+            previous_response_id: Optional[ConversationResponseID] = None
             if request.stateless:
                 payload["conversation"] = conversation_id
             else:

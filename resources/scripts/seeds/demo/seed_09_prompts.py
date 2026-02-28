@@ -43,6 +43,7 @@ Classify all user intents types and confidence.
 
         slot_template = """# Task
 Extract parameters from user input to fill the request schema.
+You can use context from the previous conversation to complete slots.
 
 # Selected Tools
 {{ ctx.derived.selected_tools | tojson }}
@@ -71,6 +72,7 @@ Ask the user for missing required information.
         response_template = """# Task
 If tool_response is present and non-empty: format it as a natural language message for the user in one concise sentence.
 If tool_response is empty or absent: the user asked an informative question (e.g. how to do something). Answer using the retrieved context and user_input; be short and helpful.
+You can use context from the previous conversation to complete slots.
 
 {% if ctx.input.input_payload.original_intent %}
 # Intent

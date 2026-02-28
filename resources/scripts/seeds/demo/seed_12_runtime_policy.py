@@ -49,7 +49,13 @@ def _policy_definition() -> dict:
         "llm": {
             "max_retries": 3,
             "timeout_ms": 30000,
-            "history_enabled_tasks": ["RESPONSE_RENDER"],
+            "history_enabled_tasks": [
+                "intent_selection",
+                "tool_selection",
+                "slot_filling",
+                "clarification",
+                "response_render",
+            ],
             "temperature": 0,
             "max_tokens": 1024,
         },

@@ -72,7 +72,11 @@ class ExecutionContext(BaseModel):
         return self.model_dump(mode="json")
 
     def get_node_output(self, node_type: NodeType) -> dict[str, Any]:
-        return self.state.get(node_type.value) or {}
+        out = self.state.get(node_type.value)
+        if out is not None:
+            return out
+        out = self.state.get(node_type)
+        return out if isinstance(out, dict) else {}
 
 
 class NodeResult(BaseModel):

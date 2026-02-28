@@ -336,7 +336,7 @@ async def seed_rag() -> None:
             metadata={"topic": "policy"},
         ),
     ]
-    documents = []
+    #documents = []
     for document in documents:
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,
