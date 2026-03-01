@@ -675,7 +675,7 @@ class ExecutionService(ExecutionServicePort):
         try:
             with self.tracer.flow(
                 trace=trace_context,
-                input={"user_input": flow_run.input.user_input},
+                input=flow_run.input.user_input,
             ) as flow_handle:
                 with self.tracer.observe(
                     as_type="chain",
@@ -719,14 +719,15 @@ class ExecutionService(ExecutionServicePort):
                 output = flow_run_result.output if flow_run_result else {}
                 error = flow_run_result.error if flow_run_result else {}
                 if flow_handle:
+                    system_output = output.get('system_output') if output else {}
                     if error:
                         flow_handle.error(
                             error_type="flow_run_failed",
                             error_message=str(error),
-                            output={"output": output, "error": error},
+                            output={"output": system_output, "error": error},
                         )
                     else:
-                        flow_handle.success(output=output)
+                        flow_handle.success(output=system_output)
         finally:
             await self.repository.end_event_batching(flow_run_id)
 

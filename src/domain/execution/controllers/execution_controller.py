@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Header, Request, status
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.execution import (
@@ -108,10 +108,28 @@ class ExecutionController:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
 
+        trace_uuid = getattr(request.state, "trace_id", None)
+        if trace_uuid is None:
+            trace_id_header = request.headers.get("X-Trace-Id")
+            if trace_id_header:
+                try:
+                    trace_uuid = UUID(trace_id_header)
+                except ValueError:
+                    trace_uuid = (
+                        UUID(hex=trace_id_header)
+                        if len(trace_id_header) == 32
+                        else uuid4()
+                    )
+            else:
+                trace_uuid = uuid4()
+        trace_id_str = str(trace_uuid)
+        trace_id_hex = trace_uuid.hex
+
         with self.tracer.observe(
             as_type="span",
             name="domain.execution.controller.create_flow_run",
-            input={"endpoint": request.url.path},
+            input={"endpoint": request.url.path, "idempotency_key": idempotency_key},
+            trace_context={"trace_id": trace_id_hex},
         ):
             return await self.boundary.ingest_interaction_and_create_flow_run(
                 auth=auth,
@@ -122,7 +140,7 @@ class ExecutionController:
                 headers=dict(request.headers),
                 external_message_id=request.headers.get("X-External-Message-Id"),
                 request_id=request.headers.get("X-Request-Id"),
-                trace_id=request.headers.get("X-Trace-Id"),
+                trace_id=trace_id_str,
             )
 
     async def create_tool_run(
