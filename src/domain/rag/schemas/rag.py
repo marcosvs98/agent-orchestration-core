@@ -69,6 +69,7 @@ class RagContextItem(BaseModel):
 class RagContextReason(StrEnum):
     OK = "OK"
     NO_MATCHES = "NO_MATCHES"
+    CONFIG_NOT_FOUND = "CONFIG_NOT_FOUND"
 
 
 class RagContext(BaseModel):

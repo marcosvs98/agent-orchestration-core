@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from domain.governance.services.llm_admin_service import LLMAdminService
 from domain.governance.repositories.llm_provider_repository import LLMProviderRepository
@@ -10,17 +10,20 @@ from domain.governance.repositories.llm_model_mapping_repository import (
     LLMModelMappingRepository,
 )
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
-from infra.database import get_db
 
 
 router = APIRouter(prefix="/admin/llm", tags=["llm-admin"])
 
 
-def get_service(db=Depends(get_db)) -> LLMAdminService:
+def get_service(request: Request) -> LLMAdminService:
+    container = request.app.state.container
+    db = container.core.database_connection()
+    tracer = container.adapters.tracer()
+    cache_adapter = container.adapters.redis_adapter()
     return LLMAdminService(
-        LLMProviderRepository(db),
-        LLMModelMappingRepository(db),
-        LLMPricingRepository(db),
+        LLMProviderRepository(db, tracer=tracer, cache_adapter=cache_adapter),
+        LLMModelMappingRepository(db, tracer=tracer, cache_adapter=cache_adapter),
+        LLMPricingRepository(db, tracer=tracer, cache_adapter=cache_adapter),
     )
 
 

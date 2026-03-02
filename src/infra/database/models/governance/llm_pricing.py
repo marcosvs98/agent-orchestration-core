@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Numeric, String, func
+from sqlalchemy import Column, DateTime, Index, Numeric, String, func
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
 
@@ -19,3 +19,12 @@ class LLMPricing(ORMBaseModel):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     created_by = Column(String(length=128), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_llm_pricing_provider_model_status",
+            "provider",
+            "provider_model",
+            "status",
+        ),
+    )

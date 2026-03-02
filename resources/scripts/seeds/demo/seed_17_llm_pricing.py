@@ -19,6 +19,7 @@ from seeds.demo.ids import (
     LLM_PRICING_GPT4O_ID,
     LLM_PRICING_GPT41_MINI_ID,
     LLM_PRICING_GPT4O_MINI_ID,
+    LLM_PRICING_SLM_LOCAL_ID,
     PRINCIPAL_SYSTEM,
 )
 
@@ -28,6 +29,7 @@ async def seed_llm_pricing() -> None:
         pricing_rows = [
             (
                 LLM_PRICING_GPT4O_MINI_ID,
+                "OPENAI",
                 "gpt-4o-mini",
                 Decimal("0.150"),
                 Decimal("0.600"),
@@ -35,6 +37,7 @@ async def seed_llm_pricing() -> None:
             ),
             (
                 LLM_PRICING_GPT4O_ID,
+                "OPENAI",
                 "gpt-4o",
                 Decimal("5.000"),
                 Decimal("15.000"),
@@ -42,14 +45,30 @@ async def seed_llm_pricing() -> None:
             ),
             (
                 LLM_PRICING_GPT41_MINI_ID,
+                "OPENAI",
                 "gpt-4.1-mini",
                 Decimal("0.150"),
                 Decimal("0.600"),
                 "ACTIVE",
             ),
+            (
+                LLM_PRICING_SLM_LOCAL_ID,
+                "SLM_LOCAL",
+                "smollm2-360m-instruct-q8_0",
+                Decimal("0.000"),
+                Decimal("0.000"),
+                "ACTIVE",
+            ),
         ]
 
-        for pricing_id, provider_model, input_cost, output_cost, status in pricing_rows:
+        for (
+            pricing_id,
+            provider,
+            provider_model,
+            input_cost,
+            output_cost,
+            status,
+        ) in pricing_rows:
             result = await session.execute(
                 select(LLMPricing).where(LLMPricing.llm_pricing_id == pricing_id)
             )
@@ -58,7 +77,7 @@ async def seed_llm_pricing() -> None:
                 session.add(
                     LLMPricing(
                         llm_pricing_id=pricing_id,
-                        provider="OPENAI",
+                        provider=provider,
                         provider_model=provider_model,
                         unit="tokens",
                         input_cost_per_1k=input_cost,
@@ -69,7 +88,7 @@ async def seed_llm_pricing() -> None:
                     )
                 )
             else:
-                existing.provider = "OPENAI"
+                existing.provider = provider
                 existing.provider_model = provider_model
                 existing.unit = "tokens"
                 existing.input_cost_per_1k = input_cost

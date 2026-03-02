@@ -50,6 +50,9 @@ MAX_USER_MEMORY_DOCUMENTS: int = config(
 )
 
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="", cast=str)
+SLM_MODEL_PATH: str = config(
+    "SLM_MODEL_PATH", default="models/smollm2-360m-instruct-q8_0.gguf", cast=str
+)
 
 LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)
 LANGFUSE_SECRET_KEY: str | None = config("LANGFUSE_SECRET_KEY", default=None)

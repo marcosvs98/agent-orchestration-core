@@ -295,10 +295,16 @@ class RagRuntimeService:
         config = await self.repository.get_rag_config(rag_config_id)
 
         if config is None or config.tenant_id != tenant_id:
-            raise NotFoundServiceException(message="rag_config_not_found")
+            return RagContext(
+                context_items=[],
+                context_summary=None,
+                eligible=False,
+                reason=RagContextReason.CONFIG_NOT_FOUND,
+                generation_contract=None,
+            )
 
         options = RagConfigOptions.model_validate(config.options or {})
-        if options.embedding.dimension != 1536:
+        if options.embedding.dimension != 1536: # Todo: Criar env em settings
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )

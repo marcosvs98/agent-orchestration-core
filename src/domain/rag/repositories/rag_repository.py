@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.rag.schemas.embedding_job import EmbeddingStatus
@@ -27,9 +28,11 @@ class RagRepository:
         self,
         database_connection: DatabaseConnection,
         tracer: RuntimeTracerPort | None = None,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
 
     async def get_vector_store(self, vector_store_id: UUID) -> VectorStoreModel | None:
         async with self.db.get_session() as session:
@@ -88,6 +91,11 @@ class RagRepository:
             return list(result.scalars().all())
 
     async def get_rag_config(self, rag_config_id: UUID) -> RagConfigModel | None:
+        key = f"rag_config:{rag_config_id}"
+        if self.cache_adapter:
+            cached = await self.cache_adapter.get(key)
+            if cached:
+                return RagConfigModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(RagConfigModel).where(
                 RagConfigModel.rag_config_id == rag_config_id
@@ -112,9 +120,14 @@ class RagRepository:
                                 "found": row is not None,
                             }
                         )
+                    if self.cache_adapter and row:
+                        await self.cache_adapter.set(key, row.to_dict(), ttl=60)
                     return row
             result = await session.execute(stmt)
-            return result.scalar_one_or_none()
+            row = result.scalar_one_or_none()
+            if self.cache_adapter and row:
+                await self.cache_adapter.set(key, row.to_dict(), ttl=60)
+            return row
 
     async def list_rag_configs(
         self,

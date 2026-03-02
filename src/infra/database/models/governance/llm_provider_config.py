@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -22,3 +22,7 @@ class LLMProviderConfig(ORMBaseModel):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     created_by = Column(String(length=128), nullable=False)
+
+    __table_args__ = (
+        Index("ix_llm_provider_config_tenant_provider_status", "tenant_id", "provider", "status"),
+    )

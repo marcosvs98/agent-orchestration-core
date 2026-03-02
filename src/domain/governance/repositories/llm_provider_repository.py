@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
@@ -18,13 +19,20 @@ class LLMProviderRepository:
         self,
         database_connection: DatabaseConnection,
         tracer: RuntimeTracerPort,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
 
     async def get_active_config(
         self, *, tenant_id: UUID, provider: str
     ) -> Optional[LLMProviderConfigModel]:
+        key = f"llm_provider_config:{tenant_id}:{provider}"
+        if self.cache_adapter:
+            cached = await self.cache_adapter.get(key)
+            if cached:
+                return LLMProviderConfigModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(LLMProviderConfigModel).where(
                 LLMProviderConfigModel.tenant_id == tenant_id,
@@ -56,6 +64,8 @@ class LLMProviderRepository:
                         }
                     )
 
+                if self.cache_adapter and config:
+                    await self.cache_adapter.set(key, config.to_dict(), ttl=60)
                 return config
 
     async def upsert_config(
@@ -125,6 +135,10 @@ class LLMProviderRepository:
                         )
                     )
                     await session.commit()
+                    if self.cache_adapter:
+                        await self.cache_adapter.delete(
+                            f"llm_provider_config:{tenant_id}:{provider}"
+                        )
                     await session.refresh(instance)
                     return instance
 
@@ -143,4 +157,8 @@ class LLMProviderRepository:
                 )
                 session.add(instance)
                 await session.commit()
+                if self.cache_adapter:
+                    await self.cache_adapter.delete(
+                        f"llm_provider_config:{tenant_id}:{provider}"
+                    )
                 return instance

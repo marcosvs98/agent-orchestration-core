@@ -1812,6 +1812,9 @@ class ExecutionRepository:
                 )
 
     async def get_graph_state(self, flow_run_id: UUID) -> GraphStateModel | None:
+        key = f"graph_state:{flow_run_id}"
+        if cached := await self.cache_adapter.get(key):
+            return GraphStateModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(GraphStateModel).where(
                 GraphStateModel.flow_run_id == flow_run_id
@@ -1838,6 +1841,8 @@ class ExecutionRepository:
                         }
                     )
 
+                if state:
+                    await self.cache_adapter.set(key, state.to_dict(), ttl=60)
                 return state
 
     async def upsert_graph_state(
@@ -1898,6 +1903,7 @@ class ExecutionRepository:
                         }
                     )
                 await session.commit()
+                await self.cache_adapter.delete(f"graph_state:{flow_run_id}")
 
     async def get_flow_version(self, flow_version_id: UUID) -> FlowVersionModel | None:
         key = f"flow_version:{flow_version_id}"

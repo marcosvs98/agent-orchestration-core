@@ -5,6 +5,7 @@ from adapters.cache.redis_adapter import RedisAdapter
 from adapters.http.hardened_http_client import HardenedHttpClient
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
+from domain.llm.adapters.slm_local_provider import SLMLocalProvider
 from domain.llm.ports.llm_provider import LLMProviderPort
 from domain.llm.schemas.llm import LLMProviderType
 from domain.llm.services.provider_selector import LLMProviderSelection
@@ -31,11 +32,16 @@ class LLMProviderFactory:
             name="domain.llm.provider_factory.build",
             input={"provider": selection.provider},
         ) as agent_handle:
+            provider: LLMProviderPort | None = None
             if selection.provider.upper() == LLMProviderType.OPENAI:
-                provider: LLMProviderPort = OpenAIProviderAdapter(
+                provider = OpenAIProviderAdapter(
                     secret_resolver=self.secret_resolver,
                     credential_secret_ref=selection.credential_secret_ref,
                     cache_adapter=self.cache_adapter,
+                )
+            elif selection.provider.upper() == LLMProviderType.SLM_LOCAL:
+                provider = SLMLocalProvider(
+                    credential_secret_ref=selection.credential_secret_ref,
                 )
             if provider:
                 if agent_handle:

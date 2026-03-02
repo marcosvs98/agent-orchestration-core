@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, text
+from sqlalchemy import Column, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -23,3 +23,5 @@ class GraphState(ORMBaseModel):
         server_default=text("'{}'::jsonb"),
         nullable=False,
     )
+
+    __table_args__ = (Index("ix_graph_state_flow_run_id", "flow_run_id"),)

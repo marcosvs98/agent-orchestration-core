@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from infra.database import DatabaseConnection
 from infra.database.models.governance.llm_model_mapping import (
@@ -20,14 +21,23 @@ class LLMModelMappingStatus(StrEnum):
 
 class LLMModelMappingRepository:
     def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
+        self,
+        database_connection: DatabaseConnection,
+        tracer: RuntimeTracerPort,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
 
     async def get_active_mapping(
         self, *, tenant_id: UUID, provider: str, model_alias: str
     ) -> Optional[LLMModelMappingModel]:
+        key = f"llm_mapping:{tenant_id}:{provider}:{model_alias}"
+        if self.cache_adapter:
+            cached = await self.cache_adapter.get(key)
+            if cached:
+                return LLMModelMappingModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = (
                 select(LLMModelMappingModel)
@@ -69,6 +79,8 @@ class LLMModelMappingRepository:
                         }
                     )
 
+                if self.cache_adapter and mapping:
+                    await self.cache_adapter.set(key, mapping.to_dict(), ttl=60)
                 return mapping
 
     async def upsert_mapping(
@@ -136,6 +148,10 @@ class LLMModelMappingRepository:
                         .values(provider_model=provider_model, created_by=created_by)
                     )
                     await session.commit()
+                    if self.cache_adapter:
+                        await self.cache_adapter.delete(
+                            f"llm_mapping:{tenant_id}:{provider}:{model_alias}"
+                        )
                     await session.refresh(instance)
                     return instance
 
@@ -158,4 +174,8 @@ class LLMModelMappingRepository:
                 )
                 session.add(instance)
                 await session.commit()
+                if self.cache_adapter:
+                    await self.cache_adapter.delete(
+                        f"llm_mapping:{tenant_id}:{provider}:{model_alias}"
+                    )
                 return instance

@@ -138,9 +138,15 @@ class ExecutionService(ExecutionServicePort):
         circuit_breaker = CircuitBreaker(self.cache_adapter, tracer=tracer)
         http_client = HardenedHttpClient()
         secret_resolver = EnvSecretResolver()
-        provider_repo = LLMProviderRepository(repository.db, tracer=tracer)
-        mapping_repo = LLMModelMappingRepository(repository.db, tracer=tracer)
-        pricing_repo = LLMPricingRepository(repository.db, tracer=tracer)
+        provider_repo = LLMProviderRepository(
+            repository.db, tracer=tracer, cache_adapter=repository.cache_adapter
+        )
+        mapping_repo = LLMModelMappingRepository(
+            repository.db, tracer=tracer, cache_adapter=repository.cache_adapter
+        )
+        pricing_repo = LLMPricingRepository(
+            repository.db, tracer=tracer, cache_adapter=repository.cache_adapter
+        )
         provider_selector = LLMProviderSelector(
             provider_repo, mapping_repo, pricing_repo, tracer=tracer
         )
@@ -185,7 +191,9 @@ class ExecutionService(ExecutionServicePort):
             guardrail_engine=guardrail_engine,
             tracer=self.tracer,
         )
-        rag_repository = RagRepository(repository.db, tracer=tracer)
+        rag_repository = RagRepository(
+            repository.db, tracer=tracer, cache_adapter=repository.cache_adapter
+        )
         cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
         embedding_adapter = OpenAIEmbeddingAdapter(
             api_key=settings.OPENAI_API_KEY,

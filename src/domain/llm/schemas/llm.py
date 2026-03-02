@@ -16,6 +16,7 @@ class LLMTaskType(StrEnum):
 
 class LLMProviderType(StrEnum):
     OPENAI = "OPENAI"
+    SLM_LOCAL = "SLM_LOCAL"
 
 
 class LLMMessage(BaseModel):

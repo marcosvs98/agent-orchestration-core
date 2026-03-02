@@ -4,6 +4,7 @@ from typing import Optional
 
 from sqlalchemy import desc, select, update
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from utils.query_compiler import compile_query
 from infra.database import DatabaseConnection
@@ -15,13 +16,20 @@ class LLMPricingRepository:
         self,
         database_connection: DatabaseConnection,
         tracer: RuntimeTracerPort,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
 
     async def get_active_pricing(
         self, *, provider: str, provider_model: str
     ) -> Optional[LLMPricingModel]:
+        key = f"llm_pricing:{provider}:{provider_model}"
+        if self.cache_adapter:
+            cached = await self.cache_adapter.get(key)
+            if cached:
+                return LLMPricingModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = (
                 select(LLMPricingModel)
@@ -57,6 +65,8 @@ class LLMPricingRepository:
                         }
                     )
 
+                if self.cache_adapter and pricing:
+                    await self.cache_adapter.set(key, pricing.to_dict(), ttl=60)
                 return pricing
 
     async def upsert_pricing(
@@ -128,6 +138,10 @@ class LLMPricingRepository:
                         )
                     )
                     await session.commit()
+                    if self.cache_adapter:
+                        await self.cache_adapter.delete(
+                            f"llm_pricing:{provider}:{provider_model}"
+                        )
                     await session.refresh(instance)
                     return instance
 
@@ -148,4 +162,8 @@ class LLMPricingRepository:
                 )
                 session.add(instance)
                 await session.commit()
+                if self.cache_adapter:
+                    await self.cache_adapter.delete(
+                        f"llm_pricing:{provider}:{provider_model}"
+                    )
                 return instance

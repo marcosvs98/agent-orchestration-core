@@ -207,6 +207,7 @@ class RAGContainer(containers.DeclarativeContainer):
         RagRepository,
         database_connection=core.database_connection,
         tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
     )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
