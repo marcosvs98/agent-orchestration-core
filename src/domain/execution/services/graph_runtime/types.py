@@ -67,6 +67,7 @@ class ExecutionContext(BaseModel):
     node_output: Dict[str, Any] = Field(default_factory=dict)
     iteration_counters: Dict[str, int] = Field(default_factory=dict)
     system_prompt: str | None = None
+    system_context: str | None = None
 
     def snapshot(self) -> Dict[str, Any]:
         return self.model_dump(mode="json")

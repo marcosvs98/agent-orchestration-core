@@ -51,7 +51,10 @@ MAX_USER_MEMORY_DOCUMENTS: int = config(
 
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="", cast=str)
 SLM_MODEL_PATH: str = config(
-    "SLM_MODEL_PATH", default="models/smollm2-360m-instruct-q8_0.gguf", cast=str
+    "SLM_MODEL_PATH", default="models/Qwen2.5-1.5B-Instruct-GGUF", cast=str
+)
+SLM_INFERENCE_TIMEOUT_MS: int = config(
+    "SLM_INFERENCE_TIMEOUT_MS", default=800, cast=int
 )
 
 LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)

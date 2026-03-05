@@ -38,8 +38,7 @@ Classify all user intents types and confidence.
 
 # Constraints
 - Do not return tool_config_id.
-- Do not return intent_category.
-"""
+- Do not return intent_category."""
 
         slot_template = """# Task
 Extract parameters from user input to fill the request schema.
@@ -51,12 +50,6 @@ You can use context from the previous conversation to complete slots.
 # Constraints
 - Do not invent values.
 """
-
-        ##{ % if ctx.output_schema %}
-        ## Request Schema
-        #{{ctx.output_schema | tojson}}
-        #{ % endif %}
-
         clarification_template = """# Task
 Ask the user for missing required information.
 
@@ -70,7 +63,9 @@ Ask the user for missing required information.
 """
 
         response_template = """# Task
+{% if ctx.tool_response %}
 If tool_response is present and non-empty: format it as a natural language message for the user in one concise sentence.
+{% endif %}
 If tool_response is empty or absent: the user asked an informative question (e.g. how to do something). Answer using the retrieved context and user_input; be short and helpful.
 You can use context from the previous conversation to complete slots.
 
@@ -85,22 +80,11 @@ You can use context from the previous conversation to complete slots.
 {% endif %}
 
 # Output Guidelines
+{% if ctx.tool_response %}
 - When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the expense was registered.
+{% endif %}
 - When tool_response is empty: answer the user question using the provided context; be concise.
 - Do not mention status codes, endpoints, requests, or payloads."""
-
-        # {% if ctx.layers.tenant_knowledge %}
-        # # RAG Context (Optional)
-        # {{ ctx.layers.tenant_knowledge | tojson }}
-        # {% endif %}
-        #
-        # {% if ctx.layers.user_memory_structured or ctx.layers.user_memory_vector %}
-        # # User Memory (Optional)
-        # {{ {
-        #   "structured": ctx.layers.user_memory_structured,
-        #   "vector": ctx.layers.user_memory_vector
-        # } | tojson }}
-        # {% endif %}
 
         tool_selection_template = """# Task
 Select the best matching tool(s) for each user intent. Return one entry per intent type when the user has multiple intents.
@@ -135,9 +119,7 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
                                             "execution",
                                             "generation",
                                             "transformation",
-                                            "analysis",
                                             "conversation",
-                                            "control",
                                         ],
                                     },
                                     "confidence": {
@@ -319,9 +301,7 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
                                             "execution",
                                             "generation",
                                             "transformation",
-                                            "analysis",
                                             "conversation",
-                                            "control",
                                         ],
                                     },
                                     "selected_tool": {

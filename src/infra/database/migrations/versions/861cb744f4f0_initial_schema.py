@@ -942,6 +942,72 @@ def upgrade() -> None:
         ),
     )
     op.create_table(
+        "semantic_answer_cache",
+        sa.Column("cache_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("task_type", sa.String(length=64), nullable=False),
+        sa.Column("query_hash", sa.String(length=128), nullable=False),
+        sa.Column("embedding", Vector(1536), nullable=False),
+        sa.Column(
+            "response_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
+        sa.Column("model_alias", sa.String(length=128), nullable=True),
+        sa.Column("inference_layer", sa.String(length=16), nullable=False),
+        sa.Column("similarity_score", sa.Float(), nullable=True),
+        sa.Column(
+            "ttl_seconds",
+            sa.Integer(),
+            server_default="3600",
+            nullable=False,
+        ),
+        sa.Column(
+            "hit_count",
+            sa.Integer(),
+            server_default="0",
+            nullable=False,
+        ),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_hit_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_semantic_answer_cache_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("cache_id", name=op.f("pk_semantic_answer_cache")),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "task_type",
+            "query_hash",
+            name=op.f("uq_semantic_answer_cache_tenant_task_query"),
+        ),
+    )
+    op.create_index(
+        "ix_semantic_answer_cache_embedding",
+        "semantic_answer_cache",
+        ["embedding"],
+        unique=False,
+        postgresql_using="ivfflat",
+    )
+    op.create_index(
+        "ix_semantic_answer_cache_tenant_task_expires_at",
+        "semantic_answer_cache",
+        ["tenant_id", "task_type", "expires_at"],
+        unique=False,
+    )
+    op.create_table(
         "rate_limit_policy",
         sa.Column("rate_limit_policy_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),

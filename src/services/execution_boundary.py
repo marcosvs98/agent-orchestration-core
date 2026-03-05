@@ -193,7 +193,7 @@ class ExecutionBoundary:
         )
         flow_run = await self.execution_service.get_flow_run(flow_run_id)
         (
-            session_id,
+            _,
             tenant_id,
         ) = await self.execution_service.repository.get_flow_context(UUID(flow_run_id))
         if tenant_id != auth.tenant_id:
@@ -217,7 +217,7 @@ class ExecutionBoundary:
             action=str(Scope.ExecutionGraphStateGet),
         )
         (
-            session_id,
+            _,
             tenant_id,
         ) = await self.execution_service.repository.get_flow_context(UUID(flow_run_id))
         if tenant_id != auth.tenant_id:

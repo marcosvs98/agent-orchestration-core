@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime as dt
+
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import Column, DateTime, MetaData, func, inspect
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -44,7 +46,16 @@ class ORMBaseModel(DeclarativeBase):
     @classmethod
     def from_dict(cls, data: dict) -> "ORMBaseModel":
         mapper = sa_inspect(cls).mapper
-        filtered = {k: v for k, v in data.items() if k in mapper.columns}
+        filtered = {}
+        for k, v in data.items():
+            col = mapper.columns.get(k)
+            if col is None:
+                continue
+            if isinstance(col.type, PG_UUID) and isinstance(v, str):
+                v = uuid.UUID(v)
+            elif isinstance(col.type, DateTime) and isinstance(v, str):
+                v = dt.fromisoformat(v)
+            filtered[k] = v
         return cls(**filtered)
 
     def __repr__(self):

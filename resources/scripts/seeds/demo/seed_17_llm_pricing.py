@@ -54,7 +54,7 @@ async def seed_llm_pricing() -> None:
             (
                 LLM_PRICING_SLM_LOCAL_ID,
                 "SLM_LOCAL",
-                "smollm2-360m-instruct-q8_0",
+                "qwen2.5-1.5b-instruct-q4_k_m",
                 Decimal("0.000"),
                 Decimal("0.000"),
                 "ACTIVE",

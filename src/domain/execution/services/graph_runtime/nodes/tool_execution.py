@@ -147,7 +147,7 @@ class ToolExecutionNode(NodeExecutor):
                         tool_run_result = ToolRunResult(
                             operation_id=tool_run.operation_id,
                             tool_name=tool_run.tool_name,
-                            execution_mode="immediate", # Todo: Needs StrEnum Here
+                            execution_mode="immediate",  # Todo: Needs StrEnum Here
                             status=OperationStatus.SUCCESS,
                             result=result,
                         )

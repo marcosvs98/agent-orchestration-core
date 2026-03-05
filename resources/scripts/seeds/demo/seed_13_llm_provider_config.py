@@ -34,7 +34,7 @@ async def seed_llm_provider_config() -> None:
                 LLM_PROVIDER_CONFIG_SLM_LOCAL_ID,
                 "SLM_LOCAL",
                 None,
-                '{"n_ctx": 2048, "n_threads": 4, "n_gpu_layers": 0, "n_batch": 64}',
+                '{"n_ctx": 32768, "n_threads": 8, "n_gpu_layers": -1, "n_batch": 512, "flash_attn": true, "offload_kqv": true}',
             ),
         ]
 

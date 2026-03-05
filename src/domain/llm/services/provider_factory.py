@@ -20,11 +20,13 @@ class LLMProviderFactory:
         secret_resolver: SecretResolverPort,
         cache_adapter: RedisAdapter,
         tracer: RuntimeTracerPort,
+        slm_local_provider: LLMProviderPort | None = None,
     ) -> None:
         self.http_client = http_client
         self.secret_resolver = secret_resolver
         self.cache_adapter = cache_adapter
         self.tracer = tracer
+        self.slm_local_provider = slm_local_provider
 
     def build(self, selection: LLMProviderSelection) -> LLMProviderPort:
         with self.tracer.observe(
@@ -40,9 +42,12 @@ class LLMProviderFactory:
                     cache_adapter=self.cache_adapter,
                 )
             elif selection.provider.upper() == LLMProviderType.SLM_LOCAL:
-                provider = SLMLocalProvider(
-                    credential_secret_ref=selection.credential_secret_ref,
-                )
+                if self.slm_local_provider is not None:
+                    provider = self.slm_local_provider
+                else:
+                    provider = SLMLocalProvider(
+                        credential_secret_ref=selection.credential_secret_ref,
+                    )
             if provider:
                 if agent_handle:
                     agent_handle.success(

@@ -37,8 +37,8 @@ async def seed_llm_model_mapping() -> None:
             (
                 LLM_MODEL_MAPPING_SLM_LOCAL_ID,
                 "SLM_LOCAL",
-                "smollm2-360m",
-                "smollm2-360m-instruct-q8_0",
+                "qwen2.5-1.5b-instruct",
+                "qwen2.5-1.5b-instruct-q4_k_m",
             ),
         ]
 

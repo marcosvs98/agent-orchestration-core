@@ -96,13 +96,10 @@ class OpenAIProviderAdapter(LLMProviderPort):
         if not messages:
             if request.system_prompt:
                 messages.append({"role": "system", "content": request.system_prompt})
+            if request.system_context:
+                messages.append({"role": "system", "content": request.system_context})
             if request.prompt:
                 messages.append({"role": "system", "content": request.prompt})
-            # user_content = request.user_message
-            # if not user_content and request.user_payload:
-            #    user_content = json.dumps(request.user_payload, ensure_ascii=True)
-            # if not user_content and request.input_payload:
-            #    user_content = json.dumps(request.input_payload, ensure_ascii=True)
             if request.user_message:
                 messages.append({"role": "user", "content": request.user_message})
 

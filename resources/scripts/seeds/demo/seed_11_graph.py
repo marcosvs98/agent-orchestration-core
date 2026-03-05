@@ -235,13 +235,13 @@ async def seed_graph() -> None:
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_TOOL_SELECTION_ID),
-                    condition="HasAny(result.intent_type, ['execution', 'query']) and overall_confidence >= 0.8",
+                    condition="HasAny(result.intent_type, ['execution']) and overall_confidence >= 0.8",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_RESPONSE_ID),
-                    condition="overall_confidence >= 0.6 and (HasAny(result.intent_type, ['conversation']) or not HasAny(result.intent_type, ['execution', 'query']))",
+                    condition="overall_confidence >= 0.6 and (HasAny(result.intent_type, ['conversation']) or not HasAny(result.intent_type, ['execution']))",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(

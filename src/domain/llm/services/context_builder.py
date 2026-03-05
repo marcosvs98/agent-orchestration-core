@@ -421,86 +421,118 @@ class ContextBuilder:
                 update={"allow_tenant_knowledge": tenant_allowed}
             )
 
+        rag_already_loaded = execution_context.system_context is not None
         if self.memory_retrieval_service is not None:
-            layered_context = await self.memory_retrieval_service.get_layered_context(
-                execution_context=execution_context,
-                decision=decision,
-                task_type=task_type,
-                user_input=user_input,
-                tenant_id_for_knowledge=tenant_id,
-                tenant_rag_config_id=tenant_rag_config_id,
-                user_id_for_memory=execution_context.user_id,
-                task_flags=task_flags,
-                tool_config_id=self._extract_tool_config_id(
-                    execution_context=execution_context
-                ),
-                context_metadata=self._context_metadata(execution_context),
-                config=self._memory_retrieval_config(
-                    execution_context=execution_context
-                ),
-                tenant_top_k_override=tenant_top_k_override,
-                tenant_filters_override=tenant_filters_override,
-            )
-            session_context = layered_context.session_context
-            if session_context is None and decision.allow_session_context:
-                session_context = self._build_session_snapshot(execution_context)
-            if session_context is not None:
-                ctx["layers"]["session_context"] = session_context.model_dump(
-                    mode="json"
-                )
-
-            try:
-                tenant_items = (
-                    layered_context.tenant_knowledge_context.rag_context.context_items
-                    or []
-                )
-            except AttributeError:
-                tenant_items = []
-            tenant_knowledge = []
-            for item in tenant_items:
-                try:
-                    item_dump = item.model_dump(mode="json")
-                except AttributeError:
-                    continue
-                metadata = item_dump.get("metadata") or {}
-                tenant_knowledge.append(
-                    {
-                        "id": item_dump.get("item_id") or item_dump.get("id"),
-                        "title": metadata.get("title"),
-                        "content": item_dump.get("content") or "",
-                    }
-                )
-            ctx["layers"]["tenant_knowledge"] = tenant_knowledge
-
-            try:
-                ctx["layers"]["user_memory_structured"] = (
-                    layered_context.user_memory_context.structured.model_dump(
-                        mode="json"
+            if rag_already_loaded:
+                if decision.allow_session_context:
+                    session_context = self._build_session_snapshot(execution_context)
+                    if session_context is not None:
+                        ctx["layers"]["session_context"] = session_context.model_dump(
+                            mode="json"
+                        )
+            else:
+                layered_context = (
+                    await self.memory_retrieval_service.get_layered_context(
+                        execution_context=execution_context,
+                        decision=decision,
+                        task_type=task_type,
+                        user_input=user_input,
+                        tenant_id_for_knowledge=tenant_id,
+                        tenant_rag_config_id=tenant_rag_config_id,
+                        user_id_for_memory=execution_context.user_id,
+                        task_flags=task_flags,
+                        tool_config_id=self._extract_tool_config_id(
+                            execution_context=execution_context
+                        ),
+                        context_metadata=self._context_metadata(execution_context),
+                        config=self._memory_retrieval_config(
+                            execution_context=execution_context
+                        ),
+                        tenant_top_k_override=tenant_top_k_override,
+                        tenant_filters_override=tenant_filters_override,
                     )
                 )
-            except AttributeError:
-                pass
+                session_context = layered_context.session_context
+                if session_context is None and decision.allow_session_context:
+                    session_context = self._build_session_snapshot(execution_context)
+                if session_context is not None:
+                    ctx["layers"]["session_context"] = session_context.model_dump(
+                        mode="json"
+                    )
 
-            try:
-                user_vector_items = (
-                    layered_context.user_memory_context.rag_context.context_items or []
-                )
-            except AttributeError:
-                user_vector_items = []
-            user_memory_vector = []
-            for item in user_vector_items:
                 try:
-                    item_dump = item.model_dump(mode="json")
+                    tenant_items = (
+                        layered_context.tenant_knowledge_context.rag_context.context_items
+                        or []
+                    )
                 except AttributeError:
-                    continue
-                user_memory_vector.append(
-                    {
-                        "reference": item_dump.get("item_id") or item_dump.get("id"),
-                        "content": item_dump.get("content") or "",
-                        "score": item_dump.get("score"),
-                    }
-                )
-            ctx["layers"]["user_memory_vector"] = user_memory_vector
+                    tenant_items = []
+                tenant_knowledge = []
+                for item in tenant_items:
+                    try:
+                        item_dump = item.model_dump(mode="json")
+                    except AttributeError:
+                        continue
+                    metadata = item_dump.get("metadata") or {}
+                    tenant_knowledge.append(
+                        {
+                            "id": item_dump.get("item_id") or item_dump.get("id"),
+                            "title": metadata.get("title"),
+                            "content": item_dump.get("content") or "",
+                        }
+                    )
+
+                try:
+                    ctx["layers"]["user_memory_structured"] = (
+                        layered_context.user_memory_context.structured.model_dump(
+                            mode="json"
+                        )
+                    )
+                except AttributeError:
+                    pass
+
+                try:
+                    user_vector_items = (
+                        layered_context.user_memory_context.rag_context.context_items
+                        or []
+                    )
+                except AttributeError:
+                    user_vector_items = []
+                user_memory_vector = []
+                for item in user_vector_items:
+                    try:
+                        item_dump = item.model_dump(mode="json")
+                    except AttributeError:
+                        continue
+                    user_memory_vector.append(
+                        {
+                            "reference": item_dump.get("item_id")
+                            or item_dump.get("id"),
+                            "content": item_dump.get("content") or "",
+                            "score": item_dump.get("score"),
+                        }
+                    )
+
+                parts: list[str] = []
+                if tenant_knowledge:
+                    parts.append("# Tenant Knowledge Base")
+                    for item in tenant_knowledge:
+                        title = item.get("title") or ""
+                        content = item.get("content") or ""
+                        if title:
+                            parts.append(f"## {title}")
+                        if content:
+                            parts.append(content)
+
+                if user_memory_vector:
+                    parts.append("# User Memory")
+                    for item in user_memory_vector:
+                        content = item.get("content") or ""
+                        if content:
+                            parts.append(f"- {content}")
+
+                if parts:
+                    execution_context.system_context = "\n".join(parts)
 
         if current_node_type == NodeType.ParamExtractionNode:
             tool_config_id = self._extract_tool_config_id(

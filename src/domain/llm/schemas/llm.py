@@ -19,6 +19,12 @@ class LLMProviderType(StrEnum):
     SLM_LOCAL = "SLM_LOCAL"
 
 
+class InferenceLayer(StrEnum):
+    CACHE = "CACHE"
+    SLM = "SLM"
+    LLM = "LLM"
+
+
 class LLMMessage(BaseModel):
     role: Literal["system", "user", "assistant", "developer", "tool"]
     content: str
@@ -29,6 +35,7 @@ class LLMMessage(BaseModel):
 class LLMRequest(BaseModel):
     prompt: str = ""
     system_prompt: str | None = None
+    system_context: str | None = None
     user_message: str | None = None
     user_payload: Dict[str, Any] = Field(default_factory=dict)
     input_payload: Dict[str, Any] = Field(default_factory=dict)
@@ -41,7 +48,7 @@ class LLMRequest(BaseModel):
     text_format: str | None = "json_object"
     temperature: float | None = 0.2
     max_tokens: int | None = None
-    max_latency_ms: int | None = None
+    max_latency_ms: int | None = 5000  # Todo: Create env of this
     max_cost_usd: float | None = None
     retry_limit: int | None = None
     fallback_model_alias: str | None = None
@@ -70,6 +77,7 @@ class LLMResult(BaseModel):
     latency_ms: int | None = None
     model_alias: str | None = None
     raw_output: Dict[str, Any] = Field(default_factory=dict)
+    inference_layer: InferenceLayer | None = None
 
     model_config = {"frozen": True}
 

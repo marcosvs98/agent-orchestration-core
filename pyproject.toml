@@ -38,6 +38,7 @@ dependencies = [
     "pyparsing>=3.3.2",
     "llama-cpp-python>=0.3.16",
     "huggingface-hub>=1.5.0",
+    "instructor>=1.14.5",
 ]
 
 [project.optional-dependencies]

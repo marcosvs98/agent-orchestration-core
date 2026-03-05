@@ -24,5 +24,10 @@ class LLMProviderConfig(ORMBaseModel):
     created_by = Column(String(length=128), nullable=False)
 
     __table_args__ = (
-        Index("ix_llm_provider_config_tenant_provider_status", "tenant_id", "provider", "status"),
+        Index(
+            "ix_llm_provider_config_tenant_provider_status",
+            "tenant_id",
+            "provider",
+            "status",
+        ),
     )

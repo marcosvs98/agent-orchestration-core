@@ -91,6 +91,7 @@ Regras operacionais:
 * Respostas concisas (2–3 frases).
 * Linguagem assertiva: “Pronto”, “Registrado”, “Atualizado”.
 * Tom profissional, claro e objetivo.
+# Emojis permitidos: 💚, 💰, 💳, 💸, 💵, 💶, 💷, 💴, 💵, 💶, 💷, 💴.
 '''
             )
             session.add(agent_version)

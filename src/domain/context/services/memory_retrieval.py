@@ -160,36 +160,7 @@ class MemoryRetrievalService:
                 tenant_knowledge_context=tenant_knowledge_context,
                 user_memory_context=user_memory_context,
             )
-        with self.tracer.observe(
-            as_type="event",
-            name="domain.context.memory_retrieval.completed",
-            input={
-                "session_loaded": result.session_context is not None,
-                "tenant_rag_items": len(
-                    result.tenant_knowledge_context.rag_context.context_items
-                )
-                if result.tenant_knowledge_context
-                and result.tenant_knowledge_context.rag_context
-                else 0,
-                "user_preferences_count": len(
-                    result.user_memory_context.structured.preferences
-                )
-                if result.user_memory_context
-                else 0,
-                "user_profile_keys_count": len(
-                    result.user_memory_context.structured.profile
-                )
-                if result.user_memory_context
-                else 0,
-                "user_rag_items": len(
-                    result.user_memory_context.rag_context.context_items
-                )
-                if result.user_memory_context and result.user_memory_context.rag_context
-                else 0,
-                "ttl_mode": "expires_at",
-                "temporal_scoring_enabled": retrieval_config.temporal_scoring.enabled,
-            },
-        ):
+
             return result
 
     def _rerank_with_temporal_decay(

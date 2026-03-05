@@ -260,6 +260,8 @@ class LLMExecutor(LLMExecutorPort):
             "provider_model": provider_model,
             "provider": provider,
         }
+        if request.system_context:
+            llm_input["system_context"] = request.system_context
         if request.user_payload:
             llm_input["user_payload"] = request.user_payload
         if request.input_payload:
@@ -284,6 +286,8 @@ class LLMExecutor(LLMExecutorPort):
             llm_input["prompt_id"] = prompt_id
         if prompt_version is not None:
             llm_input["prompt_version"] = prompt_version
+        if request.conversation_key:
+            llm_input["conversation_key"] = request.conversation_key
 
         chain_handler = None
         try:

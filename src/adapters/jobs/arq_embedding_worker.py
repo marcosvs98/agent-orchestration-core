@@ -139,9 +139,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     execution_repository = ExecutionRepository(
         db, tracer=tracer, cache_adapter=cache_adapter
     )
-    rag_repository = RagRepository(
-        db, tracer=tracer, cache_adapter=cache_adapter
-    )
+    rag_repository = RagRepository(db, tracer=tracer, cache_adapter=cache_adapter)
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",

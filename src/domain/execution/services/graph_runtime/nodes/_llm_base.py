@@ -15,7 +15,6 @@ from domain.execution.services.graph_runtime.nodes._common import (
 from domain.execution.services.graph_runtime.types import (
     ExecutionContext,
     NodeExecutionStatus,
-    NodeExecutor,
     NodeResult,
 )
 from domain.llm.ports.llm_executor import LLMExecutorPort
@@ -97,13 +96,14 @@ class LLMNodeExecutor:
         else:
             system_prompt = context.system_prompt
         input_schema = resolved_prompt.input_schema or llm_cfg.get("input_schema", {})
-        output_schema = (
-            resolved_prompt.output_schema or llm_cfg.get("output_schema", {})
+        output_schema = resolved_prompt.output_schema or llm_cfg.get(
+            "output_schema", {}
         )
         json_schema = output_schema or llm_cfg.get("output_schema", {})
         request = LLMRequest(
             prompt=resolved_prompt.prompt_text,
             system_prompt=system_prompt,
+            system_context=context.system_context,
             user_message=read_user_input(context),
             input_schema=input_schema,
             output_schema=output_schema,
@@ -120,8 +120,12 @@ class LLMNodeExecutor:
             retry_limit=llm_policy.get("retry_limit"),
             fallback_model_alias=llm_cfg.get("fallback_model_alias")
             or llm_policy.get("fallback_model_alias"),
-            available_tools=context.available_tools if self.include_available_tools else [],
-            prompt_id=str(resolved_prompt.prompt_id) if resolved_prompt.prompt_id else None,
+            available_tools=context.available_tools
+            if self.include_available_tools
+            else [],
+            prompt_id=str(resolved_prompt.prompt_id)
+            if resolved_prompt.prompt_id
+            else None,
             prompt_version=resolved_prompt.prompt_version,
             prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
             task_type=self.llm_task,

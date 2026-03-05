@@ -290,21 +290,6 @@ async def seed_rag() -> None:
         ),
         RagDocumentCreate(
             source="assistente-bolso",
-            doc_type="faq_compromissos_lembretes",
-            content=(
-                "FAQ – Compromissos e Lembretes. "
-                "Pergunta: Posso criar lembretes? "
-                "Resposta: Sim. Basta informar algo como “Criar lembrete para pagar boleto amanhã às 10h”. "
-                "Pergunta: Quais compromissos tenho hoje? "
-                "Resposta: O assistente pode consultar seus compromissos cadastrados e informar os do dia. "
-                "Pergunta: Posso integrar com Google Agenda? "
-                "Resposta: Sim, é possível integrar para sincronizar compromissos."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "compromissos"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
             doc_type="faq_uso_geral",
             content=(
                 "FAQ – Uso Geral. "
@@ -336,7 +321,6 @@ async def seed_rag() -> None:
             metadata={"topic": "policy"},
         ),
     ]
-    #documents = []
     for document in documents:
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,

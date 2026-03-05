@@ -58,6 +58,19 @@ def _policy_definition() -> dict:
             ],
             "temperature": 0,
             "max_tokens": 1024,
+            "inference_layers": {
+                "cache_enabled": True,
+                "cache_similarity_threshold": 0.92,
+                "cache_ttl_seconds": 3600,
+                "slm_enabled": False,
+                "slm_eligible_tasks": [
+                    "intent_selection",
+                    "tool_selection",
+                ],
+                "slm_provider": "SLM_LOCAL",
+                "slm_model_alias": "qwen2.5-1.5b-instruct",
+                "escalation_on_schema_mismatch": True,
+            },
         },
         "user_context_enrichment": {
             "enabled": True,

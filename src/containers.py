@@ -5,6 +5,7 @@ from adapters.cache.redis_adapter import RedisAdapter
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from domain.llm.adapters.slm_local_provider import SLMLocalProvider
 from infra.database import DatabaseConnection, async_session, engine
 
 from domain.tenants.controllers.tenants_controller import TenantsController
@@ -78,6 +79,10 @@ class AdaptersContainer(containers.DeclarativeContainer):
     )
     secret_resolver = providers.Singleton(EnvSecretResolver)
     tracer = providers.Singleton(LangfuseRuntimeTracer)
+    slm_local_provider = providers.Singleton(
+        SLMLocalProvider,
+        credential_secret_ref=None,
+    )
 
 
 class TenantsContainer(containers.DeclarativeContainer):
@@ -296,6 +301,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
         limits=execution_limit_service,
         tracer=adapters.tracer,
         tools_service=tools.tools_service,
+        slm_local_provider=adapters.slm_local_provider,
     )
     tool_executor = providers.Singleton(HttpToolExecutor, tracer=adapters.tracer)
     tool_orchestrator = providers.Factory(

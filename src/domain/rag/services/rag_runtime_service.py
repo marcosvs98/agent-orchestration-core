@@ -304,7 +304,7 @@ class RagRuntimeService:
             )
 
         options = RagConfigOptions.model_validate(config.options or {})
-        if options.embedding.dimension != 1536: # Todo: Criar env em settings
+        if options.embedding.dimension != 1536:  # Todo: Criar env em settings
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )

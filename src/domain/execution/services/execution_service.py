@@ -61,6 +61,7 @@ from exceptions.service_exceptions import (
 )
 from domain.llm.services.llm_executor import LLMExecutor
 from domain.llm.services.provider_selector import LLMProviderSelector
+from domain.llm.ports.llm_provider import LLMProviderPort
 from domain.llm.services.provider_factory import LLMProviderFactory
 from domain.llm.services.cost_engine import CostEngine
 from domain.llm.services.circuit_breaker import CircuitBreaker
@@ -85,6 +86,11 @@ from application.prompts.prompt_resolver import PromptResolver
 from domain.llm.services.context_builder import ContextBuilder
 from domain.llm.services.structured_output_schema_composer import (
     StructuredOutputSchemaComposer,
+)
+from domain.llm.repositories.semantic_cache_repository import SemanticCacheRepository
+from domain.llm.services.semantic_cache_service import SemanticCacheService
+from domain.llm.services.layered_inference_orchestrator import (
+    LayeredInferenceOrchestrator,
 )
 from domain.context.services.retrievers import (
     TenantKnowledgeRetriever,
@@ -129,6 +135,7 @@ class ExecutionService(ExecutionServicePort):
         limits: ExecutionLimitService,
         tracer: RuntimeTracerPort,
         tools_service: ToolsServicePort | None = None,
+        slm_local_provider: LLMProviderPort | None = None,
     ) -> None:
         self.repository = repository
         self.idempotency = idempotency
@@ -155,6 +162,7 @@ class ExecutionService(ExecutionServicePort):
             secret_resolver=secret_resolver,
             cache_adapter=self.cache_adapter,
             tracer=tracer,
+            slm_local_provider=slm_local_provider,
         )
         cost_engine = CostEngine(pricing_repo, tracer=tracer)
         guardrail_engine = GuardrailEngine(tracer, self.cache_adapter, cost_engine)
@@ -181,7 +189,7 @@ class ExecutionService(ExecutionServicePort):
                 authoring_events=authoring_events,
                 tracer=tracer,
             )
-        self.llm_executor = LLMExecutor(
+        llm_executor_base = LLMExecutor(
             repository,
             None,
             circuit_breaker=circuit_breaker,
@@ -206,6 +214,17 @@ class ExecutionService(ExecutionServicePort):
             repository=rag_repository,
             embedding_adapter=embedding_adapter,
             tracer=tracer,
+        )
+        semantic_cache_repository = SemanticCacheRepository(repository.db)
+        semantic_cache_service = SemanticCacheService(
+            repository=semantic_cache_repository,
+            embedding_adapter=embedding_adapter,
+            tracer=self.tracer,
+        )
+        self.llm_executor = LayeredInferenceOrchestrator(
+            llm_executor=llm_executor_base,
+            cache_service=semantic_cache_service,
+            tracer=self.tracer,
         )
         tenant_knowledge_retriever = TenantKnowledgeRetriever(
             rag_runtime_service=rag_runtime_service,
@@ -727,7 +746,7 @@ class ExecutionService(ExecutionServicePort):
                 output = flow_run_result.output if flow_run_result else {}
                 error = flow_run_result.error if flow_run_result else {}
                 if flow_handle:
-                    system_output = output.get('system_output') if output else {}
+                    system_output = output.get("system_output") if output else {}
                     if error:
                         flow_handle.error(
                             error_type="flow_run_failed",

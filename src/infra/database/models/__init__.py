@@ -62,6 +62,7 @@ from infra.database.models.rag import (
     RagChunk,
     RagQueryCache,
 )
+from infra.database.models.llm import SemanticAnswerCache
 from infra.database.models.execution import (
     AgentRun,
     FlowRun,
@@ -133,6 +134,7 @@ __all__ = [
     "RagDocument",
     "RagChunk",
     "RagQueryCache",
+    "SemanticAnswerCache",
     "FlowRun",
     "NodeRun",
     "AgentRun",

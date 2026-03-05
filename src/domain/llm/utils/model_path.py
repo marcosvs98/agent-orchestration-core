@@ -1,5 +1,3 @@
-"""Resolve SLM model path: env/relative path or discover under models/ (poc5-style)."""
-
 from pathlib import Path
 
 from exceptions.service_exceptions import DomainValidationException
@@ -26,6 +24,13 @@ def resolve_slm_model_path(path: str) -> str:
     project_root = Path(__file__).resolve().parent.parent.parent.parent
     if (project_root / path).is_file():
         return str((project_root / path).resolve())
+    dir_candidate = project_root / path if (project_root / path).is_dir() else None
+    if dir_candidate is None and (cwd / path).is_dir():
+        dir_candidate = cwd / path
+    if dir_candidate is not None:
+        for gguf in dir_candidate.rglob("*.gguf"):
+            if gguf.is_file():
+                return str(gguf.resolve())
     for models_dir in (project_root / "models", cwd / "models"):
         if not models_dir.is_dir():
             continue
@@ -33,7 +38,11 @@ def resolve_slm_model_path(path: str) -> str:
             if ".no_exist" in root.parts:
                 continue
             for f in files:
-                if f.endswith(".gguf") and "smollm2" in f.lower():
+                if not f.endswith(".gguf"):
+                    continue
+                if "smollm2" in f.lower() or any(
+                    "schematron" in p.lower() for p in root.parts
+                ):
                     found = root / f
                     if found.is_file():
                         return str(found.resolve())
