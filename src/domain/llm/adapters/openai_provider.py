@@ -1,16 +1,18 @@
 import json
-from typing import Any, Dict, Optional, NewType
+from typing import Any, Dict, Optional, NewType, TYPE_CHECKING
 
 from openai import AsyncOpenAI
-from openai.types.responses import Response
-from openai.types.conversations import Conversation
-from openai.types.responses.response_usage import ResponseUsage
 
 from adapters.cache.redis_adapter import RedisAdapter
 from domain.llm.ports.llm_provider import LLMProviderPort
-from domain.tools.ports.secret_resolver import SecretResolverPort
 from exceptions.service_exceptions import DomainValidationException
 from domain.llm.schemas.llm import LLMRequest, LLMResult
+
+if TYPE_CHECKING:
+    from openai.types.responses import Response
+    from openai.types.conversations import Conversation
+    from openai.types.responses.response_usage import ResponseUsage
+
 
 ConversationId = NewType("ConversationId", str)
 ConversationResponseID = NewType("ConversationResponseID", str)
@@ -22,28 +24,11 @@ class OpenAIProviderAdapter(LLMProviderPort):
     def __init__(
         self,
         *,
-        secret_resolver: SecretResolverPort,
         cache_adapter: RedisAdapter,
-        credential_secret_ref: str | None = None,
+        openai_client: AsyncOpenAI,
     ) -> None:
-        self.secret_resolver = secret_resolver
-        self.cache_adapter = cache_adapter
-        self.credential_secret_ref = credential_secret_ref
-        self._client: Optional[AsyncOpenAI] = None
-
-    async def _client_instance(self) -> AsyncOpenAI:
-        if self._client:
-            return self._client
-
-        if not self.credential_secret_ref:
-            raise DomainValidationException("llm_provider_missing_credentials")
-
-        api_key = await self.secret_resolver.resolve(
-            secret_ref=self.credential_secret_ref
-        )
-
-        self._client = AsyncOpenAI(api_key=api_key)
-        return self._client
+        self.cache_adapter: RedisAdapter = cache_adapter
+        self.openai_client: AsyncOpenAI = openai_client
 
     async def _get_or_create_conversation_id(
         self, conversation_key: str
@@ -54,8 +39,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
         if cached:
             return ConversationId(cached)
 
-        client = await self._client_instance()
-        conversation: Conversation = await client.conversations.create(
+        conversation: Conversation = await self.openai_client.conversations.create(
             metadata={"conversation_key": conversation_key}
         )
 
@@ -88,8 +72,6 @@ class OpenAIProviderAdapter(LLMProviderPort):
         )
 
     async def infer(self, request: LLMRequest) -> LLMResult:
-        client = await self._client_instance()
-
         messages: list[dict[str, str]] = [
             message.model_dump(mode="json") for message in request.messages
         ]
@@ -158,7 +140,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
                     payload["conversation"] = conversation_id
 
         try:
-            response: Response = await client.responses.create(
+            response: Response = await self.openai_client.responses.create(
                 **payload,
                 service_tier="auto",
             )
@@ -228,8 +210,6 @@ class OpenAIProviderAdapter(LLMProviderPort):
         max_tokens: int = 300,
         temperature: float = 0.0,
     ) -> LLMResult:
-        client = await self._client_instance()
-
         payload = {
             "model": model,
             "input": user_message,
@@ -244,7 +224,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             payload["prompt_cache_retention"] = "24h"
 
         try:
-            response: Response = await client.responses.create(**payload)
+            response: Response = await self.openai_client.responses.create(**payload)
         except Exception as exc:
             raise DomainValidationException(
                 "llm_classification_failed",

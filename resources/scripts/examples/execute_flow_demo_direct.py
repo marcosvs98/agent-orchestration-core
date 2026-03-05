@@ -72,9 +72,9 @@ async def run() -> None:
             endpoint="/core/v1/executions/flow-runs",
             idempotency_key=str(uuid.uuid4()),
             flow_run=build_flow_run(
-                "Gastei 1000 reais no mercado na categoria compras para casa, "
+                "Gastei 2000 reais no mercado na categoria Casa, "
                 "pago com cartão, usando a conta PF do banco XP, "
-                "no cartão XP, no dia 01/01/2026"
+                "no cartão XP, no dia 04/03/2026"
             ),
             channel="http",
             headers={},
@@ -100,26 +100,39 @@ def profile_and_export() -> None:
     main()
     profiler.disable()
 
-    prof_path = PROJECT_ROOT / "execute_flow_demo_direct.prof"
     txt_path = PROJECT_ROOT / "execute_flow_demo_direct.txt"
-
-    profiler.dump_stats(str(prof_path))
 
     with open(txt_path, "w", encoding="utf-8") as f:
         stats = pstats.Stats(profiler, stream=f)
+        stats.strip_dirs()
 
         f.write("\n=== TOP 50 - CUMULATIVE TIME ===\n")
-        stats.sort_stats(pstats.SortKey.CUMULATIVE).print_stats(50)
+        stats.sort_stats(
+            pstats.SortKey.CUMULATIVE,
+            pstats.SortKey.TIME
+        ).print_stats(50)
 
         f.write("\n=== TOP 50 - INTERNAL TIME ===\n")
-        stats.sort_stats(pstats.SortKey.TIME).print_stats(50)
+        stats.sort_stats(
+            pstats.SortKey.TIME
+        ).print_stats(50)
 
         f.write("\n=== TOP 30 - CALL COUNT ===\n")
-        stats.sort_stats(pstats.SortKey.CALLS).print_stats(30)
+        stats.sort_stats(
+            pstats.SortKey.CALLS
+        ).print_stats(30)
 
-    print(f"Binary profile saved at: {prof_path}")
+        f.write("\n=== CALLERS - TOP 30 CUMULATIVE ===\n")
+        stats.sort_stats(
+            pstats.SortKey.CUMULATIVE
+        ).print_callers(30)
+
+        f.write("\n=== CALLEES - TOP 30 CUMULATIVE ===\n")
+        stats.sort_stats(
+            pstats.SortKey.CUMULATIVE
+        ).print_callees(30)
+
     print(f"Text report saved at: {txt_path}")
-    print(f"Inspect with: python -m pstats {prof_path} or snakeviz {prof_path}")
 
 if __name__ == "__main__":
     profile_and_export()

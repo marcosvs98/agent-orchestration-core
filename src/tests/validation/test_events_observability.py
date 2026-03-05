@@ -32,6 +32,7 @@ async def test_execution_event_contains_correlation_and_channel(mocker):
         idempotency=FakeIdempotency(),
         lifecycle=RunLifecycleStateMachine(),
         limits=mocker.MagicMock(),
+        tracer=mocker.MagicMock(),
     )
     service.llm_executor = mocker.MagicMock()
 

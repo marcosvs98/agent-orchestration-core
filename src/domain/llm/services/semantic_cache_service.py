@@ -42,7 +42,9 @@ class SemanticCacheService:
                 "similarity_threshold": similarity_threshold,
             },
         ) as retriever_handle:
-            query_embedding = await self.embedding_adapter.generate_embedding(user_query)
+            query_embedding = await self.embedding_adapter.generate_embedding(
+                user_query
+            )
             now = datetime.now(UTC)
             cache_entry = await self.repository.search_similar(
                 tenant_id=tenant_id,

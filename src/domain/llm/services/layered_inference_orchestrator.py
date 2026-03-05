@@ -10,7 +10,7 @@ from domain.llm.schemas.inference_cache import InferenceLayerPolicy
 from domain.llm.schemas.llm import InferenceLayer, LLMRequest, LLMResult
 from domain.llm.services.llm_executor import LLMExecutor
 from domain.llm.services.semantic_cache_service import SemanticCacheService
-from domain.llm.exceptions.llm_exceptions import SLMInferenceTimeoutException
+
 
 class LayeredInferenceOrchestrator(LLMExecutorPort):
     def __init__(
@@ -169,7 +169,9 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
         except Exception:
             return self.policy
 
-    def _passes_confidence_gate(self, *, result: LLMResult, request: LLMRequest) -> bool:
+    def _passes_confidence_gate(
+        self, *, result: LLMResult, request: LLMRequest
+    ) -> bool:
         if not result.output:
             return False
         if not request.output_schema:

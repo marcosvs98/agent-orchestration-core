@@ -274,6 +274,8 @@ class LangfuseRuntimeTracer:
             return
         try:
             if as_type == "event":
+                yield handle
+                return
                 self.langfuse.create_event(
                     name=name,
                     input=input,

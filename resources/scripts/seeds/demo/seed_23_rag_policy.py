@@ -43,7 +43,7 @@ async def seed_rag_policy() -> None:
                 RagPolicy(
                     rag_policy_id=RAG_POLICY_DEMO_ID,
                     tenant_id=TENANT_DEMO_ID,
-                    name="Demo RAG Activation Policy",
+                    name="Assistente de Bolso - RAG Activation Policy",
                 )
             )
             await session.commit()

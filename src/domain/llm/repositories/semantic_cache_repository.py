@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-import sqlalchemy as sa
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -26,7 +25,9 @@ class SemanticCacheRepository:
         similarity_threshold: float,
         now: datetime,
     ) -> SemanticAnswerCacheModel | None:
-        distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(query_embedding)
+        distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(
+            query_embedding
+        )
         stmt = (
             select(
                 SemanticAnswerCacheModel,

@@ -14,9 +14,11 @@ from infra.database import get_db
 from infra.database.models.governance.llm_model_mapping import LLMModelMapping
 
 from seeds.demo.ids import (
+    LLM_MODEL_MAPPING_GPT4_ID,
     LLM_MODEL_MAPPING_GPT4O_ID,
     LLM_MODEL_MAPPING_GPT4O_LITE_ID,
-    LLM_MODEL_MAPPING_GPT4_ID,
+    LLM_MODEL_MAPPING_GPT41_NANO_ID,
+    LLM_MODEL_MAPPING_O3_MINI_ID,
     LLM_MODEL_MAPPING_SLM_LOCAL_ID,
     PRINCIPAL_SYSTEM,
     TENANT_DEMO_ID,
@@ -33,6 +35,18 @@ async def seed_llm_model_mapping() -> None:
                 "OPENAI",
                 "gpt-4.1-mini",
                 "gpt-4.1-mini",
+            ),
+            (
+                LLM_MODEL_MAPPING_GPT41_NANO_ID,
+                "OPENAI",
+                "gpt-4.1-nano",
+                "gpt-4.1-nano",
+            ),
+            (
+                LLM_MODEL_MAPPING_O3_MINI_ID,
+                "OPENAI",
+                "o3-mini",
+                "o3-mini",
             ),
             (
                 LLM_MODEL_MAPPING_SLM_LOCAL_ID,

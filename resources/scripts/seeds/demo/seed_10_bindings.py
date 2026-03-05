@@ -23,6 +23,7 @@ from seeds.demo.ids import (
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
+    NODE_TOOL_SELECTION_ID,
     TOOL_CONFIG_DEMO_ID,
 )
 
@@ -35,6 +36,7 @@ async def seed_bindings() -> None:
             NODE_RESPONSE_ID,
             NODE_CLARIFICATION_ID,
             NODE_CLARIFICATION_INTENT_ID,
+            NODE_TOOL_SELECTION_ID,
         ]
 
         for node_id in nodes:

@@ -74,9 +74,7 @@ from domain.governance.repositories.llm_model_mapping_repository import (
 )
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from domain.governance.services.execution_limit_service import ExecutionLimitService
-from adapters.http.hardened_http_client import HardenedHttpClient
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
-from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.jobs.arq_embedding_queue import ArqEmbeddingQueueAdapter
 from domain.prompts.services.prompt_service import PromptService
@@ -111,6 +109,7 @@ from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
+from domain.tools.ports.secret_resolver import SecretResolverPort
 from domain.tools.ports.service import ToolsServicePort
 from domain.tools.repositories.tools_repository import ToolsRepository
 from domain.tools.services.tools_service import ToolsService
@@ -135,7 +134,9 @@ class ExecutionService(ExecutionServicePort):
         limits: ExecutionLimitService,
         tracer: RuntimeTracerPort,
         tools_service: ToolsServicePort | None = None,
+        openai_provider: LLMProviderPort | None = None,
         slm_local_provider: LLMProviderPort | None = None,
+        secret_resolver: SecretResolverPort | None = None,
     ) -> None:
         self.repository = repository
         self.idempotency = idempotency
@@ -143,8 +144,6 @@ class ExecutionService(ExecutionServicePort):
         self.limits = limits
         self.cache_adapter = RedisAdapter(silent_mode=True)
         circuit_breaker = CircuitBreaker(self.cache_adapter, tracer=tracer)
-        http_client = HardenedHttpClient()
-        secret_resolver = EnvSecretResolver()
         provider_repo = LLMProviderRepository(
             repository.db, tracer=tracer, cache_adapter=repository.cache_adapter
         )
@@ -158,11 +157,9 @@ class ExecutionService(ExecutionServicePort):
             provider_repo, mapping_repo, pricing_repo, tracer=tracer
         )
         provider_factory = LLMProviderFactory(
-            http_client=http_client,
-            secret_resolver=secret_resolver,
-            cache_adapter=self.cache_adapter,
-            tracer=tracer,
+            openai_provider=openai_provider,
             slm_local_provider=slm_local_provider,
+            tracer=tracer,
         )
         cost_engine = CostEngine(pricing_repo, tracer=tracer)
         guardrail_engine = GuardrailEngine(tracer, self.cache_adapter, cost_engine)

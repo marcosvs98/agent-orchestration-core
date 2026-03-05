@@ -32,6 +32,7 @@ class SLMLocalProvider(LLMProviderPort):
         if not self.model_name:
             raise DomainValidationException("llm_provider_missing_model_path")
 
+        return None  # todo:
         resolved_path = resolve_slm_model_path(self.model_name)
 
         engine_config: Dict[str, Any] = {}

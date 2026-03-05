@@ -51,6 +51,8 @@ class _LlmNodeConfig(BaseModel):
     model_alias: str
     temperature: float
     top_p: float
+    use_system_prompt: bool = True
+    use_system_context: bool = True
 
 
 class _ConfigWithLlm(BaseModel):
@@ -80,6 +82,8 @@ def _llm_node_config(
     model_alias: str,
     temperature: float,
     top_p: float,
+    use_system_prompt: bool = True,
+    use_system_context: bool = True,
 ) -> dict[str, object]:
     return _ConfigWithLlm(
         llm=_LlmNodeConfig(
@@ -88,6 +92,8 @@ def _llm_node_config(
             model_alias=model_alias,
             temperature=temperature,
             top_p=top_p,
+            use_system_prompt=use_system_prompt,
+            use_system_context=use_system_context,
         )
     ).model_dump(mode="json")
 
@@ -100,6 +106,8 @@ def _resume_llm_node_config(
     model_alias: str,
     temperature: float,
     top_p: float,
+    use_system_prompt: bool = True,
+    use_system_context: bool = True,
 ) -> dict[str, object]:
     return _ResumeConfigWithLlm(
         resume_to_node_id=resume_to_node_id,
@@ -109,6 +117,8 @@ def _resume_llm_node_config(
             model_alias=model_alias,
             temperature=temperature,
             top_p=top_p,
+            use_system_prompt=use_system_prompt,
+            use_system_context=use_system_context,
         ),
     ).model_dump(mode="json")
 
@@ -150,8 +160,9 @@ async def seed_graph() -> None:
                         task_type="INTENT_SELECTION",
                         provider="OPENAI",
                         model_alias="gpt-4.1-mini",
-                        temperature=0.1,
-                        top_p=0.1,
+                        temperature=0,
+                        top_p=0.05,
+                        use_system_prompt=False,
                     ),
                 ),
                 str(NODE_TOOL_SELECTION_ID): FlowGraphNodeSpec(
@@ -160,8 +171,9 @@ async def seed_graph() -> None:
                         task_type="TOOL_SELECTION",
                         provider="OPENAI",
                         model_alias="gpt-4.1-mini",
-                        temperature=0.1,
-                        top_p=0.2,
+                        temperature=0,
+                        top_p=0.1,
+                        use_system_prompt=False,
                     ),
                 ),
                 str(NODE_SLOT_ID): FlowGraphNodeSpec(
@@ -172,6 +184,7 @@ async def seed_graph() -> None:
                         model_alias="gpt-4.1-mini",
                         temperature=0.2,
                         top_p=0.2,
+                        use_system_prompt=False,
                     ),
                 ),
                 str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
@@ -181,8 +194,8 @@ async def seed_graph() -> None:
                         task_type="CLARIFICATION",
                         provider="OPENAI",
                         model_alias="gpt-4.1-mini",
-                        temperature=0.4,
-                        top_p=0.3,
+                        temperature=0.3,
+                        top_p=0.4,
                     ),
                 ),
                 str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
@@ -213,7 +226,7 @@ async def seed_graph() -> None:
                     config=_llm_node_config(
                         task_type="RESPONSE_RENDER",
                         provider="OPENAI",
-                        model_alias="gpt-4.1-mini",
+                        model_alias="gpt-4o-mini",
                         temperature=0.3,
                         top_p=0.4,
                     ),

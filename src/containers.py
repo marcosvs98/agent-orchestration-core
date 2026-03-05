@@ -1,10 +1,12 @@
 from dependency_injector import containers, providers
 
 import settings
+from openai import AsyncOpenAI
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
 from domain.llm.adapters.slm_local_provider import SLMLocalProvider
 from infra.database import DatabaseConnection, async_session, engine
 
@@ -79,6 +81,14 @@ class AdaptersContainer(containers.DeclarativeContainer):
     )
     secret_resolver = providers.Singleton(EnvSecretResolver)
     tracer = providers.Singleton(LangfuseRuntimeTracer)
+
+    openai_client = providers.Singleton(AsyncOpenAI, api_key=settings.OPENAI_API_KEY)
+
+    openai_provider = providers.Singleton(
+        OpenAIProviderAdapter,
+        cache_adapter=redis_adapter,
+        openai_client=openai_client,
+    )
     slm_local_provider = providers.Singleton(
         SLMLocalProvider,
         credential_secret_ref=None,
@@ -301,7 +311,9 @@ class ExecutionContainer(containers.DeclarativeContainer):
         limits=execution_limit_service,
         tracer=adapters.tracer,
         tools_service=tools.tools_service,
+        openai_provider=adapters.openai_provider,
         slm_local_provider=adapters.slm_local_provider,
+        secret_resolver=adapters.secret_resolver,
     )
     tool_executor = providers.Singleton(HttpToolExecutor, tracer=adapters.tracer)
     tool_orchestrator = providers.Factory(

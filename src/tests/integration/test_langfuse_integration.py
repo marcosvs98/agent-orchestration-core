@@ -54,6 +54,7 @@ def execution_service(mock_langfuse_client):
         idempotency=mock_idempotency,
         lifecycle=mock_lifecycle,
         limits=mock_limits,
+        tracer=LangfuseRuntimeTracer(),
     )
     service.llm_executor = MagicMock()
     return service

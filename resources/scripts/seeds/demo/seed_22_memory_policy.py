@@ -38,7 +38,7 @@ async def seed_memory_policy() -> None:
             policy = MemoryPolicy(
                 memory_policy_id=MEMORY_POLICY_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Demo Memory Policy",
+                name="Assistente de Bolso - Memory Policy",
             )
             session.add(policy)
             await session.commit()

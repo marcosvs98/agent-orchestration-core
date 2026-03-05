@@ -17,8 +17,10 @@ from infra.database.models.governance.llm_pricing import LLMPricing
 
 from seeds.demo.ids import (
     LLM_PRICING_GPT4O_ID,
-    LLM_PRICING_GPT41_MINI_ID,
     LLM_PRICING_GPT4O_MINI_ID,
+    LLM_PRICING_GPT41_MINI_ID,
+    LLM_PRICING_GPT41_NANO_ID,
+    LLM_PRICING_O3_MINI_ID,
     LLM_PRICING_SLM_LOCAL_ID,
     PRINCIPAL_SYSTEM,
 )
@@ -49,6 +51,22 @@ async def seed_llm_pricing() -> None:
                 "gpt-4.1-mini",
                 Decimal("0.150"),
                 Decimal("0.600"),
+                "ACTIVE",
+            ),
+            (
+                LLM_PRICING_GPT41_NANO_ID,
+                "OPENAI",
+                "gpt-4.1-nano",
+                Decimal("0.050"),
+                Decimal("0.200"),
+                "ACTIVE",
+            ),
+            (
+                LLM_PRICING_O3_MINI_ID,
+                "OPENAI",
+                "o3-mini",
+                Decimal("1.500"),
+                Decimal("6.000"),
                 "ACTIVE",
             ),
             (

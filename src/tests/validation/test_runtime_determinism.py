@@ -55,6 +55,7 @@ async def test_replay_produces_same_event_shape(mocker):
         idempotency=idempotency,
         lifecycle=lifecycle,
         limits=mocker.MagicMock(),
+        tracer=mocker.MagicMock(),
     )
     service.llm_executor = mocker.MagicMock()
 
@@ -106,6 +107,7 @@ async def test_flow_run_blocks_without_active_pointer(mocker):
         idempotency=idempotency,
         lifecycle=lifecycle,
         limits=mocker.MagicMock(),
+        tracer=mocker.MagicMock(),
     )
     service.llm_executor = mocker.MagicMock()
 

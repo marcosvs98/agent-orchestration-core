@@ -15,6 +15,7 @@ logger = get_logger()
 EMBEDDING_CACHE_TTL_SECONDS = 86400
 
 
+# TODO: colocar este adapter em domain/llm/adapters/openai_embedding_adapter.py
 class OpenAIEmbeddingAdapter:
     """Generate embeddings using OpenAI."""
 

@@ -95,6 +95,11 @@ class LLMNodeExecutor:
             )
         else:
             system_prompt = context.system_prompt
+        if not (llm_cfg or {}).get("use_system_prompt", True):
+            system_prompt = None
+        system_context = context.system_context
+        if not (llm_cfg or {}).get("use_system_context", True):
+            system_context = None
         input_schema = resolved_prompt.input_schema or llm_cfg.get("input_schema", {})
         output_schema = resolved_prompt.output_schema or llm_cfg.get(
             "output_schema", {}
@@ -103,7 +108,7 @@ class LLMNodeExecutor:
         request = LLMRequest(
             prompt=resolved_prompt.prompt_text,
             system_prompt=system_prompt,
-            system_context=context.system_context,
+            system_context=system_context,
             user_message=read_user_input(context),
             input_schema=input_schema,
             output_schema=output_schema,

@@ -39,7 +39,7 @@ async def seed_rate_limit_policy() -> None:
             rate_limit_policy = RateLimitPolicy(
                 rate_limit_policy_id=RATE_LIMIT_POLICY_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Demo Rate Limit Policy",
+                name="Assistente de Bolso - Rate Limit Policy",
             )
             session.add(rate_limit_policy)
             await session.commit()
