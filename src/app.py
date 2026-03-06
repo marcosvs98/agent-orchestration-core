@@ -67,6 +67,7 @@ def create_app() -> FastAPI:
             container.rag.rag_controller(),
             container.execution.execution_controller(),
             container.execution.execution_plane_controller(),
+            container.conversation.conversation_controller(),
             container.onboarding.onboarding_controller(),
             container.prompts.prompt_controller(),
         ],

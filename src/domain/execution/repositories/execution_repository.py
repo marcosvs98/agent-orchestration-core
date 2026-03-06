@@ -1678,6 +1678,36 @@ class ExecutionRepository:
                 )
         return response_artifact_id
 
+    async def create_response_artifact_for_flow_run(
+        self, *, flow_run_id: UUID, payload: dict
+    ) -> UUID:
+        flow_run = await self.get_flow_run(flow_run_id)
+        if flow_run is None or flow_run.interaction_id is None:
+            raise DomainValidationException(message="flow_run_missing_interaction")
+
+        response_artifact_id = uuid4()
+        async with self.db.get_session() as session:
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.repository.create_response_artifact_for_flow_run",
+                input={"flow_run_id": str(flow_run_id)},
+            ) as tool_handle:
+                session.add(
+                    ResponseArtifactModel(
+                        response_artifact_id=response_artifact_id,
+                        interaction_id=flow_run.interaction_id,
+                        flow_run_id=flow_run_id,
+                        payload=payload,
+                        schema_version=1,
+                    )
+                )
+            await session.commit()
+            if tool_handle:
+                tool_handle.success(
+                    output={"response_artifact_id": str(response_artifact_id)}
+                )
+        return response_artifact_id
+
     async def create_tool_run(
         self,
         *,

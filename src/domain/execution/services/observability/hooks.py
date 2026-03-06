@@ -42,6 +42,119 @@ class ExecutionEventHook(ABC):
         pass
 
 
+class CompositeHook(ExecutionEventHook):
+    def __init__(self, hooks: list[ExecutionEventHook]) -> None:
+        self._hooks = hooks
+
+    async def on_flow_start(self, **kwargs: Any) -> None:
+        db_error: Exception | None = None
+        for index, hook in enumerate(self._hooks):
+            try:
+                await hook.on_flow_start(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                if index == 0:
+                    db_error = exc
+                logger.exception(
+                    "Composite hook subscriber failed",
+                    extra={
+                        "subscriber": hook.__class__.__name__,
+                        "method": "on_flow_start",
+                    },
+                )
+        if db_error is not None:
+            raise db_error
+
+    async def on_node_start(self, **kwargs: Any) -> None:
+        db_error: Exception | None = None
+        for index, hook in enumerate(self._hooks):
+            try:
+                await hook.on_node_start(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                if index == 0:
+                    db_error = exc
+                logger.exception(
+                    "Composite hook subscriber failed",
+                    extra={
+                        "subscriber": hook.__class__.__name__,
+                        "method": "on_node_start",
+                    },
+                )
+        if db_error is not None:
+            raise db_error
+
+    async def on_node_complete(self, **kwargs: Any) -> None:
+        db_error: Exception | None = None
+        for index, hook in enumerate(self._hooks):
+            try:
+                await hook.on_node_complete(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                if index == 0:
+                    db_error = exc
+                logger.exception(
+                    "Composite hook subscriber failed",
+                    extra={
+                        "subscriber": hook.__class__.__name__,
+                        "method": "on_node_complete",
+                    },
+                )
+        if db_error is not None:
+            raise db_error
+
+    async def on_edge_evaluated(self, **kwargs: Any) -> None:
+        db_error: Exception | None = None
+        for index, hook in enumerate(self._hooks):
+            try:
+                await hook.on_edge_evaluated(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                if index == 0:
+                    db_error = exc
+                logger.exception(
+                    "Composite hook subscriber failed",
+                    extra={
+                        "subscriber": hook.__class__.__name__,
+                        "method": "on_edge_evaluated",
+                    },
+                )
+        if db_error is not None:
+            raise db_error
+
+    async def on_flow_complete(self, **kwargs: Any) -> None:
+        db_error: Exception | None = None
+        for index, hook in enumerate(self._hooks):
+            try:
+                await hook.on_flow_complete(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                if index == 0:
+                    db_error = exc
+                logger.exception(
+                    "Composite hook subscriber failed",
+                    extra={
+                        "subscriber": hook.__class__.__name__,
+                        "method": "on_flow_complete",
+                    },
+                )
+        if db_error is not None:
+            raise db_error
+
+    async def on_flow_failed(self, **kwargs: Any) -> None:
+        db_error: Exception | None = None
+        for index, hook in enumerate(self._hooks):
+            try:
+                await hook.on_flow_failed(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                if index == 0:
+                    db_error = exc
+                logger.exception(
+                    "Composite hook subscriber failed",
+                    extra={
+                        "subscriber": hook.__class__.__name__,
+                        "method": "on_flow_failed",
+                    },
+                )
+        if db_error is not None:
+            raise db_error
+
+
 class DbExecutionEventHook(ExecutionEventHook):
     """Execution event hook that persists events to DB; public methods use tracer."""
 

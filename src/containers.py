@@ -61,6 +61,9 @@ from domain.onboarding.repositories.onboarding_repository import OnboardingRepos
 from domain.prompts.controllers.prompt_controller import PromptController
 from domain.prompts.services.prompt_service import PromptService
 from domain.prompts.repositories.prompt_repository import PromptRepository
+from domain.conversation.controllers.conversation_controller import ConversationController
+from domain.conversation.services.conversation_service import ConversationService
+from services.conversation_boundary import ConversationBoundary
 
 
 class CoreContainer(containers.DeclarativeContainer):
@@ -383,6 +386,27 @@ class PromptsContainer(containers.DeclarativeContainer):
     prompt_controller = providers.Factory(PromptController, service=prompt_service)
 
 
+class ConversationContainer(containers.DeclarativeContainer):
+    execution = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
+
+    conversation_service = providers.Factory(
+        ConversationService,
+        execution_service=execution.execution_service,
+    )
+    conversation_boundary = providers.Factory(
+        ConversationBoundary,
+        conversation_service=conversation_service,
+        access_policy_service=execution.access_policy_service,
+        rate_limit_service=execution.rate_limit_service,
+    )
+    conversation_controller = providers.Factory(
+        ConversationController,
+        boundary=conversation_boundary,
+        tracer=adapters.tracer,
+    )
+
+
 class ApplicationContainer(containers.DeclarativeContainer):
     """Application root container, grouping domain containers."""
 
@@ -404,4 +428,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     onboarding = providers.Container(OnboardingContainer, core=core)
     prompts = providers.Container(
         PromptsContainer, core=core, adapters=adapters, execution=execution
+    )
+    conversation = providers.Container(
+        ConversationContainer, execution=execution, adapters=adapters
     )

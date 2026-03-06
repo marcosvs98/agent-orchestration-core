@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from uuid import UUID
 
@@ -100,7 +101,7 @@ class PromptResolver:
                 )
 
             return ResolvedPrompt(
-                prompt_text=rendered_prompt,
+                prompt_text=self._normalize_template(rendered_prompt),
                 input_schema=prompt.input_schema,
                 output_schema=output_schema,
                 prompt_id=prompt.prompt_id,
@@ -241,3 +242,9 @@ class PromptResolver:
     @staticmethod
     def _tojson_filter(value: Any) -> str:
         return json.dumps(value, ensure_ascii=True)
+
+    def _normalize_template(self, template: str) -> str:
+        template = re.sub(r'[ \t]+$', '', template, flags=re.MULTILINE) 
+        template = re.sub(r'\n\s*\n+', '\n\n', template)
+        template = re.sub(r'(# .+?)\s+\n', r'\1\n', template)
+        return template
