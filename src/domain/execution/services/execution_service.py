@@ -63,6 +63,7 @@ from domain.llm.services.llm_executor import LLMExecutor
 from domain.llm.services.provider_selector import LLMProviderSelector
 from domain.llm.ports.llm_provider import LLMProviderPort
 from domain.llm.services.provider_factory import LLMProviderFactory
+from domain.llm.services.completion_budget_policy import CompletionBudgetPolicy
 from domain.llm.services.cost_engine import CostEngine
 from domain.llm.services.circuit_breaker import CircuitBreaker
 from domain.execution.services.guardrails.guardrail_engine import GuardrailEngine
@@ -296,6 +297,7 @@ class ExecutionService(ExecutionServicePort):
             tools_repository=self.tools_repository,
         )
         agent_runtime_resolver = AgentRuntimeResolver(self.agents_repository)
+        completion_budget_policy = CompletionBudgetPolicy(tracer=tracer)
         self.runtime = RuntimeExecutor(
             repository,
             registry=NodeRegistry(
@@ -305,6 +307,7 @@ class ExecutionService(ExecutionServicePort):
                 execution_repository=repository,
                 tracer=tracer,
                 agent_runtime_resolver=agent_runtime_resolver,
+                completion_budget_policy=completion_budget_policy,
             ),
             tracer=self.tracer,
             hook=self.hook,

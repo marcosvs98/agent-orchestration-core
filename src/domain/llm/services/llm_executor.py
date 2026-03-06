@@ -480,10 +480,10 @@ class LLMExecutor(LLMExecutorPort):
                         try:
                             provider_result = await provider_instance.infer(request)
                             result = provider_result
-                            if result.latency_ms is None:
+                            if result.pipeline_latency_ms is None:
                                 result = result.model_copy(
                                     update={
-                                        "latency_ms": int(
+                                        "pipeline_latency_ms": int(
                                             (time.monotonic() - start_monotonic) * 1000
                                         )
                                     }
@@ -523,6 +523,7 @@ class LLMExecutor(LLMExecutorPort):
                                     cost_details=cost_details,
                                     metadata={
                                         "latency_ms": result.latency_ms,
+                                        "pipeline_latency_ms": result.pipeline_latency_ms,
                                         "model_used": result.model_alias
                                         or provider_model,
                                         "provider": provider,
@@ -602,6 +603,7 @@ class LLMExecutor(LLMExecutorPort):
                             cost_details=cost_details,
                             metadata={
                                 "latency_ms": result.latency_ms,
+                                "pipeline_latency_ms": result.pipeline_latency_ms,
                                 "model_used": result.model_alias or provider_model,
                                 "provider": provider,
                                 "cost_usd": result.cost_usd,

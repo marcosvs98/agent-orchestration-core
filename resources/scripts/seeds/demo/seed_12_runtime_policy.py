@@ -73,8 +73,8 @@ def _policy_definition() -> dict:
             },
         },
         "user_context_enrichment": {
-            "enabled": True,
-            "gating": True,
+            "enabled": False,
+            "gating": False,
             "default_layers_when_published": {
                 "allow_tenant_knowledge": True,
                 "allow_user_memory_structured": True,

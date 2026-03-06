@@ -18,6 +18,7 @@ from domain.execution.services.graph_runtime.agent_runtime_resolver import (
     AgentRuntimeResolver,
 )
 from domain.execution.services.graph_runtime.types import NodeExecutor
+from domain.llm.ports.completion_budget_policy import CompletionBudgetPolicyPort
 from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
 from domain.execution.repositories.execution_repository import ExecutionRepository
@@ -32,6 +33,7 @@ class NodeRegistry:
         tool_orchestrator: ToolOrchestrator | None = None,
         execution_repository: ExecutionRepository | None = None,
         agent_runtime_resolver: AgentRuntimeResolver | None = None,
+        completion_budget_policy: CompletionBudgetPolicyPort | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
@@ -39,6 +41,7 @@ class NodeRegistry:
         self.execution_repository = execution_repository
         self.tracer = tracer
         self.agent_runtime_resolver = agent_runtime_resolver
+        self.completion_budget_policy = completion_budget_policy
         self._registry: Dict[str, Type[NodeExecutor]] = {
             ToolSelectionNode.node_type: ToolSelectionNode,
             IntentDetectionNode.node_type: IntentDetectionNode,
@@ -71,6 +74,7 @@ class NodeRegistry:
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
+                completion_budget_policy = self.completion_budget_policy
 
                 class _IntentNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -79,6 +83,7 @@ class NodeRegistry:
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
                             agent_runtime_resolver=agent_runtime_resolver,
+                            completion_budget_policy=completion_budget_policy,
                         )
 
                 return _IntentNode
@@ -88,6 +93,7 @@ class NodeRegistry:
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
+                completion_budget_policy = self.completion_budget_policy
 
                 class _ParamExtractionNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -96,6 +102,7 @@ class NodeRegistry:
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
                             agent_runtime_resolver=agent_runtime_resolver,
+                            completion_budget_policy=completion_budget_policy,
                         )
 
                 return _ParamExtractionNode
@@ -107,6 +114,7 @@ class NodeRegistry:
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
+                completion_budget_policy = self.completion_budget_policy
 
                 class _ClarificationNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -115,6 +123,7 @@ class NodeRegistry:
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
                             agent_runtime_resolver=agent_runtime_resolver,
+                            completion_budget_policy=completion_budget_policy,
                         )
 
                 return _ClarificationNode
@@ -139,6 +148,7 @@ class NodeRegistry:
                 prompt_resolver = self.prompt_resolver
                 tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
+                completion_budget_policy = self.completion_budget_policy
 
                 class _ResponseComposer(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -147,6 +157,7 @@ class NodeRegistry:
                             prompt_resolver=prompt_resolver,
                             tracer=tracer,
                             agent_runtime_resolver=agent_runtime_resolver,
+                            completion_budget_policy=completion_budget_policy,
                         )
 
                 return _ResponseComposer

@@ -74,7 +74,8 @@ class LLMResult(BaseModel):
     output: Dict[str, Any] = Field(default_factory=dict)
     token_usage: Dict[str, int] = Field(default_factory=dict)
     cost_usd: float | None = None
-    latency_ms: int | None = None
+    latency_ms: int | float | None = None
+    pipeline_latency_ms: int | None = None
     model_alias: str | None = None
     raw_output: Dict[str, Any] = Field(default_factory=dict)
     inference_layer: InferenceLayer | None = None

@@ -53,6 +53,9 @@ class _LlmNodeConfig(BaseModel):
     top_p: float
     use_system_prompt: bool = True
     use_system_context: bool = True
+    max_tokens: int | None = None
+    completion_budget: dict[str, float] | None = None
+    use_conversation_history: bool | None = None
 
 
 class _ConfigWithLlm(BaseModel):
@@ -84,6 +87,9 @@ def _llm_node_config(
     top_p: float,
     use_system_prompt: bool = True,
     use_system_context: bool = True,
+    max_tokens: int | None = None,
+    completion_budget: dict[str, float] | None = None,
+    use_conversation_history: bool | None = None,
 ) -> dict[str, object]:
     return _ConfigWithLlm(
         llm=_LlmNodeConfig(
@@ -94,6 +100,9 @@ def _llm_node_config(
             top_p=top_p,
             use_system_prompt=use_system_prompt,
             use_system_context=use_system_context,
+            max_tokens=max_tokens,
+            completion_budget=completion_budget,
+            use_conversation_history=use_conversation_history,
         )
     ).model_dump(mode="json")
 
@@ -108,6 +117,9 @@ def _resume_llm_node_config(
     top_p: float,
     use_system_prompt: bool = True,
     use_system_context: bool = True,
+    max_tokens: int | None = None,
+    completion_budget: dict[str, float] | None = None,
+    use_conversation_history: bool | None = None,
 ) -> dict[str, object]:
     return _ResumeConfigWithLlm(
         resume_to_node_id=resume_to_node_id,
@@ -119,6 +131,9 @@ def _resume_llm_node_config(
             top_p=top_p,
             use_system_prompt=use_system_prompt,
             use_system_context=use_system_context,
+            max_tokens=max_tokens,
+            completion_budget=completion_budget,
+            use_conversation_history=use_conversation_history,
         ),
     ).model_dump(mode="json")
 
@@ -163,6 +178,12 @@ async def seed_graph() -> None:
                         temperature=0,
                         top_p=0.05,
                         use_system_prompt=False,
+                        use_conversation_history=False,
+                        completion_budget={
+                            "schema_factor": 1.2,
+                            "safety_margin": 16,
+                            "floor": 32,
+                        },
                     ),
                 ),
                 str(NODE_TOOL_SELECTION_ID): FlowGraphNodeSpec(
@@ -174,6 +195,12 @@ async def seed_graph() -> None:
                         temperature=0,
                         top_p=0.1,
                         use_system_prompt=False,
+                        use_conversation_history=False,
+                        completion_budget={
+                            "schema_factor": 1.2,
+                            "safety_margin": 16,
+                            "floor": 48,
+                        },
                     ),
                 ),
                 str(NODE_SLOT_ID): FlowGraphNodeSpec(
@@ -185,6 +212,12 @@ async def seed_graph() -> None:
                         temperature=0.2,
                         top_p=0.2,
                         use_system_prompt=False,
+                        use_conversation_history=False,
+                        completion_budget={
+                            "schema_factor": 1.5,
+                            "safety_margin": 24,
+                            "floor": 64,
+                        },
                     ),
                 ),
                 str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
@@ -193,9 +226,15 @@ async def seed_graph() -> None:
                         resume_to_node_id=str(NODE_INTENT_ID),
                         task_type="CLARIFICATION",
                         provider="OPENAI",
-                        model_alias="gpt-4.1-mini",
+                        model_alias="gpt-4o",
                         temperature=0.3,
                         top_p=0.4,
+                        use_conversation_history=True,
+                        completion_budget={
+                            "schema_factor": 1.2,
+                            "safety_margin": 16,
+                            "floor": 32,
+                        },
                     ),
                 ),
                 str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
@@ -204,9 +243,10 @@ async def seed_graph() -> None:
                         resume_to_node_id=str(NODE_SLOT_ID),
                         task_type="CLARIFICATION",
                         provider="OPENAI",
-                        model_alias="gpt-4.1-mini",
+                        model_alias="gpt-4o",
                         temperature=0.4,
                         top_p=0.3,
+                        use_conversation_history=True,
                     ),
                 ),
                 str(NODE_TOOL_EXEC_ID): FlowGraphNodeSpec(
@@ -226,9 +266,14 @@ async def seed_graph() -> None:
                     config=_llm_node_config(
                         task_type="RESPONSE_RENDER",
                         provider="OPENAI",
-                        model_alias="gpt-4o-mini",
+                        model_alias="gpt-4o",
                         temperature=0.3,
                         top_p=0.4,
+                        completion_budget={
+                            "schema_factor": 1.7,
+                            "safety_margin": 24,
+                            "floor": 80,
+                        },
                     ),
                 ),
             },

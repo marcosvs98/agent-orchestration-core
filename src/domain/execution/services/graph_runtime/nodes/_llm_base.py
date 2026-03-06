@@ -17,6 +17,7 @@ from domain.execution.services.graph_runtime.types import (
     NodeExecutionStatus,
     NodeResult,
 )
+from domain.llm.ports.completion_budget_policy import CompletionBudgetPolicyPort
 from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.llm.schemas.llm import (
     LLMProviderType,
@@ -48,11 +49,13 @@ class LLMNodeExecutor:
         llm_executor: LLMExecutorPort,
         prompt_resolver: Any,
         agent_runtime_resolver: AgentRuntimeResolver | None = None,
+        completion_budget_policy: CompletionBudgetPolicyPort | None = None,
     ) -> None:
         self.tracer = tracer
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
         self.agent_runtime_resolver = agent_runtime_resolver
+        self.completion_budget_policy = completion_budget_policy
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
@@ -105,11 +108,27 @@ class LLMNodeExecutor:
             "output_schema", {}
         )
         json_schema = output_schema or llm_cfg.get("output_schema", {})
+        user_message = read_user_input(context)
+        ceiling = (
+            llm_cfg.get("max_tokens")
+            if llm_cfg and llm_cfg.get("max_tokens") is not None
+            else llm_policy.get("max_tokens")
+        )
+        if self.completion_budget_policy and output_schema:
+            max_tokens = self.completion_budget_policy.compute_max_tokens(
+                provider_model=model_alias,
+                user_message=user_message,
+                output_schema=output_schema,
+                policy_max=ceiling,
+                completion_budget=llm_cfg.get("completion_budget") if llm_cfg else None,
+            )
+        else:
+            max_tokens = ceiling
         request = LLMRequest(
             prompt=resolved_prompt.prompt_text,
             system_prompt=system_prompt,
             system_context=system_context,
-            user_message=read_user_input(context),
+            user_message=user_message,
             input_schema=input_schema,
             output_schema=output_schema,
             json_schema=json_schema,
@@ -119,7 +138,7 @@ class LLMNodeExecutor:
             temperature=llm_cfg.get("temperature")
             if (llm_cfg and "temperature" in llm_cfg)
             else llm_policy.get("temperature"),
-            max_tokens=llm_policy.get("max_tokens"),
+            max_tokens=max_tokens,
             max_latency_ms=llm_policy.get("max_latency_ms"),
             max_cost_usd=llm_policy.get("max_cost_usd"),
             retry_limit=llm_policy.get("retry_limit"),
@@ -141,6 +160,11 @@ class LLMNodeExecutor:
                     llm_policy,
                     str(context.tenant_id),
                     str(context.session_id),
+                    use_history_override=(
+                        llm_cfg.get("use_conversation_history")
+                        if llm_cfg and "use_conversation_history" in llm_cfg
+                        else None
+                    ),
                 )
             )[0],
             stateless=_conv_key[1],

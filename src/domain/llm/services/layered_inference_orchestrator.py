@@ -45,7 +45,7 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
         query_embedding: list[float] | None = None
 
         with self.tracer.observe(
-            as_type="agent",
+            as_type="chain",
             name="domain.llm.layered_inference.execute_llm",
             input={
                 "tenant_id": str(tenant_id),

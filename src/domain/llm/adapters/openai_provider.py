@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, Optional, NewType, TYPE_CHECKING
 
 from openai import AsyncOpenAI
@@ -140,6 +141,8 @@ class OpenAIProviderAdapter(LLMProviderPort):
                     payload["conversation"] = conversation_id
 
         try:
+            start = time.perf_counter()
+
             response: Response = await self.openai_client.responses.create(
                 **payload,
                 service_tier="auto",
@@ -150,6 +153,8 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 input_data=payload,
                 errors=[getattr(exc, "body", str(exc))],
             )
+        else:
+            latency_ms = (time.perf_counter() - start) * 1000
 
         if request.conversation_key and response.id:
             await self._set_previous_response_id(
@@ -195,7 +200,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             output=output_json if output_json is not None else {"content": output_text},
             token_usage=token_usage,
             cost_usd=None,
-            latency_ms=None,
+            latency_ms=latency_ms,
             model_alias=request.model_alias,
             raw_output=response.model_dump(),
         )

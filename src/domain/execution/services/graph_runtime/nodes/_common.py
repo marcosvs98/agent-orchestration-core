@@ -11,9 +11,15 @@ def conversation_key_and_stateless(
     llm_policy: Dict[str, Any],
     tenant_id: str,
     session_id: str,
+    use_history_override: bool | None = None,
 ) -> tuple[str | None, bool]:
-    history_enabled_tasks = llm_policy.get("history_enabled_tasks", ["RESPONSE_RENDER"])
-    enabled = bool(task_type and task_type.value in history_enabled_tasks)
+    if use_history_override is not None:
+        enabled = use_history_override
+    else:
+        history_enabled_tasks = llm_policy.get(
+            "history_enabled_tasks", ["response_render"]
+        )
+        enabled = bool(task_type and task_type.value in history_enabled_tasks)
     key = f"{tenant_id}:{session_id}" if enabled else None
     return key, not enabled
 
