@@ -22,5 +22,4 @@ class ConversationServicePort(Protocol):
         request_id: str | None,
         trace_id: str | None,
         last_event_id: int | None,
-    ) -> AsyncGenerator[ServerSentEvent, None]:
-        ...
+    ) -> AsyncGenerator[ServerSentEvent, None]: ...

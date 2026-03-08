@@ -39,11 +39,7 @@ class CompletionBudgetPolicy:
             schema_factor = cb.get("schema_factor", self.SCHEMA_FACTOR)
             safety_margin = cb.get("safety_margin", self.SAFETY_MARGIN)
             floor = cb.get("floor", self.FLOOR)
-            schema_str = (
-                orjson.dumps(output_schema).decode()
-                if output_schema
-                else "{}"
-            )
+            schema_str = orjson.dumps(output_schema).decode() if output_schema else "{}"
             schema_tokens = len(self._encoding.encode(schema_str))
             raw = int(schema_tokens * schema_factor + safety_margin)
             out = max(floor, raw)

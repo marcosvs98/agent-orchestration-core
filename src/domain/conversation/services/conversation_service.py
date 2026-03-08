@@ -16,7 +16,10 @@ from domain.conversation.services.sse_writer import SSEWriter
 from domain.conversation.services.stream_bridge import StreamBridge
 from domain.execution.schemas.execution import Channel, FlowRunCreate, FlowRunInput
 from domain.execution.services.execution_service import ExecutionService
-from domain.execution.services.observability.hooks import CompositeHook, ExecutionEventHook
+from domain.execution.services.observability.hooks import (
+    CompositeHook,
+    ExecutionEventHook,
+)
 
 
 class ConversationService(ConversationServicePort):

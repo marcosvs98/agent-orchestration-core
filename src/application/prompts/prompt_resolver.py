@@ -244,7 +244,7 @@ class PromptResolver:
         return json.dumps(value, ensure_ascii=True)
 
     def _normalize_template(self, template: str) -> str:
-        template = re.sub(r'[ \t]+$', '', template, flags=re.MULTILINE) 
-        template = re.sub(r'\n\s*\n+', '\n\n', template)
-        template = re.sub(r'(# .+?)\s+\n', r'\1\n', template)
+        template = re.sub(r"[ \t]+$", "", template, flags=re.MULTILINE)
+        template = re.sub(r"\n\s*\n+", "\n\n", template)
+        template = re.sub(r"(# .+?)\s+\n", r"\1\n", template)
         return template

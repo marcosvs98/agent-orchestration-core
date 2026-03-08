@@ -21,9 +21,7 @@ class StreamBridge(ExecutionEventHook):
     async def _done(self) -> None:
         await self._queue.put(None)
 
-    async def push_content_delta(
-        self, delta: str, node_id: str | None = None
-    ) -> None:
+    async def push_content_delta(self, delta: str, node_id: str | None = None) -> None:
         await self._push(
             SSEEventType.CONTENT_DELTA,
             {"delta": delta, "node_id": node_id},
@@ -46,7 +44,9 @@ class StreamBridge(ExecutionEventHook):
             SSEEventType.NODE_STARTED,
             {
                 "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
+                "node_id": str(kwargs.get("node_id"))
+                if kwargs.get("node_id")
+                else None,
                 "payload": kwargs.get("payload") or {},
             },
         )
@@ -56,7 +56,9 @@ class StreamBridge(ExecutionEventHook):
             SSEEventType.NODE_COMPLETED,
             {
                 "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
+                "node_id": str(kwargs.get("node_id"))
+                if kwargs.get("node_id")
+                else None,
                 "payload": kwargs.get("payload") or {},
             },
         )
@@ -66,7 +68,9 @@ class StreamBridge(ExecutionEventHook):
             SSEEventType.EDGE_EVALUATED,
             {
                 "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
+                "node_id": str(kwargs.get("node_id"))
+                if kwargs.get("node_id")
+                else None,
                 "edge_id": kwargs.get("edge_id"),
                 "payload": kwargs.get("payload") or {},
             },

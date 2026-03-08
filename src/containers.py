@@ -61,7 +61,9 @@ from domain.onboarding.repositories.onboarding_repository import OnboardingRepos
 from domain.prompts.controllers.prompt_controller import PromptController
 from domain.prompts.services.prompt_service import PromptService
 from domain.prompts.repositories.prompt_repository import PromptRepository
-from domain.conversation.controllers.conversation_controller import ConversationController
+from domain.conversation.controllers.conversation_controller import (
+    ConversationController,
+)
 from domain.conversation.services.conversation_service import ConversationService
 from services.conversation_boundary import ConversationBoundary
 
