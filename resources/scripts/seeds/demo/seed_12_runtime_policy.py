@@ -49,6 +49,11 @@ def _policy_definition() -> dict:
         "llm": {
             "max_retries": 3,
             "timeout_ms": 30000,
+            "stream_enabled": True,
+            "stream_eligible_tasks": [
+                "response_render",
+                "clarification",
+            ],
             "history_enabled_tasks": [
                 "intent_selection",
                 "tool_selection",

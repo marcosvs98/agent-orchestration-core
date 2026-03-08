@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 
+from collections.abc import Awaitable
 from typing import Any, Dict, Callable
 from uuid import UUID
 from jsonschema import ValidationError as JsonSchemaValidationError
@@ -159,6 +160,7 @@ class LLMExecutor(LLMExecutorPort):
         node_id: UUID | None = None,
         provider: str = "OPENAI",
         policy_llm: Dict[str, Any] | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResult:
         start_monotonic = time.monotonic()
         scope = f"{provider}:{tenant_id}"
@@ -256,7 +258,7 @@ class LLMExecutor(LLMExecutorPort):
 
         llm_input: Dict[str, Any] = {
             "prompt": request.prompt,
-            "system_prompt": request.system_prompt,  # Todo: This is system prompt that will define the persona
+            "system_prompt": request.system_prompt,
             "provider_model": provider_model,
             "provider": provider,
         }
@@ -478,7 +480,9 @@ class LLMExecutor(LLMExecutorPort):
                         completion_start_time=completion_start,
                     ) as generation_handle:
                         try:
-                            provider_result = await provider_instance.infer(request)
+                            provider_result = await provider_instance.infer(
+                                request, on_delta=on_delta
+                            )
                             result = provider_result
                             if result.pipeline_latency_ms is None:
                                 result = result.model_copy(

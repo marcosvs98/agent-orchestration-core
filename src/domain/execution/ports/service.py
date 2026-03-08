@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from domain.execution.schemas.execution import (
@@ -27,6 +28,7 @@ class ExecutionServicePort(ABC):
         external_message_id: str | None = None,
         request_id: str | None = None,
         trace_id: str | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> FlowRun:
         raise NotImplementedServiceException()
 

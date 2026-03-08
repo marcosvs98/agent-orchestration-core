@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List, Protocol
 from uuid import UUID
 
@@ -68,6 +69,9 @@ class ExecutionContext(BaseModel):
     iteration_counters: Dict[str, int] = Field(default_factory=dict)
     system_prompt: str | None = None
     system_context: str | None = None
+    on_content_delta: Callable[[str], Awaitable[None]] | None = Field(
+        default=None, exclude=True
+    )
 
     def snapshot(self) -> Dict[str, Any]:
         return self.model_dump(mode="json")

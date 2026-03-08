@@ -1,6 +1,7 @@
 import asyncio
 import orjson
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Optional
 
 from llama_cpp import Llama, CreateChatCompletionResponse
@@ -66,7 +67,11 @@ class SLMLocalProvider(LLMProviderPort):
 
         return self._engine
 
-    async def infer(self, request: LLMRequest) -> LLMResult:
+    async def infer(
+        self,
+        request: LLMRequest,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMResult:
         messages: list[dict[str, str]] = [
             message.model_dump(mode="json") for message in request.messages
         ]

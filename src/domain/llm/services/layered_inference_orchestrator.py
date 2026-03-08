@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict
 from uuid import UUID
 
@@ -38,6 +39,7 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
         node_id: UUID | None = None,
         provider: str = "OPENAI",
         policy_llm: Dict[str, Any] | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResult:
         layer_policy = self._resolve_layer_policy(policy_llm)
         user_query = request.user_message or request.prompt
@@ -106,6 +108,7 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
                         node_id=node_id,
                         provider=layer_policy.slm_provider,
                         policy_llm=policy_llm,
+                        on_delta=on_delta,
                     )
                     inference_layer = InferenceLayer.SLM
                 except Exception:
@@ -129,6 +132,7 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
                     node_id=node_id,
                     provider=provider,
                     policy_llm=policy_llm,
+                    on_delta=on_delta,
                 )
                 inference_layer = InferenceLayer.LLM
 

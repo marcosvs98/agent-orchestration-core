@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo test-flow-demo test-trace-hierarchy
+.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo test-flow-demo test-trace-hierarchy serve-conversation-test
 
 validate-setup:
 	resources/scripts/validation_setup.sh
@@ -37,3 +37,8 @@ test-trace-hierarchy:
 
 migrate:
 	@PYTHONPATH=src alembic upgrade head
+
+serve-conversation-test:
+	@echo "Serving conversation test frontend at http://localhost:9000"
+	@echo "Ensure the API is running (e.g. uv run uvicorn src.app:create_app --factory --host 0.0.0.0 --port 8000)"
+	@cd resources/conversation-test && python3 -m http.server 9000

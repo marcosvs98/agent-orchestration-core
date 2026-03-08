@@ -63,6 +63,7 @@ class LLMRequest(BaseModel):
 
     conversation_key: str | None = None
     stateless: bool | None = None
+    stream: bool = False
 
     model_config = {"frozen": True}
 

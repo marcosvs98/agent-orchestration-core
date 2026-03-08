@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 from typing import Any
 
@@ -378,6 +379,7 @@ class ExecutionService(ExecutionServicePort):
         external_message_id: str | None = None,
         request_id: str | None = None,
         trace_id: str | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> FlowRun:
         with self.tracer.observe(
             as_type="agent",
@@ -728,6 +730,7 @@ class ExecutionService(ExecutionServicePort):
                         start_node_id=origin_start_node_id,
                         initial_state=origin_initial_state,
                         initial_memory=origin_initial_memory,
+                        on_content_delta=on_content_delta,
                     )
                     if chain_handle:
                         chain_handle.success(

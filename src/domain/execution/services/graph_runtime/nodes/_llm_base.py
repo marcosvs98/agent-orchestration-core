@@ -68,6 +68,22 @@ class LLMNodeExecutor:
             else {}
         )
         llm_policy = runtime_policy.get("llm", {})
+        stream_enabled = bool(llm_policy.get("stream_enabled", False))
+        raw_stream_eligible_tasks = llm_policy.get("stream_eligible_tasks", [])
+        stream_eligible_tasks = (
+            [task for task in raw_stream_eligible_tasks if isinstance(task, str)]
+            if isinstance(raw_stream_eligible_tasks, list)
+            else []
+        )
+        on_delta = context.on_content_delta
+        should_stream = (
+            stream_enabled
+            and on_delta is not None
+            and (
+                not stream_eligible_tasks
+                or self.llm_task.value in stream_eligible_tasks
+            )
+        )
         provider = llm_cfg.get("provider") or LLMProviderType.OPENAI.value
         model_alias = llm_cfg.get("model_alias") or llm_policy.get("model_alias")
         if not model_alias:
@@ -168,6 +184,7 @@ class LLMNodeExecutor:
                 )
             )[0],
             stateless=_conv_key[1],
+            stream=should_stream,
         )
         with self.tracer.observe(
             as_type="chain",
@@ -189,6 +206,7 @@ class LLMNodeExecutor:
                 node_id=node_uuid,
                 provider=provider,
                 policy_llm=llm_policy,
+                on_delta=on_delta if should_stream else None,
             )
             if chain_handle:
                 chain_handle.success(output=llm_result.model_dump(mode="json"))

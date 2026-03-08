@@ -37,6 +37,10 @@ class ConversationService(ConversationServicePort):
         trace_id: str | None,
     ) -> None:
         stream_bridge = StreamBridge(queue)
+
+        async def _on_content_delta(delta: str) -> None:
+            await stream_bridge.push_content_delta(delta)
+
         flow_run = FlowRunCreate(
             flow_id=request.flow_id,
             flow_version_id=request.flow_version_id,
@@ -68,6 +72,7 @@ class ConversationService(ConversationServicePort):
                     external_message_id=external_message_id,
                     request_id=request_id,
                     trace_id=trace_id,
+                    on_content_delta=_on_content_delta,
                 )
                 await self.execution_service.repository.create_response_artifact_for_flow_run(
                     flow_run_id=response.id,

@@ -21,6 +21,27 @@ from settings import (
 logger = get_logger(__name__)
 
 
+LANGFUSE_METADATA_MAX_LEN = 200
+
+
+def _langfuse_safe_metadata(metadata: Dict[str, Any] | None) -> Dict[str, str]:
+    """Return metadata with only string values (max 200 chars) for Langfuse."""
+    if not metadata:
+        return {}
+    out: Dict[str, str] = {}
+    for k, v in metadata.items():
+        if v is None:
+            continue
+        if isinstance(v, str):
+            s = v
+        else:
+            s = str(v)
+        if len(s) > LANGFUSE_METADATA_MAX_LEN:
+            s = s[: LANGFUSE_METADATA_MAX_LEN - 3] + "..."
+        out[k] = s
+    return out
+
+
 def _get_contextvars_metadata() -> Dict[str, Any]:
     try:
         return structlog.contextvars.get_contextvars()
@@ -61,7 +82,7 @@ class ObservationHandle:
     ) -> None:
         update_data: Dict[str, Any] = {"output": output}
         if metadata:
-            update_data["metadata"] = _merge_metadata(metadata)
+            update_data["metadata"] = _langfuse_safe_metadata(_merge_metadata(metadata))
         update_data.update(kwargs)
         self.update(**update_data)
 
@@ -88,7 +109,7 @@ class ObservationHandle:
             },
         }
         if metadata:
-            update_data["metadata"] = _merge_metadata(metadata)
+            update_data["metadata"] = _langfuse_safe_metadata(_merge_metadata(metadata))
         update_data.update(kwargs)
         self.update(**update_data)
 
@@ -228,8 +249,10 @@ class LangfuseRuntimeTracer:
                 name=f"flow:{span_name}",
                 trace_context={"trace_id": trace.trace_id.hex},
                 input=input,
-                metadata=_merge_metadata(
-                    {"flow_name": trace.flow_name} if trace.flow_name else None
+                metadata=_langfuse_safe_metadata(
+                    _merge_metadata(
+                        {"flow_name": trace.flow_name} if trace.flow_name else None
+                    )
                 ),
             ) as flow_span:
                 handle = ObservationHandle(flow_span)
@@ -241,7 +264,7 @@ class LangfuseRuntimeTracer:
                 with propagate_attributes(
                     user_id=trace.user_id,
                     session_id=str(trace.session_id) if trace.session_id else None,
-                    metadata=_get_contextvars_metadata(),
+                    metadata=_langfuse_safe_metadata(_get_contextvars_metadata()),
                     version=str(trace.flow_version_id)
                     if trace.flow_version_id
                     else None,
@@ -279,7 +302,7 @@ class LangfuseRuntimeTracer:
                 self.langfuse.create_event(
                     name=name,
                     input=input,
-                    metadata=_merge_metadata(metadata),
+                    metadata=_langfuse_safe_metadata(_merge_metadata(metadata)),
                 )
                 yield handle
                 return
@@ -290,7 +313,7 @@ class LangfuseRuntimeTracer:
                 as_type=as_type,
                 name=name,
                 input=input,
-                metadata=_merge_metadata(metadata),
+                metadata=_langfuse_safe_metadata(_merge_metadata(metadata)),
                 **obs_kwargs,
             ) as observation:
                 handle = ObservationHandle(observation)

@@ -1,5 +1,6 @@
 import json
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Optional, NewType, TYPE_CHECKING
 
 from openai import AsyncOpenAI
@@ -72,7 +73,11 @@ class OpenAIProviderAdapter(LLMProviderPort):
             ttl=self.CONVERSATION_TTL_SECONDS,
         )
 
-    async def infer(self, request: LLMRequest) -> LLMResult:
+    async def infer(
+        self,
+        request: LLMRequest,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMResult:
         messages: list[dict[str, str]] = [
             message.model_dump(mode="json") for message in request.messages
         ]
@@ -140,13 +145,31 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 else:
                     payload["conversation"] = conversation_id
 
+        response: Response | None = None
+        output_text: Optional[str] = None
+        accumulated_text = ""
         try:
             start = time.perf_counter()
-
-            response: Response = await self.openai_client.responses.create(
-                **payload,
-                service_tier="auto",
-            )
+            if request.stream and on_delta is not None:
+                stream = await self.openai_client.responses.create(
+                    **payload,
+                    stream=True,
+                    service_tier="auto",
+                )
+                async for event in stream:
+                    event_type = getattr(event, "type", "")
+                    if event_type == "response.output_text.delta":
+                        delta = getattr(event, "delta", "") or ""
+                        if delta:
+                            accumulated_text += delta
+                            await on_delta(delta)
+                    elif event_type == "response.completed":
+                        response = event.response
+            else:
+                response = await self.openai_client.responses.create(
+                    **payload,
+                    service_tier="auto",
+                )
         except Exception as exc:
             raise DomainValidationException(
                 "llm_provider_error",
@@ -156,6 +179,13 @@ class OpenAIProviderAdapter(LLMProviderPort):
         else:
             latency_ms = (time.perf_counter() - start) * 1000
 
+        if response is None:
+            raise DomainValidationException(
+                "llm_provider_error",
+                input_data=payload,
+                errors=["stream_completed_without_response"],
+            )
+
         if request.conversation_key and response.id:
             await self._set_previous_response_id(
                 request.conversation_key,
@@ -163,8 +193,6 @@ class OpenAIProviderAdapter(LLMProviderPort):
             )
 
         output_json: Dict[str, Any] | None = None
-        output_text: Optional[str] = None
-
         if response.output:
             for block in response.output:
                 for item in block.content or []:
@@ -173,6 +201,8 @@ class OpenAIProviderAdapter(LLMProviderPort):
                             output_json = item.json
                     if item.type == "output_text":
                         output_text = item.text
+        if output_text is None and accumulated_text:
+            output_text = accumulated_text
 
         if output_json is None and output_text:
             try:

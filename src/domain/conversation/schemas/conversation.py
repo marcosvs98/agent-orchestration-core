@@ -18,6 +18,7 @@ class SSEEventType(StrEnum):
     DONE = "done"
     ERROR = "error"
     PING = "ping"
+    CONTENT_DELTA = "content_delta"
 
 
 class ConversationRequest(BaseModel):

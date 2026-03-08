@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List
 from uuid import UUID
 from domain.context.ports.service import MemoryWriteServicePort
@@ -73,6 +74,7 @@ class RuntimeExecutor:
         start_node_id: str | None = None,
         initial_state: dict[str, object] | None = None,
         initial_memory: list[dict[str, object]] | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         loop_limit = (
             runtime_policy.definition.limits.get(
@@ -105,6 +107,7 @@ class RuntimeExecutor:
             metadata=metadata,
             state=initial_state or {},
             memory=initial_memory or [],
+            on_content_delta=on_content_delta,
         )
         user_context_policy = (
             runtime_policy.definition.user_context_enrichment

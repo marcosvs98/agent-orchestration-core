@@ -21,6 +21,14 @@ class StreamBridge(ExecutionEventHook):
     async def _done(self) -> None:
         await self._queue.put(None)
 
+    async def push_content_delta(
+        self, delta: str, node_id: str | None = None
+    ) -> None:
+        await self._push(
+            SSEEventType.CONTENT_DELTA,
+            {"delta": delta, "node_id": node_id},
+        )
+
     async def on_flow_start(self, **kwargs: Any) -> None:
         await self._push(
             SSEEventType.FLOW_STARTED,

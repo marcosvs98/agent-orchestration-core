@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -28,6 +29,13 @@ _APP_START_TIME = datetime.now(timezone.utc)
 
 def init_middlewares(app: FastAPI) -> None:
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:9000", "http://127.0.0.1:9000"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
 
 
 def init_routes(app: FastAPI, controllers: list[Any]) -> None:

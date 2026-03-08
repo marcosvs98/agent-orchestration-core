@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Protocol, Dict, Any
 from uuid import UUID
 
@@ -20,5 +21,6 @@ class LLMExecutorPort(Protocol):
         node_id: UUID | None = None,
         provider: str = "OPENAI",
         policy_llm: Dict[str, Any] | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResult:  # pragma: no cover - interface
         ...
