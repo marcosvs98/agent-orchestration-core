@@ -32,15 +32,6 @@ async def seed_prompts() -> None:
     async with get_db() as session:
         intent_template = """# Task
 Classify all user intents types and confidence."""
-        '''commented out for now
-
-# Available tools:
-{{ ctx.meta.available_tools | tojson }}
-
-# Constraints
-- Do not return tool_config_id.
-- Do not return intent_category.
-        '''
 
         slot_template = """# Task
 Extract parameters from user input to fill the request schema.

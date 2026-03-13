@@ -9,7 +9,7 @@
     body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 1rem; background: #1a1a1a; color: #e0e0e0; min-height: 100vh; }
     h1 { font-size: 1.25rem; margin-bottom: 1rem; }
     label { display: block; margin-top: 0.75rem; margin-bottom: 0.25rem; font-size: 0.875rem; color: #a0a0a0; }
-    input[type="text"], input[type="password"], textarea { width: 100%; padding: 0.5rem; border: 1px solid #404040; border-radius: 6px; background: #2a2a2a; color: #e0e0e0; font-size: 0.875rem; }
+    input[type="text"], input[type="password"], textarea, select { width: 100%; padding: 0.5rem; border: 1px solid #404040; border-radius: 6px; background: #2a2a2a; color: #e0e0e0; font-size: 0.875rem; }
     textarea { min-height: 60px; resize: vertical; }
     button { margin-top: 0.75rem; padding: 0.5rem 1rem; background: #0d7377; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem; }
     button:hover { background: #0e8488; }
@@ -32,6 +32,10 @@
   <input type="text" id="apiUrl" value="http://localhost:8000" class="api-url" placeholder="http://localhost:8000">
   <label for="token">JWT token</label>
   <input type="password" id="token" placeholder="Paste Bearer token (without 'Bearer ')">
+  <label for="promptSelect">User prompt</label>
+  <select id="promptSelect">
+    <option value="">None (no prompt)</option>
+  </select>
   <label for="userInput">Message</label>
   <textarea id="userInput" placeholder="Type your message..."></textarea>
   <button id="sendBtn" type="button">Send</button>
@@ -55,6 +59,7 @@
     const streamLog = document.getElementById('streamLog');
     const sendBtn = document.getElementById('sendBtn');
     const tokenEl = document.getElementById('token');
+    const promptSelectEl = document.getElementById('promptSelect');
     const userInputEl = document.getElementById('userInput');
     const apiUrlEl = document.getElementById('apiUrl');
 
@@ -105,10 +110,51 @@
       streamPre.textContent = '';
     }
 
+    async function loadUserPrompts() {
+      const token = tokenEl.value.trim();
+      const baseUrl = apiUrlEl.value.trim().replace(/\/$/, '');
+      promptSelectEl.innerHTML = '';
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = 'None (no prompt)';
+      promptSelectEl.appendChild(defaultOption);
+
+      if (!token || !baseUrl) {
+        return;
+      }
+
+      try {
+        const res = await fetch(baseUrl + '/core/v1/user-prompts', {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer ' + token
+          }
+        });
+        if (!res.ok) {
+          return;
+        }
+        const prompts = await res.json();
+        if (!Array.isArray(prompts)) {
+          return;
+        }
+        for (const prompt of prompts) {
+          if (!prompt || !prompt.id) {
+            continue;
+          }
+          const option = document.createElement('option');
+          option.value = prompt.id;
+          option.textContent = prompt.title || prompt.id;
+          promptSelectEl.appendChild(option);
+        }
+      } catch (_) {}
+    }
+
     async function sendMessage() {
       const token = tokenEl.value.trim();
       const message = userInputEl.value.trim();
       const baseUrl = apiUrlEl.value.trim().replace(/\/$/, '');
+      const selectedPromptId = promptSelectEl.value.trim();
 
       if (!token) {
         appendChat('assistant', 'Error: JWT token is required.', 'error');
@@ -131,6 +177,7 @@
         session_id: API_IDS.session_id,
         user_id: API_IDS.user_id,
         user_input: message,
+        user_prompt_id: selectedPromptId || null,
         metadata: {}
       };
 
@@ -231,12 +278,15 @@
     }
 
     sendBtn.addEventListener('click', sendMessage);
+    tokenEl.addEventListener('change', loadUserPrompts);
+    apiUrlEl.addEventListener('change', loadUserPrompts);
     userInputEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
       }
     });
+    loadUserPrompts();
   </script>
 </body>
 </html>

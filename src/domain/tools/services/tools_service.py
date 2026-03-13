@@ -76,7 +76,15 @@ class ToolsService(ToolsServicePort):
             else ""
         )
 
-        for op in operations:
+        patch_start = await self.repository.get_max_version_patch(
+            tool_id=tool_model.tool_id,
+            tenant_id=tenant_id,
+            version_major=1,
+            version_minor=0,
+        )
+        patch_start += 1
+
+        for i, op in enumerate(operations):
             full_url = f"{base_url}{op['path']}" if base_url else op["path"]
 
             tool_config_dict = ToolConfigConfig(
@@ -93,7 +101,7 @@ class ToolsService(ToolsServicePort):
                 config=tool_config_dict,
                 version_major=1,
                 version_minor=0,
-                version_patch=0,
+                version_patch=patch_start + i,
                 schema_version=1,
                 created_by=principal_id,
             )

@@ -1,11 +1,8 @@
 import json
-import os
-import tempfile
 from typing import Any
 
 import httpx
 import yaml
-from openapi_parser import parse
 
 from domain.tools.schemas.openapi_types import OpenAPIOperation, OpenAPISpec
 from exceptions.service_exceptions import DomainValidationException
@@ -33,20 +30,19 @@ class OpenAPIParser:
                 message=f"invalid_openapi_format: {str(e)}"
             ) from e
 
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as tmp_file:
-                json.dump(spec_dict, tmp_file)
-                tmp_path = tmp_file.name
-            try:
-                parse(tmp_path)
-            finally:
-                os.unlink(tmp_path)
-        except Exception as e:
+        if not isinstance(spec_dict, dict):
             raise DomainValidationException(
-                message=f"invalid_openapi_spec: {str(e)}"
-            ) from e
+                message="invalid_openapi_spec: root must be an object"
+            )
+        if "openapi" not in spec_dict and "swagger" not in spec_dict:
+            raise DomainValidationException(
+                message="invalid_openapi_spec: missing 'openapi' or 'swagger' version field"
+            )
+        paths = spec_dict.get("paths")
+        if not isinstance(paths, dict):
+            raise DomainValidationException(
+                message="invalid_openapi_spec: missing or invalid 'paths' field"
+            )
 
         info = spec_dict.get("info", {})
         title = info.get("title") or info.get("name")

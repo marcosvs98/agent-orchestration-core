@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Gera token JWT de admin para desenvolvimento.
+"""Generate admin JWT for development.
 
-Lê variáveis de ambiente do .env e gera token com todos os scopes.
-Retorna apenas o token (para uso em scripts/pipes).
+Reads .env and emits a token with all scopes. Default tenant is demo (flow 000700).
+Use ADMIN_TENANT_ID in .env to override.
 """
 
 import sys
 import time
-from uuid import uuid4
+
+DEMO_TENANT_ID = "00000000-0000-0000-0000-000000000100"
 
 try:
     from decouple import config
@@ -48,7 +49,7 @@ def generate_admin_token() -> str:
         sys.exit(1)
 
     algorithm = config("JWT_ALGORITHM", default="HS256")
-    tenant_id = config("ADMIN_TENANT_ID", default=str(uuid4()))
+    tenant_id = config("ADMIN_TENANT_ID", default=DEMO_TENANT_ID) or DEMO_TENANT_ID
     principal_id = config("ADMIN_PRINCIPAL_ID", default="admin-dev")
     principal_type = config("ADMIN_PRINCIPAL_TYPE", default="human")
     expires_in = config("ADMIN_TOKEN_EXPIRES_IN", default=86400 * 30, cast=int)
@@ -72,6 +73,9 @@ def generate_admin_token() -> str:
 if __name__ == "__main__":
     try:
         token = generate_admin_token()
+        tenant_id = config("ADMIN_TENANT_ID", default=DEMO_TENANT_ID) or DEMO_TENANT_ID
+        hint = " (demo flow)" if tenant_id == DEMO_TENANT_ID else ""
+        print(f"Token tenant_id={tenant_id}{hint}. Use ?token=... in chat URL.", file=sys.stderr)
         print(token)
     except Exception as e:
         print(f"ERRO ao gerar token: {e}", file=sys.stderr)

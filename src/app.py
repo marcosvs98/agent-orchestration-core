@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
             container.conversation.conversation_controller(),
             container.onboarding.onboarding_controller(),
             container.prompts.prompt_controller(),
+            container.user_prompts.user_prompts_controller(),
         ],
     )
     return app

@@ -32,7 +32,6 @@ dependencies = [
     "pydantic-settings>=2.12.0",
     "pydantic-core>=2.41.5",
     "jsonschema>=4.0.0",
-    "openapi3-parser>=1.1.22",
     "pyyaml>=6.0.0",
     "arq",
     "pyparsing>=3.3.2",

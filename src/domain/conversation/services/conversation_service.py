@@ -20,11 +20,19 @@ from domain.execution.services.observability.hooks import (
     CompositeHook,
     ExecutionEventHook,
 )
+from domain.user_prompts.repositories.user_prompts_repository import (
+    UserPromptsRepository,
+)
 
 
 class ConversationService(ConversationServicePort):
-    def __init__(self, execution_service: ExecutionService) -> None:
+    def __init__(
+        self,
+        execution_service: ExecutionService,
+        user_prompts_repository: UserPromptsRepository,
+    ) -> None:
         self.execution_service = execution_service
+        self.user_prompts_repository = user_prompts_repository
         self._hook_lock = asyncio.Lock()
 
     async def _run_flow(
@@ -44,13 +52,24 @@ class ConversationService(ConversationServicePort):
         async def _on_content_delta(delta: str) -> None:
             await stream_bridge.push_content_delta(delta)
 
+        user_input = request.user_input
+        if request.user_prompt_id is not None:
+            selected_prompt = await self.user_prompts_repository.get_by_id(
+                tenant_id=tenant_id,
+                user_prompt_id=request.user_prompt_id,
+            )
+            if selected_prompt is not None:
+                user_input = (
+                    f"{selected_prompt.content}\n\n{request.user_input or ''}".strip()
+                )
+
         flow_run = FlowRunCreate(
             flow_id=request.flow_id,
             flow_version_id=request.flow_version_id,
             session_id=request.session_id or uuid4(),
             user_id=request.user_id,
             correlation_id=request.correlation_id,
-            input=FlowRunInput(user_input=request.user_input),
+            input=FlowRunInput(user_input=user_input),
             metadata=request.metadata,
         )
         endpoint = "/core/v1/conversations"

@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo test-flow-demo test-trace-hierarchy serve-conversation-test
+.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo seed-demo2 test-flow-demo test-trace-hierarchy serve-conversation-test
 
 validate-setup:
 	resources/scripts/validation_setup.sh
@@ -25,6 +25,9 @@ run-seed:
 
 seed-demo:
 	@PYTHONPATH=src python resources/scripts/seeds/demo/run.py
+
+seed-demo2:
+	@PYTHONPATH=src uv run python resources/scripts/seeds/demo_2/run.py
 
 test-flow-demo:
 	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo.py

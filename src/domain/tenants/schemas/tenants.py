@@ -27,6 +27,7 @@ class TenantCurrentResponse(BaseModel):
     language: str
     contact_name: str | None = None
     contact_phone: str | None = None
+    settings: dict[str, object] | None = None
 
 
 class TenantResponse(BaseModel):

@@ -211,6 +211,41 @@ def upgrade() -> None:
         postgresql_where=sa.text("external_id IS NOT NULL"),
     )
     op.create_table(
+        "user_prompt",
+        sa.Column("user_prompt_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("title", sa.String(length=255), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
+        sa.Column("created_by", sa.String(length=128), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_user_prompt_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("user_prompt_id", name=op.f("pk_user_prompt")),
+    )
+    op.create_index(
+        "ix_user_prompt_tenant_id_title",
+        "user_prompt",
+        ["tenant_id", "title"],
+        unique=False,
+    )
+    op.create_table(
         "end_user",
         sa.Column("end_user_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
@@ -3082,6 +3117,8 @@ def downgrade() -> None:
     op.drop_table("access_policy")
     op.drop_table("vector_store")
     op.drop_table("tool")
+    op.drop_index("ix_user_prompt_tenant_id_title", table_name="user_prompt")
+    op.drop_table("user_prompt")
     op.drop_index(
         "uq_tenant_external_id",
         table_name="tenant",

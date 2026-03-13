@@ -61,6 +61,13 @@ from domain.onboarding.repositories.onboarding_repository import OnboardingRepos
 from domain.prompts.controllers.prompt_controller import PromptController
 from domain.prompts.services.prompt_service import PromptService
 from domain.prompts.repositories.prompt_repository import PromptRepository
+from domain.user_prompts.controllers.user_prompts_controller import (
+    UserPromptsController,
+)
+from domain.user_prompts.repositories.user_prompts_repository import (
+    UserPromptsRepository,
+)
+from domain.user_prompts.services.user_prompts_service import UserPromptsService
 from domain.conversation.controllers.conversation_controller import (
     ConversationController,
 )
@@ -388,13 +395,34 @@ class PromptsContainer(containers.DeclarativeContainer):
     prompt_controller = providers.Factory(PromptController, service=prompt_service)
 
 
+class UserPromptsContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
+
+    user_prompts_repository = providers.Factory(
+        UserPromptsRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    user_prompts_service = providers.Factory(
+        UserPromptsService,
+        repository=user_prompts_repository,
+    )
+    user_prompts_controller = providers.Factory(
+        UserPromptsController,
+        service=user_prompts_service,
+    )
+
+
 class ConversationContainer(containers.DeclarativeContainer):
     execution = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
+    user_prompts = providers.DependenciesContainer()
 
     conversation_service = providers.Factory(
         ConversationService,
         execution_service=execution.execution_service,
+        user_prompts_repository=user_prompts.user_prompts_repository,
     )
     conversation_boundary = providers.Factory(
         ConversationBoundary,
@@ -431,6 +459,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
     prompts = providers.Container(
         PromptsContainer, core=core, adapters=adapters, execution=execution
     )
+    user_prompts = providers.Container(
+        UserPromptsContainer, core=core, adapters=adapters
+    )
     conversation = providers.Container(
-        ConversationContainer, execution=execution, adapters=adapters
+        ConversationContainer,
+        execution=execution,
+        adapters=adapters,
+        user_prompts=user_prompts,
     )
