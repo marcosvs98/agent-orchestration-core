@@ -18,7 +18,7 @@ class NodeExecutionStatus(StrEnum):
 
 class IntentType(StrEnum):
     QUERY = "query"
-    EXECUTION = "execution"
+    COMMAND = "command"
     GENERATION = "generation"
     TRANSFORMATION = "transformation"
     ANALYSIS = "analysis"

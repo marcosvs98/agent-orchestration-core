@@ -142,7 +142,7 @@ async def test_tool_selection_returns_candidates_from_semantic_retrieval():
     assert len(result.data["result"]) == 1
     assert result.data["result"][0]["selected_tool"]["name"] == "get-weather"
     assert result.data["result"][0]["confidence"] == 0.95
-    retriever.retrieve_candidates.assert_called_once()
+    retriever.retrieve_candidates.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -246,7 +246,7 @@ async def test_tool_selection_writes_next_state():
 
 @pytest.mark.asyncio
 async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
-    tool = AvailableTool(
+    selected_tool = AvailableTool(
         name="checkout",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
@@ -254,6 +254,15 @@ async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
         method="POST",
         path="/checkout",
         retrieval_score=0.4,
+    )
+    other_tool = AvailableTool(
+        name="cancel",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        operation_id="cancel",
+        method="POST",
+        path="/cancel",
+        retrieval_score=0.35,
     )
     agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
     llm_result = NodeResult(
@@ -263,8 +272,8 @@ async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
             "result": [
                 {
                     "selected_tool": {
-                        "name": tool.name,
-                        "tool_config_id": str(tool.tool_config_id),
+                        "name": selected_tool.name,
+                        "tool_config_id": str(selected_tool.tool_config_id),
                     },
                     "confidence": 0.91,
                 }
@@ -278,7 +287,10 @@ async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
     tool_catalog_indexer.index_document = AsyncMock(return_value=None)
 
     node, retriever, _ = _build_tool_selection_node(
-        retriever_return=([tool], [{"tool_config_id": str(tool.tool_config_id), "score": 0.4}]),
+        retriever_return=(
+            [selected_tool, other_tool],
+            [{"tool_config_id": str(selected_tool.tool_config_id), "score": 0.4}],
+        ),
         agent_version=agent_version,
         llm_fallback=llm_fallback,
         tool_catalog_indexer=tool_catalog_indexer,
@@ -286,7 +298,13 @@ async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
 
     context = _make_context(
         input_payload={"user_input": "execute o checkout dos debitos"},
-        available_tools=[tool],
+        available_tools=[selected_tool, other_tool],
+        state={
+            NodeType.IntentDetectionNode.value: {
+                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
+                "overall_confidence": 0.9,
+            }
+        },
     )
     result = await node.execute(context)
 
@@ -298,23 +316,37 @@ async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
 
 @pytest.mark.asyncio
 async def test_tool_selection_instrumentation_contains_scores_and_evidence():
-    tool = AvailableTool(
+    selected_tool = AvailableTool(
         name="createExpense",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
+        method="POST",
         retrieval_score=0.92,
     )
-    evidence = [{"tool_config_id": str(tool.tool_config_id), "score": 0.92}]
+    other_tool = AvailableTool(
+        name="deleteExpense",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        method="DELETE",
+        retrieval_score=0.61,
+    )
+    evidence = [{"tool_config_id": str(selected_tool.tool_config_id), "score": 0.92}]
     tracer = _FakeTracer()
     agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
     node, _, _ = _build_tool_selection_node(
-        retriever_return=([tool], evidence),
+        retriever_return=([selected_tool, other_tool], evidence),
         agent_version=agent_version,
         tracer=tracer,
     )
     context = _make_context(
         input_payload={"user_input": "paguei no cartao"},
-        available_tools=[tool],
+        available_tools=[selected_tool, other_tool],
+        state={
+            NodeType.IntentDetectionNode.value: {
+                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
+                "overall_confidence": 0.9,
+            }
+        },
     )
 
     await node.execute(context)
@@ -329,17 +361,17 @@ async def test_tool_selection_instrumentation_contains_scores_and_evidence():
         for record in tracer.records
         if record["name"] == "domain.execution.nodes.tool_selection.execute"
     )
-    assert retrieval_record["output"]["candidate_count"] == 1
+    assert retrieval_record["output"]["candidate_count"] == 2
     assert retrieval_record["output"]["evidence"] == evidence
     assert retrieval_record["output"]["selected_tools"][0]["retrieval_score"] == 0.92
-    assert execute_record["output"]["selection_mode"] == "semantic"
+    assert execute_record["output"]["selection_mode"] == "heuristic_auto_select"
     assert execute_record["output"]["best_score"] == 0.92
     assert execute_record["output"]["selected_tools"][0]["name"] == "createExpense"
 
 
 @pytest.mark.asyncio
 async def test_tool_selection_instrumentation_contains_fallback_reason():
-    tool = AvailableTool(
+    selected_tool = AvailableTool(
         name="createExpense",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
@@ -347,6 +379,15 @@ async def test_tool_selection_instrumentation_contains_fallback_reason():
         method="POST",
         path="/expenses",
         retrieval_score=0.31,
+    )
+    other_tool = AvailableTool(
+        name="updateExpense",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        operation_id="updateExpense",
+        method="PATCH",
+        path="/expenses/{id}",
+        retrieval_score=0.22,
     )
     tracer = _FakeTracer()
     agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
@@ -357,8 +398,8 @@ async def test_tool_selection_instrumentation_contains_fallback_reason():
             "result": [
                 {
                     "selected_tool": {
-                        "name": tool.name,
-                        "tool_config_id": str(tool.tool_config_id),
+                        "name": selected_tool.name,
+                        "tool_config_id": str(selected_tool.tool_config_id),
                     },
                     "confidence": 0.95,
                 }
@@ -371,7 +412,7 @@ async def test_tool_selection_instrumentation_contains_fallback_reason():
     tool_catalog_indexer = MagicMock()
     tool_catalog_indexer.index_document = AsyncMock(return_value=None)
     node, _, _ = _build_tool_selection_node(
-        retriever_return=([tool], []),
+        retriever_return=([selected_tool, other_tool], []),
         agent_version=agent_version,
         llm_fallback=llm_fallback,
         tool_catalog_indexer=tool_catalog_indexer,
@@ -379,7 +420,13 @@ async def test_tool_selection_instrumentation_contains_fallback_reason():
     )
     context = _make_context(
         input_payload={"user_input": "paguei no cartao"},
-        available_tools=[tool],
+        available_tools=[selected_tool, other_tool],
+        state={
+            NodeType.IntentDetectionNode.value: {
+                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
+                "overall_confidence": 0.9,
+            }
+        },
     )
 
     await node.execute(context)
@@ -398,3 +445,91 @@ def test_node_attributes():
     assert ToolSelectionNode.node_type == "ToolSelectionNode"
     assert ToolSelectionNode.side_effect is False
     assert ToolSelectionNode.deterministic is False
+
+
+@pytest.mark.asyncio
+async def test_tool_selection_filters_query_intent_to_get_methods():
+    query_tool_a = AvailableTool(
+        name="listExpenses",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        method="GET",
+        retrieval_score=0.86,
+    )
+    query_tool_b = AvailableTool(
+        name="getBalance",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        method="GET",
+        retrieval_score=0.71,
+    )
+    command_tool = AvailableTool(
+        name="createExpense",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        method="POST",
+        retrieval_score=0.2,
+    )
+    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
+    node, retriever, _ = _build_tool_selection_node(
+        retriever_return=(
+            [query_tool_a, query_tool_b],
+            [{"tool_config_id": str(query_tool_a.tool_config_id), "score": 0.86}],
+        ),
+        agent_version=agent_version,
+    )
+    context = _make_context(
+        input_payload={"user_input": "listar meus gastos"},
+        available_tools=[query_tool_a, query_tool_b, command_tool],
+        state={
+            NodeType.IntentDetectionNode.value: {
+                "result": [{"intent_type": "query", "confidence": 0.9, "priority": 1}],
+                "overall_confidence": 0.9,
+            }
+        },
+    )
+
+    await node.execute(context)
+
+    kwargs = retriever.retrieve_candidates.call_args.kwargs
+    assert kwargs["available_tools"] == [query_tool_a, query_tool_b]
+    assert kwargs["tool_intent_filter"] == "Query"
+
+
+@pytest.mark.asyncio
+async def test_tool_selection_falls_back_to_llm_when_no_tools_after_intent_filter():
+    query_tool = AvailableTool(
+        name="listExpenses",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        method="GET",
+    )
+    llm_result = NodeResult(
+        node=NodeType.ToolSelectionNode,
+        status=NodeExecutionStatus.SUCCESS,
+        data={"result": []},
+        next_state={},
+    )
+    llm_fallback = MagicMock()
+    llm_fallback.execute = AsyncMock(return_value=llm_result)
+    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
+    node, retriever, _ = _build_tool_selection_node(
+        agent_version=agent_version,
+        llm_fallback=llm_fallback,
+    )
+    context = _make_context(
+        input_payload={"user_input": "criar despesa"},
+        available_tools=[query_tool],
+        state={
+            NodeType.IntentDetectionNode.value: {
+                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
+                "overall_confidence": 0.9,
+            }
+        },
+    )
+
+    result = await node.execute(context)
+
+    assert result == llm_result
+    llm_fallback.execute.assert_called_once()
+    retriever.retrieve_candidates.assert_not_called()

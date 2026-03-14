@@ -156,3 +156,44 @@ async def test_retrieve_candidates_falls_back_to_available_tools_when_empty_cont
     assert record["output"]["fallback_used"] is True
     assert record["output"]["candidate_count"] == 1
     assert record["output"]["evidence"] == []
+
+
+@pytest.mark.asyncio
+async def test_retrieve_candidates_forwards_tool_intent_filter_to_rag():
+    tool_config_id = uuid4()
+    rag_runtime_service = MagicMock()
+    rag_runtime_service.get_context = AsyncMock(
+        return_value=RagContext(
+            context_items=[
+                RagContextItem(
+                    document_id=uuid4(),
+                    chunk_id=uuid4(),
+                    content="tool",
+                    score=0.7,
+                    metadata={"tool_config_id": str(tool_config_id)},
+                )
+            ],
+            eligible=True,
+            reason=RagContextReason.OK,
+        )
+    )
+    tracer = _FakeTracer()
+    retriever = ToolCatalogRetriever(
+        rag_runtime_service=rag_runtime_service,
+        tracer=tracer,
+    )
+    available_tools = [
+        AvailableTool(name="tool-1", tool_id=uuid4(), tool_config_id=tool_config_id),
+    ]
+
+    await retriever.retrieve_candidates(
+        tenant_id=uuid4(),
+        rag_config_id=uuid4(),
+        user_input="find tool",
+        available_tools=available_tools,
+        top_k=1,
+        tool_intent_filter="Command",
+    )
+
+    kwargs = rag_runtime_service.get_context.call_args.kwargs
+    assert kwargs["filters_override"]["tool_intent"] == "Command"

@@ -47,7 +47,7 @@ async def seed_router() -> None:
         if existing_condition is None:
             condition = ConditionExpression(
                 condition_expression_id=CONDITION_EXPRESSION_DEMO_ID,
-                expression='ctx.get("primary_intent_type") == "execution"',
+                expression='ctx.get("primary_intent_type") == "command"',
             )
             session.add(condition)
             await session.commit()

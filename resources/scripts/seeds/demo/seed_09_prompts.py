@@ -90,9 +90,7 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
 
 # Constraints
 - selected_tool must reference a tool from available_tools by name and tool_config_id.
-- confidence between 0 and 1.
-"""
-
+- confidence between 0 and 1."""
         prompts = [
             (
                 PROMPT_INTENT_ID,
@@ -112,7 +110,7 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
                                         "type": "string",
                                         "enum": [
                                             "query",
-                                            "execution",
+                                            "command",
                                             "conversation",
                                         ],
                                     },
@@ -292,7 +290,7 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
                                         "type": "string",
                                         "enum": [
                                             "query",
-                                            "execution",
+                                            "command",
                                             "conversation",
                                         ],
                                     },

@@ -26,6 +26,7 @@ class ToolCatalogRetriever:
         user_input: str,
         available_tools: list[AvailableTool],
         top_k: int,
+        tool_intent_filter: str | None = None,
     ) -> tuple[list[AvailableTool], list[dict[str, Any]]]:
         if not available_tools or not user_input:
             return available_tools[:top_k], []
@@ -42,16 +43,19 @@ class ToolCatalogRetriever:
                 "top_k": top_k,
             },
         ) as retrieve_handle:
+            filters_override: dict[str, object] = {
+                "source": "tool_catalog",
+                "doc_type": "tool_catalog",
+                "category": "TOOL_CATALOG",
+            }
+            if tool_intent_filter:
+                filters_override["tool_intent"] = tool_intent_filter
             context = await self.rag_runtime_service.get_context(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
                 user_id=None,
                 user_input=user_input,
-                filters_override={
-                    "source": "tool_catalog",
-                    "doc_type": "tool_catalog",
-                    "category": "TOOL_CATALOG",
-                },
+                filters_override=filters_override,
                 top_k_override=max(top_k * 3, top_k),
             )
             ranked = self._rank_candidates(

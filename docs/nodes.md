@@ -115,7 +115,7 @@ Não há espaço para criatividade aqui. Classificação precisa ser determinís
   "data": {
     "result": [
       {
-        "intent_type": "execution",
+        "intent_type": "command",
         "confidence": 0.92,
         "priority": 1
       }
@@ -156,7 +156,7 @@ Top_p: 0.1 – 0.2
   "data": {
     "result": [
       {
-        "intent_type": "execution",
+        "intent_type": "command",
         "selected_tool": {
           "name": "createExpense",
           "tool_id": "00000000-0000-0000-0000-000000000500",
@@ -168,6 +168,28 @@ Top_p: 0.1 – 0.2
   }
 }
 ```
+
+### Tool selection policy (runtime)
+
+- Intent vocabulary: `query`, `command`, `conversation`.
+- Structural filter before retrieval:
+  - `query` -> GET tools only
+  - `command` -> POST/PUT/PATCH/DELETE tools only
+  - `conversation` -> no tool route in graph
+- Candidate policy:
+  - `0 tools` -> LLM fallback decides no applicable tool
+  - `1 tool` -> auto select without LLM
+  - `>1 tools` -> heuristic first, then LLM fallback
+- Ranking policy:
+  - `score >= confidence_threshold` -> auto select top-1 candidate
+  - otherwise -> LLM fallback ranking
+
+### tenant_tool_catalog_cache
+
+- Cache scope: tenant-level available tool catalog.
+- Suggested key: `tenant_tool_catalog:{tenant_id}`.
+- Suggested TTL: 60 to 300 seconds.
+- Invalidation trigger: tool import/publish/update events.
 
 ---
 

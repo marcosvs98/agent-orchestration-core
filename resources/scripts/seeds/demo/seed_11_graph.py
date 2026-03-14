@@ -212,7 +212,7 @@ async def seed_graph() -> None:
                         temperature=0.2,
                         top_p=0.2,
                         use_system_prompt=False,
-                        use_conversation_history=False,
+                        use_conversation_history=True,
                         completion_budget={
                             "schema_factor": 1.5,
                             "safety_margin": 24,
@@ -231,9 +231,9 @@ async def seed_graph() -> None:
                         top_p=0.4,
                         use_conversation_history=True,
                         completion_budget={
-                            "schema_factor": 1.2,
-                            "safety_margin": 16,
-                            "floor": 32,
+                            "schema_factor": 1.7,
+                            "safety_margin": 24,
+                            "floor": 80,
                         },
                     ),
                 ),
@@ -244,9 +244,14 @@ async def seed_graph() -> None:
                         task_type="CLARIFICATION",
                         provider="OPENAI",
                         model_alias="gpt-4o",
-                        temperature=0.4,
-                        top_p=0.3,
+                        temperature=0.3,
+                        top_p=0.4,
                         use_conversation_history=True,
+                        completion_budget={
+                            "schema_factor": 1.7,
+                            "safety_margin": 24,
+                            "floor": 80,
+                        },
                     ),
                 ),
                 str(NODE_TOOL_EXEC_ID): FlowGraphNodeSpec(
@@ -269,6 +274,7 @@ async def seed_graph() -> None:
                         model_alias="gpt-4o",
                         temperature=0.3,
                         top_p=0.4,
+                        use_conversation_history=True,
                         completion_budget={
                             "schema_factor": 1.7,
                             "safety_margin": 24,
@@ -293,13 +299,13 @@ async def seed_graph() -> None:
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_TOOL_SELECTION_ID),
-                    condition="HasAny(result.intent_type, ['execution']) and overall_confidence >= 0.8",
+                    condition="HasAny(result.intent_type, ['command']) and overall_confidence >= 0.8",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_INTENT_ID),
                     to_node=str(NODE_RESPONSE_ID),
-                    condition="overall_confidence >= 0.6 and (HasAny(result.intent_type, ['conversation']) or not HasAny(result.intent_type, ['execution']))",
+                    condition="overall_confidence >= 0.6 and (HasAny(result.intent_type, ['conversation']) or not HasAny(result.intent_type, ['command']))",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(

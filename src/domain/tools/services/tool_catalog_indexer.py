@@ -103,6 +103,7 @@ class ToolCatalogIndexer:
             "operation_id": document.operation_id,
             "method": document.method,
             "path": document.path,
+            "tool_intent": self._derive_tool_intent(document.method),
         }
         return RagDocumentCreate(
             source="tool_catalog",
@@ -133,6 +134,16 @@ class ToolCatalogIndexer:
                 continue
             examples.append(str(item))
         return examples
+
+    def _derive_tool_intent(self, method: str | None) -> str | None:
+        if method is None:
+            return None
+        upper_method = method.upper()
+        if upper_method == "GET":
+            return "Query"
+        if upper_method in {"POST", "PUT", "PATCH", "DELETE"}:
+            return "Command"
+        return None
 
     def _extract_path(self, config: dict[str, object]) -> str | None:
         path = self._as_str(config.get("path"))
