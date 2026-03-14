@@ -81,11 +81,37 @@ class OpenAPIParser:
                         path=path,
                         method=method.upper(),
                         operation_id=operation.get("operationId", f"{method}_{path}"),
+                        summary=operation.get("summary"),
+                        description=operation.get("description"),
+                        examples=self._extract_examples(operation),
                         request_schema=request_schema,
                         response_schema=response_schema,
                     )
                 )
         return operations
+
+    def _extract_examples(self, operation: dict[str, Any]) -> list[str]:
+        request_body = operation.get("requestBody", {})
+        content = request_body.get("content", {})
+        json_content = content.get("application/json") or content.get(
+            "application/json; charset=utf-8"
+        )
+        if not json_content:
+            return []
+
+        examples = json_content.get("examples")
+        if not isinstance(examples, dict):
+            return []
+
+        extracted: list[str] = []
+        for value in examples.values():
+            if not isinstance(value, dict):
+                continue
+            example_value = value.get("value")
+            if example_value is None:
+                continue
+            extracted.append(json.dumps(example_value, ensure_ascii=True))
+        return extracted
 
     def _extract_request_schema(
         self, operation: dict[str, Any], schemas: dict[str, Any]

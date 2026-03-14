@@ -608,6 +608,11 @@ class RagRepository:
                         RagDocumentModel.doc_metadata["user_id"].astext
                         == str(filters["user_id"])
                     )
+                if filters.get("category"):
+                    stmt = stmt.where(
+                        RagDocumentModel.doc_metadata["category"].astext
+                        == str(filters["category"])
+                    )
                 if filters.get("created_after"):
                     created_after_value = filters["created_after"]
                     if isinstance(created_after_value, str):

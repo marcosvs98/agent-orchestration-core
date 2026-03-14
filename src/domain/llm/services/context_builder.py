@@ -19,6 +19,7 @@ from domain.execution.services.graph_runtime.types import ExecutionContext
 from domain.governance.schemas.rag_policy import RagActivationScope
 from domain.llm.schemas.llm import LLMTaskType
 from domain.prompts.schemas.prompt import NodeType
+from domain.tools.schemas.tools import AvailableTool
 from domain.tools.repositories.tools_repository import ToolsRepository
 
 
@@ -271,12 +272,9 @@ class ContextBuilder:
         user_input = input_payload.get("user_input") or ""
         state = execution_context.state or {}
         current_node_type = (execution_context.metadata or {}).get("current_node_type")
-        available_tools = []
-        for tool in execution_context.available_tools:
-            try:
-                available_tools.append(tool.model_dump(mode="json"))
-            except AttributeError:
-                continue
+        available_tools_models = self._coerce_available_tools(
+            execution_context.available_tools
+        )
 
         ctx: dict[str, Any] = {
             "meta": {
@@ -292,7 +290,7 @@ class ContextBuilder:
                 if execution_context.current_node_run_id
                 else None,
                 "current_node_type": current_node_type,
-                "available_tools": available_tools,
+                "available_tools": [],
             },
             "persona": {},
             "config": {
@@ -387,6 +385,11 @@ class ContextBuilder:
                 agent = await self.agents_repository.get_agent(agent_version.agent_id)
                 if agent is not None:
                     tenant_id = agent.tenant_id
+
+        available_tools = []
+        for tool in available_tools_models:
+            available_tools.append(tool.model_dump(mode="json"))
+        ctx["meta"]["available_tools"] = available_tools
 
         decision = self.runtime_context_policy.decide(
             task_type=task_type,
@@ -548,3 +551,17 @@ class ContextBuilder:
                     )
 
         return ctx
+
+    def _coerce_available_tools(self, tools: list[object]) -> list[AvailableTool]:
+        coerced: list[AvailableTool] = []
+        for tool in tools:
+            if isinstance(tool, AvailableTool):
+                coerced.append(tool)
+                continue
+            if not isinstance(tool, dict):
+                continue
+            try:
+                coerced.append(AvailableTool.model_validate(tool))
+            except Exception:
+                continue
+        return coerced

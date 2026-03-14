@@ -114,6 +114,8 @@ from domain.governance.repositories.authoring_event_repository import (
 from domain.tools.ports.secret_resolver import SecretResolverPort
 from domain.tools.ports.service import ToolsServicePort
 from domain.tools.repositories.tools_repository import ToolsRepository
+from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
+from domain.tools.services.tool_catalog_retriever import ToolCatalogRetriever
 from domain.tools.services.tools_service import ToolsService
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
 from infra.http_tool_executor import HttpToolExecutor
@@ -214,6 +216,13 @@ class ExecutionService(ExecutionServicePort):
             embedding_adapter=embedding_adapter,
             tracer=tracer,
         )
+        tool_catalog_indexer = ToolCatalogIndexer(
+            rag_runtime_service=rag_runtime_service,
+            rag_repository=rag_repository,
+            tracer=self.tracer,
+        )
+        if not tools_service and isinstance(self.tools_service, ToolsService):
+            self.tools_service.tool_catalog_indexer = tool_catalog_indexer
         semantic_cache_repository = SemanticCacheRepository(repository.db)
         semantic_cache_service = SemanticCacheService(
             repository=semantic_cache_repository,
@@ -258,6 +267,10 @@ class ExecutionService(ExecutionServicePort):
             embedding_job_queue=ArqEmbeddingQueueAdapter(),
         )
         runtime_context_policy = RuntimeContextLayerPolicy()
+        tool_catalog_retriever = ToolCatalogRetriever(
+            rag_runtime_service=rag_runtime_service,
+            tracer=self.tracer,
+        )
         context_builder = ContextBuilder(
             self.agents_repository,
             self.tools_repository,
@@ -309,6 +322,9 @@ class ExecutionService(ExecutionServicePort):
                 tracer=tracer,
                 agent_runtime_resolver=agent_runtime_resolver,
                 completion_budget_policy=completion_budget_policy,
+                tool_catalog_retriever=tool_catalog_retriever,
+                tool_catalog_indexer=tool_catalog_indexer,
+                agents_repository=self.agents_repository,
             ),
             tracer=self.tracer,
             hook=self.hook,

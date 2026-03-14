@@ -8,6 +8,9 @@ from domain.execution.services.graph_runtime.nodes.intent_detection import (
 from domain.execution.services.graph_runtime.nodes.tool_selection import (
     ToolSelectionNode,
 )
+from domain.execution.services.graph_runtime.nodes.tool_selection_llm_fallback import (
+    ToolSelectionLLMFallback,
+)
 
 IntentToolSelectionNode = ToolSelectionNode
 from domain.execution.services.graph_runtime.nodes.param_extraction import (
@@ -33,6 +36,7 @@ __all__ = [
     "IntentDetectionNode",
     "IntentToolSelectionNode",
     "ToolSelectionNode",
+    "ToolSelectionLLMFallback",
     "ParamExtractionNode",
     "ResponseComposer",
     "ToolErrorHandlerNode",

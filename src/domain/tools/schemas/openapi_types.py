@@ -15,5 +15,8 @@ class OpenAPIOperation(TypedDict, total=False):
     path: str
     method: str
     operation_id: str
+    summary: str | None
+    description: str | None
+    examples: list[str]
     request_schema: dict[str, Any]
     response_schema: dict[str, Any]

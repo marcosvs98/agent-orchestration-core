@@ -49,6 +49,9 @@ Ask the user for missing required information.
 # Intent
 {{ ctx.input.input_payload.intent | default('') }}
 
+# Missing Fields
+{{ ctx.derived.missing_fields | tojson }}
+
 # Constraints
 - Be concise and polite.
 - Ask only for missing fields.
@@ -110,8 +113,6 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
                                         "enum": [
                                             "query",
                                             "execution",
-                                            "generation",
-                                            "transformation",
                                             "conversation",
                                         ],
                                     },
@@ -292,8 +293,6 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
                                         "enum": [
                                             "query",
                                             "execution",
-                                            "generation",
-                                            "transformation",
                                             "conversation",
                                         ],
                                     },

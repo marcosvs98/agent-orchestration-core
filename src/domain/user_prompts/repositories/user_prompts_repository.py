@@ -15,7 +15,9 @@ class UserPromptsRepository:
         self.db = database_connection
         self.tracer = tracer
 
-    async def list_active(self, tenant_id: UUID, limit: int = 200) -> list[UserPromptModel]:
+    async def list_active(
+        self, tenant_id: UUID, limit: int = 200
+    ) -> list[UserPromptModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(UserPromptModel)

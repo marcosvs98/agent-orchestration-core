@@ -7,6 +7,7 @@ from domain.tools.schemas.tools import (
     ToolConfig,
     ToolConfigCreate,
     ToolImportRequest,
+    ToolImportResult,
 )
 from domain.tools.services.tools_service import ToolsService
 from domain.common.schemas.error import ErrorResponse
@@ -32,7 +33,7 @@ class ToolsController:
             "/tools/import-openapi",
             self.import_tool,
             methods=["POST"],
-            response_model=Tool,
+            response_model=ToolImportResult,
             status_code=status.HTTP_201_CREATED,
         )
         r(
@@ -90,7 +91,7 @@ class ToolsController:
         self,
         tool_import_request: ToolImportRequest,
         auth: AuthContext = Depends(get_auth_context),
-    ) -> Tool:
+    ) -> ToolImportResult:
         return await self.service.import_tool(
             tenant_id=auth.tenant_id,
             tool_import_request=tool_import_request,

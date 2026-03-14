@@ -140,20 +140,24 @@ class ToolsRepository:
         version_minor: int = 0,
     ) -> int:
         async with self.db.get_session() as session:
-            stmt = (
-                select(func.coalesce(func.max(ToolConfigModel.version_patch), -1).label("max_patch"))
-                .where(
-                    ToolConfigModel.tool_id == tool_id,
-                    ToolConfigModel.tenant_id == tenant_id,
-                    ToolConfigModel.version_major == version_major,
-                    ToolConfigModel.version_minor == version_minor,
+            stmt = select(
+                func.coalesce(func.max(ToolConfigModel.version_patch), -1).label(
+                    "max_patch"
                 )
+            ).where(
+                ToolConfigModel.tool_id == tool_id,
+                ToolConfigModel.tenant_id == tenant_id,
+                ToolConfigModel.version_major == version_major,
+                ToolConfigModel.version_minor == version_minor,
             )
             query_sql = compile_query(stmt)
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.tools.tools_repository.get_max_version_patch",
-                input={"query": query_sql, "params": {"tool_id": str(tool_id), "tenant_id": str(tenant_id)}},
+                input={
+                    "query": query_sql,
+                    "params": {"tool_id": str(tool_id), "tenant_id": str(tenant_id)},
+                },
                 metadata={"retriever_name": "get_max_version_patch"},
             ) as retriever_handle:
                 result = await session.execute(stmt)

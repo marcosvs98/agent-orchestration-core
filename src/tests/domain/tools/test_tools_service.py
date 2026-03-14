@@ -12,6 +12,7 @@ from domain.tools.schemas.tools import (
     ToolImportRequest,
 )
 from domain.tools.services.tools_service import ToolsService
+from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
@@ -42,10 +43,15 @@ class TestToolsService:
 
     @pytest.fixture
     def tools_service(self, repository, agents_repository, authoring_events):
+        indexer = MagicMock(spec=ToolCatalogIndexer)
+        indexer.build_document = MagicMock()
+        indexer.index_document = AsyncMock(return_value=True)
         return ToolsService(
             repository=repository,
             agents_repository=agents_repository,
             authoring_events=authoring_events,
+            tracer=MagicMock(),
+            tool_catalog_indexer=indexer,
         )
 
     @pytest.mark.asyncio
@@ -62,8 +68,30 @@ class TestToolsService:
         mock_tool = SimpleNamespace(tool_id=tool_id, name="Test Tool")
         repository.get_tool_by_name = AsyncMock(return_value=None)
         repository.create_tool = AsyncMock(return_value=mock_tool)
+        created_tool_config = SimpleNamespace(
+            tool_config_id=uuid4(),
+            tool_id=tool_id,
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+        )
+        repository.create_tool_config = AsyncMock(return_value=created_tool_config)
         tools_service.openapi_parser.parse_openapi_spec = AsyncMock(
-            return_value={"title": "Test Tool", "version": "1.0.0", "paths": {}}
+            return_value={
+                "title": "Test Tool",
+                "version": "1.0.0",
+                "paths": {
+                    "/health": {
+                        "get": {
+                            "operationId": "health_check",
+                            "summary": "Health check",
+                            "description": "Health check endpoint",
+                            "responses": {"200": {"content": {}}},
+                        }
+                    }
+                },
+            }
         )
 
         result = await tools_service.import_tool(
@@ -77,6 +105,7 @@ class TestToolsService:
         repository.create_tool.assert_called_once_with(
             name="Test Tool", created_by=principal_id
         )
+        tools_service.tool_catalog_indexer.index_document.assert_called_once()
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio
@@ -92,8 +121,30 @@ class TestToolsService:
 
         mock_tool = SimpleNamespace(tool_id=tool_id, name="Existing Tool")
         repository.get_tool_by_name = AsyncMock(return_value=mock_tool)
+        created_tool_config = SimpleNamespace(
+            tool_config_id=uuid4(),
+            tool_id=tool_id,
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+        )
+        repository.create_tool_config = AsyncMock(return_value=created_tool_config)
         tools_service.openapi_parser.parse_openapi_spec = AsyncMock(
-            return_value={"title": "Existing Tool", "version": "1.0.0", "paths": {}}
+            return_value={
+                "title": "Existing Tool",
+                "version": "1.0.0",
+                "paths": {
+                    "/health": {
+                        "get": {
+                            "operationId": "health_check",
+                            "summary": "Health check",
+                            "description": "Health check endpoint",
+                            "responses": {"200": {"content": {}}},
+                        }
+                    }
+                },
+            }
         )
 
         result = await tools_service.import_tool(
@@ -105,6 +156,7 @@ class TestToolsService:
         assert result.id == tool_id
         assert result.name == "Existing Tool"
         repository.create_tool.assert_not_called()
+        tools_service.tool_catalog_indexer.index_document.assert_called_once()
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio

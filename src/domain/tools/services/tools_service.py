@@ -12,14 +12,16 @@ from domain.tools.repositories.tools_repository import ToolsRepository
 from domain.tools.schemas.tools import (
     AgentVersionToolBinding,
     AgentVersionToolBindingCreate,
-    Tool,
     AvailableTool,
+    Tool,
     ToolConfig,
     ToolConfigCreate,
     ToolImportRequest,
+    ToolImportResult,
 )
 from domain.tools.schemas.tool_config_types import ToolConfigConfig
 from domain.tools.services.openapi_parser import OpenAPIParser
+from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
 from domain.governance.schemas.authoring_events import AuthoringEventType, ChangeType
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -34,12 +36,14 @@ class ToolsService(ToolsServicePort):
         agents_repository: AgentsRepository,
         authoring_events: AuthoringEventRepository,
         tracer: RuntimeTracerPort,
+        tool_catalog_indexer: ToolCatalogIndexer | None = None,
     ) -> None:
         self.repository = repository
         self.agents_repository = agents_repository
         self.authoring_events = authoring_events
         self.tracer = tracer
         self.openapi_parser = OpenAPIParser()
+        self.tool_catalog_indexer = tool_catalog_indexer
 
     async def import_tool(
         self,
@@ -47,7 +51,7 @@ class ToolsService(ToolsServicePort):
         tenant_id: UUID,
         tool_import_request: ToolImportRequest,
         principal_id: str,
-    ) -> Tool:
+    ) -> ToolImportResult:
         with self.tracer.observe(
             as_type="tool",
             name="domain.tools.tools_service.parse_openapi_spec",
@@ -56,73 +60,86 @@ class ToolsService(ToolsServicePort):
             parsed_spec = await self.openapi_parser.parse_openapi_spec(
                 tool_import_request.openapi_url
             )
-        tool_name = tool_import_request.name or parsed_spec.get("title")
-        if not tool_name:
-            raise DomainValidationException(
-                message="tool_name_required_from_openapi_or_request"
-            )
-        existing_tool = await self.repository.get_tool_by_name(tool_name)
-        if existing_tool is not None:
-            tool_model = existing_tool
-        else:
-            tool_model = await self.repository.create_tool(
-                name=tool_name, created_by=principal_id
-            )
-
         operations = self.openapi_parser.extract_operations(parsed_spec)
+        if not operations:
+            raise DomainValidationException(message="openapi_spec_without_operations")
         base_url = (
             parsed_spec.get("servers", [{}])[0].get("url", "")
             if parsed_spec.get("servers")
             else ""
         )
-
-        patch_start = await self.repository.get_max_version_patch(
-            tool_id=tool_model.tool_id,
-            tenant_id=tenant_id,
-            version_major=1,
-            version_minor=0,
-        )
-        patch_start += 1
-
-        for i, op in enumerate(operations):
+        imported_tools: list[Tool] = []
+        for op in operations:
+            operation_id = op["operation_id"]
+            existing_tool = await self.repository.get_tool_by_name(operation_id)
+            if existing_tool is not None:
+                tool_model = existing_tool
+            else:
+                tool_model = await self.repository.create_tool(
+                    name=operation_id, created_by=principal_id
+                )
+            patch_start = await self.repository.get_max_version_patch(
+                tool_id=tool_model.tool_id,
+                tenant_id=tenant_id,
+                version_major=1,
+                version_minor=0,
+            )
             full_url = f"{base_url}{op['path']}" if base_url else op["path"]
 
             tool_config_dict = ToolConfigConfig(
                 url=full_url,
+                path=op["path"],
                 method=op["method"],
                 request_schema=op["request_schema"],
                 response_schema=op["response_schema"],
                 operation_id=op["operation_id"],
+                summary=op.get("summary"),
+                description=op.get("description"),
+                examples=op.get("examples"),
             )
 
-            await self.repository.create_tool_config(
+            created_tool_config = await self.repository.create_tool_config(
                 tool_id=tool_model.tool_id,
                 tenant_id=tenant_id,
                 config=tool_config_dict,
                 version_major=1,
                 version_minor=0,
-                version_patch=patch_start + i,
+                version_patch=patch_start + 1,
                 schema_version=1,
                 created_by=principal_id,
             )
-
-        with self.tracer.observe(
-            as_type="tool",
-            name="domain.tools.tools_service.append_event_import",
-            input={"tenant_id": str(tenant_id), "resource_id": str(tool_model.tool_id)},
-        ):
-            await self.authoring_events.append_event(
+            await self._index_tool_catalog_document(
                 tenant_id=tenant_id,
-                resource_type="tool",
-                resource_id=tool_model.tool_id,
-                version_id=None,
-                event_type=AuthoringEventType.TOOL_IMPORTED.value,
-                change_type=ChangeType.CREATE.value,
-                principal_id=principal_id,
-                justification="import tool from openapi",
-                schema_version=1,
+                tool_id=tool_model.tool_id,
+                tool_name=tool_model.name,
+                tool_config_id=created_tool_config.tool_config_id,
+                config=created_tool_config.config,
+                version=f"{created_tool_config.version_major}.{created_tool_config.version_minor}.{created_tool_config.version_patch}",
             )
-        return Tool(id=tool_model.tool_id, name=tool_model.name)
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.tools.tools_service.append_event_import",
+                input={
+                    "tenant_id": str(tenant_id),
+                    "resource_id": str(tool_model.tool_id),
+                },
+            ):
+                await self.authoring_events.append_event(
+                    tenant_id=tenant_id,
+                    resource_type="tool",
+                    resource_id=tool_model.tool_id,
+                    version_id=None,
+                    event_type=AuthoringEventType.TOOL_IMPORTED.value,
+                    change_type=ChangeType.CREATE.value,
+                    principal_id=principal_id,
+                    justification="import tool from openapi",
+                    schema_version=1,
+                )
+            imported_tools.append(Tool(id=tool_model.tool_id, name=tool_model.name))
+        return ToolImportResult(
+            imported_count=len(imported_tools),
+            tools=imported_tools,
+            )
 
     async def list_tools(self, *, tenant_id: UUID, limit: int = 200) -> list[Tool]:
         tools = await self.repository.list_tools(tenant_id=tenant_id, limit=limit)
@@ -174,12 +191,18 @@ class ToolsService(ToolsServicePort):
         for config in tool_configs:
             tool = tool_map.get(config.tool_id)
             if tool:
+                config_data = config.config or {}
                 available_tools.append(
                     AvailableTool.model_validate(
                         {
                             "name": tool.name,
                             "tool_id": config.tool_id,
                             "tool_config_id": config.id,
+                            "summary": config_data.get("summary"),
+                            "description": config_data.get("description"),
+                            "operation_id": config_data.get("operation_id"),
+                            "method": config_data.get("method"),
+                            "path": config_data.get("path"),
                         }
                     )
                 )
@@ -215,6 +238,14 @@ class ToolsService(ToolsServicePort):
                 schema_version=tool_config_create.schema_version,
                 created_by=principal_id,
             )
+        await self._index_tool_catalog_document(
+            tenant_id=tenant_id,
+            tool_id=model.tool_id,
+            tool_name=tool.name,
+            tool_config_id=model.tool_config_id,
+            config=model.config,
+            version=f"{model.version_major}.{model.version_minor}.{model.version_patch}",
+        )
         with self.tracer.observe(
             as_type="tool",
             name="domain.tools.tools_service.append_event_tool_config",
@@ -303,4 +334,28 @@ class ToolsService(ToolsServicePort):
             id=model.agent_version_tool_binding_id,
             agent_version_id=model.agent_version_id,
             tool_config_id=model.tool_config_id,
+        )
+
+    async def _index_tool_catalog_document(
+        self,
+        *,
+        tenant_id: UUID,
+        tool_id: UUID,
+        tool_name: str | None,
+        tool_config_id: UUID,
+        config: dict[str, object] | None,
+        version: str,
+    ) -> None:
+        if self.tool_catalog_indexer is None:
+            return
+        document = self.tool_catalog_indexer.build_document(
+            tool_id=tool_id,
+            tool_config_id=tool_config_id,
+            tool_name=tool_name,
+            config=config,
+            version=version,
+        )
+        await self.tool_catalog_indexer.index_document(
+            tenant_id=tenant_id,
+            document=document,
         )

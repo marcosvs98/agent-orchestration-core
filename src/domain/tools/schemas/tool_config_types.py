@@ -13,8 +13,12 @@ class ToolConfigRagActivation(TypedDict, total=False):
 
 class ToolConfigConfig(TypedDict, total=False):
     url: str
+    path: str
     method: str
     request_schema: dict
     response_schema: dict
     operation_id: str
+    summary: str
+    description: str
+    examples: list[str]
     rag_activation: ToolConfigRagActivation

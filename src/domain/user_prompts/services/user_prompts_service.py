@@ -2,7 +2,9 @@ from uuid import UUID
 
 from domain.user_prompts.exceptions import UserPromptNotFoundException
 from domain.user_prompts.ports.service import UserPromptsServicePort
-from domain.user_prompts.repositories.user_prompts_repository import UserPromptsRepository
+from domain.user_prompts.repositories.user_prompts_repository import (
+    UserPromptsRepository,
+)
 from domain.user_prompts.schemas.user_prompts import UserPrompt, UserPromptCreate
 
 

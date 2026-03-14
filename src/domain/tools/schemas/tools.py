@@ -17,10 +17,21 @@ class ToolImportRequest(BaseModel):
     name: str | None = None
 
 
+class ToolImportResult(BaseModel):
+    imported_count: int
+    tools: list[Tool]
+
+
 class AvailableTool(BaseModel):
     name: str | None
     tool_id: UUID
     tool_config_id: UUID
+    summary: str | None = None
+    description: str | None = None
+    operation_id: str | None = None
+    method: str | None = None
+    path: str | None = None
+    retrieval_score: float | None = None
 
 
 class ToolConfig(BaseModel):
