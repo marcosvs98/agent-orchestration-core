@@ -29,7 +29,7 @@ class InputModerationNode(NodeExecutor):
     async def execute(
         self, context: ExecutionContext, config: dict[str, object] | None = None
     ) -> NodeResult:
-        merged_config = self._resolve_config(context=context, node_config=config)
+        merged_config = self._resolve_config(context=context, config=config)
         user_input = read_user_input(context)
         result: ModerationResult = await self.llm_moderation_provider.moderate(
             text=user_input, config=merged_config
@@ -47,7 +47,7 @@ class InputModerationNode(NodeExecutor):
     def _resolve_config(
         *,
         context: ExecutionContext,
-        node_config: dict[str, object] | None,
+        config: dict[str, object] | None,
     ) -> dict[str, object]:
         resolved: dict[str, object] = {}
         metadata = context.metadata if isinstance(context.metadata, dict) else {}
@@ -56,6 +56,6 @@ class InputModerationNode(NodeExecutor):
             moderation_cfg = runtime_policy.get("moderation")
             if isinstance(moderation_cfg, dict):
                 resolved.update(moderation_cfg)
-        if node_config:
-            resolved.update(node_config)
+        if config:
+            resolved.update(config)
         return resolved
