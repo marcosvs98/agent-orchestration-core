@@ -17,6 +17,7 @@ from domain.rag.schemas.rag import (
     RagConfigCreate,
     RagConfigOptions,
     VectorStore,
+    VectorStoreCreate,
 )
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -34,11 +35,19 @@ class RagService(RagServicePort):
         self.repository = repository
         self.authoring_events = authoring_events
 
-    async def list_vector_stores(self) -> list[VectorStore]:
-        stores = await self.repository.list_vector_stores()
+    async def list_vector_stores(self, *, tenant_id: UUID) -> list[VectorStore]:
+        stores = await self.repository.list_vector_stores(tenant_id=tenant_id)
         return [
             VectorStore(id=store.vector_store_id, name=store.name) for store in stores
         ]
+
+    async def create_vector_store(
+        self, *, tenant_id: UUID, vector_store_create: VectorStoreCreate
+    ) -> VectorStore:
+        created = await self.repository.create_vector_store(
+            tenant_id=tenant_id, name=vector_store_create.name
+        )
+        return VectorStore(id=created.vector_store_id, name=created.name)
 
     async def list_rag_configs(
         self,
@@ -75,7 +84,8 @@ class RagService(RagServicePort):
             rag_config_create.options or {}
         ).model_dump(mode="json")
         vector_store = await self.repository.get_vector_store(
-            rag_config_create.vector_store_id
+            rag_config_create.vector_store_id,
+            tenant_id=tenant_id,
         )
         if vector_store is None:
             raise NotFoundServiceException(message="vector_store_not_found")

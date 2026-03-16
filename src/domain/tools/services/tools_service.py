@@ -139,7 +139,7 @@ class ToolsService(ToolsServicePort):
         return ToolImportResult(
             imported_count=len(imported_tools),
             tools=imported_tools,
-            )
+        )
 
     async def list_tools(self, *, tenant_id: UUID, limit: int = 200) -> list[Tool]:
         tools = await self.repository.list_tools(tenant_id=tenant_id, limit=limit)

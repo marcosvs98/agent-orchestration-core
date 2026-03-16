@@ -149,12 +149,12 @@ async def test_retrieve_candidates_falls_back_to_available_tools_when_empty_cont
         top_k=1,
     )
 
-    assert candidates == available_tools[:1]
+    assert candidates == []
     assert evidence == []
     record = tracer.records[0]
     assert record["name"] == "domain.tools.tool_catalog_retriever.retrieve_candidates"
-    assert record["output"]["fallback_used"] is True
-    assert record["output"]["candidate_count"] == 1
+    assert record["output"]["fallback_used"] is False
+    assert record["output"]["candidate_count"] == 0
     assert record["output"]["evidence"] == []
 
 
@@ -192,8 +192,8 @@ async def test_retrieve_candidates_forwards_tool_intent_filter_to_rag():
         user_input="find tool",
         available_tools=available_tools,
         top_k=1,
-        tool_intent_filter="Command",
+        tool_intent_filter=command",
     )
 
     kwargs = rag_runtime_service.get_context.call_args.kwargs
-    assert kwargs["filters_override"]["tool_intent"] == "Command"
+    assert kwargs["filters_override"]["tool_intent"] == "command"

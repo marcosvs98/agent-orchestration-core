@@ -92,19 +92,18 @@ Exemplo de state canônico (ver também `poc3.py`): chaves = `NodeType`, valor =
 
 # 3. IntentDetectionNode
 
-Natureza: classificação estruturada.
+Natureza: classificação estruturada com caminho semântico antes do LLM.
 
-Requisitos:
+Fluxo de execução:
 
-* Alta consistência
-* Baixa variância
-* JSON estrito
+- semantic path: embedding do `user_input` -> busca por `intent_examples` no RAG -> aceita quando `score >= confidence_threshold`.
+- fallback path: usa LLM apenas quando não há match semântico confiável.
+- heuristic path: entrada vazia retorna `conversation`.
 
-Modelo: `gpt-4o-mini`
-Temperatura: 0.0 – 0.1
-Top_p: 0.1
+Configuração do node (`graph.nodes[].config`):
 
-Não há espaço para criatividade aqui. Classificação precisa ser determinística.
+- `confidence_threshold` (float, default `0.85`)
+- `top_k` (int, default `1`)
 
 ## Output Schema
 
@@ -130,6 +129,19 @@ Observações:
 * Sempre retornar lista.
 * `priority` define ordenação de execução.
 * `overall_confidence` deve refletir a intenção dominante.
+
+## Intent examples index contract
+
+- `source`: `intent_examples`
+- `doc_type`: `intent_examples`
+- `metadata.intent_type`: `query` | `command` | `conversation`
+- Cada documento representa uma frase de exemplo.
+
+Exemplos:
+
+- `query`: "consultar saldo", "ver multas", "buscar veículo"
+- `command`: "pagar multa", "cadastrar veículo", "atualizar endereço"
+- `conversation`: "o que você faz", "explique como funciona"
 
 ---
 

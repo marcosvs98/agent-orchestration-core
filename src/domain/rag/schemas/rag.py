@@ -1,9 +1,14 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 from domain.rag.schemas.embedding_job import EmbeddingStatus
+
+SUPPORTED_EMBEDDING_DIMENSIONS: tuple[int, ...] = (512, 1024, 1536)
+DEFAULT_EMBEDDING_DIMENSION: int = 1536
+EMBEDDING_DIMENSION_REDUCED: int = 512
 
 
 class VectorStore(BaseModel):
@@ -13,12 +18,16 @@ class VectorStore(BaseModel):
     name: str | None = None
 
 
+class VectorStoreCreate(BaseModel):
+    name: str
+
+
 class RagEmbeddingOptions(BaseModel):
     """Define embedding provider and model defaults for RAG."""
 
     provider: str = "OPENAI"
     model_alias: str = "text-embedding-3-small"
-    dimension: int = 1536
+    dimension: Literal[512, 1024, 1536] = 1536
 
 
 class RagChunkingOptions(BaseModel):

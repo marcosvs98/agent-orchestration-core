@@ -17,11 +17,30 @@ class AITask(AITaskContextFlags):
 
 class AITaskCreate(BaseModel):
     name: str
+    allow_rag_tenant: bool = False
+    allow_user_memory: bool = False
+    allow_session_context: bool = False
+    allow_memory_write: bool = False
 
 
 class Model(BaseModel):
     id: UUID
     name: str
+
+
+class ModelCreate(BaseModel):
+    name: str
+
+
+class NodeAIExecutionPolicyBinding(BaseModel):
+    id: UUID
+    node_id: UUID
+    ai_execution_policy_version_id: UUID
+
+
+class NodeAIExecutionPolicyBindingCreate(BaseModel):
+    node_id: UUID
+    ai_execution_policy_version_id: UUID
 
 
 class AIExecutionPolicy(BaseModel):

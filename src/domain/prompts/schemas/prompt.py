@@ -17,6 +17,7 @@ class PromptIntent(StrEnum):
 
 
 class NodeType(StrEnum):
+    InputModerationNode = "InputModerationNode"
     UserContextEnrichmentNode = "UserContextEnrichmentNode"
 
     IntentDetectionNode = "IntentDetectionNode"

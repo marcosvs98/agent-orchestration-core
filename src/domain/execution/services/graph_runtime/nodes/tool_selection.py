@@ -4,11 +4,15 @@ from typing import Any
 from uuid import UUID
 
 from domain.agents.repositories.agents_repository import AgentsRepository
-from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.execution.ports.runtime_tracer import ObservationHandle, RuntimeTracerPort
 from domain.execution.services.graph_runtime.types import (
     ExecutionContext,
+    IntentType,
     NodeExecutionStatus,
     NodeResult,
+    ToolIntentFilter,
+    ToolSelectionMode,
+    ToolSelectionReason,
 )
 from domain.prompts.schemas.prompt import NodeType
 from domain.tools.schemas.tool_discovery import ToolCatalogDocument
@@ -19,6 +23,10 @@ from domain.execution.services.graph_runtime.nodes.tool_selection_llm_fallback i
     ToolSelectionLLMFallback,
 )
 
+DEFAULT_TOP_K = 5
+DEFAULT_CONFIDENCE_THRESHOLD = 0.9
+MIN_INDEXING_CONFIDENCE = 0.7
+
 
 class ToolSelectionNode:
     """Select tools via structural filtering + semantic retrieval."""
@@ -26,7 +34,6 @@ class ToolSelectionNode:
     node_type = NodeType.ToolSelectionNode
     side_effect = False
     deterministic = False
-    confidence_threshold = 0.9
 
     def __init__(
         self,
@@ -45,7 +52,12 @@ class ToolSelectionNode:
     async def execute(
         self, context: ExecutionContext, config: dict[str, Any] | None = None
     ) -> NodeResult:
-        """Perform tool discovery with explicit 0/1/>1 policy."""
+        cfg = config or {}
+        confidence_threshold = self._config_float(
+            cfg, "confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD
+        )
+        top_k = self._config_int(cfg, "top_k", DEFAULT_TOP_K)
+
         with self.tracer.observe(
             as_type="chain",
             name="domain.execution.nodes.tool_selection.execute",
@@ -64,31 +76,27 @@ class ToolSelectionNode:
 
             if not user_input:
                 result = self._build_result(filtered_tools, context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "semantic_noop",
-                            "reason": "missing_user_input",
-                            "intent_type": detected_intent,
-                            "candidate_count": len(filtered_tools),
-                            "selected_tools": self._extract_selected_tools(result),
-                        }
-                    )
+                self._report_success(
+                    execution_handle,
+                    result,
+                    ToolSelectionMode.SEMANTIC_NOOP,
+                    ToolSelectionReason.MISSING_USER_INPUT,
+                    intent_type=detected_intent,
+                    candidate_count=len(filtered_tools),
+                )
                 return result
 
             if len(filtered_tools) == 1:
                 context.available_tools = filtered_tools
                 result = self._build_result(filtered_tools, context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "single_tool_auto_select",
-                            "reason": "single_tool_after_intent_filter",
-                            "intent_type": detected_intent,
-                            "candidate_count": 1,
-                            "selected_tools": self._extract_selected_tools(result),
-                        }
-                    )
+                self._report_success(
+                    execution_handle,
+                    result,
+                    ToolSelectionMode.SINGLE_TOOL_AUTO_SELECT,
+                    ToolSelectionReason.SINGLE_TOOL_AFTER_INTENT_FILTER,
+                    intent_type=detected_intent,
+                    candidate_count=1,
+                )
                 return result
 
             if not filtered_tools:
@@ -96,42 +104,42 @@ class ToolSelectionNode:
                     context=context,
                     config=config,
                     candidate_tools=[],
-                    reason="no_tools_after_intent_filter",
+                    reason=ToolSelectionReason.NO_TOOLS_AFTER_INTENT_FILTER,
                     execution_handle=execution_handle,
                     best_score=0.0,
                     semantic_evidence_count=0,
                     detected_intent=detected_intent,
+                    confidence_threshold=confidence_threshold,
                 )
                 if llm_result is not None:
                     return llm_result
                 result = self._build_result([], context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "semantic_noop",
-                            "reason": "no_tools_after_intent_filter",
-                            "intent_type": detected_intent,
-                            "candidate_count": 0,
-                            "selected_tools": [],
-                        }
-                    )
+                self._report_success(
+                    execution_handle,
+                    result,
+                    ToolSelectionMode.SEMANTIC_NOOP,
+                    ToolSelectionReason.NO_TOOLS_AFTER_INTENT_FILTER,
+                    intent_type=detected_intent,
+                    candidate_count=0,
+                )
                 return result
 
             rag_config_id = await self._resolve_rag_config_id(context)
             if rag_config_id is None:
                 result = self._build_result(filtered_tools, context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "semantic_noop",
-                            "reason": "rag_config_not_found",
-                            "intent_type": detected_intent,
-                            "candidate_count": len(filtered_tools),
-                            "selected_tools": self._extract_selected_tools(result),
-                        }
-                    )
+                self._report_success(
+                    execution_handle,
+                    result,
+                    ToolSelectionMode.SEMANTIC_NOOP,
+                    ToolSelectionReason.RAG_CONFIG_NOT_FOUND,
+                    intent_type=detected_intent,
+                    candidate_count=len(filtered_tools),
+                )
                 return result
 
+            tool_intent_filter_str = (
+                tool_intent_filter.value if tool_intent_filter else None
+            )
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.execution.nodes.tool_selection.semantic_retrieval",
@@ -139,18 +147,21 @@ class ToolSelectionNode:
                     "tenant_id": str(context.tenant_id),
                     "available_count": len(filtered_tools),
                     "user_input_length": len(user_input),
-                    "top_k": 5,
-                    "intent_type": detected_intent,
-                    "tool_intent_filter": tool_intent_filter,
+                    "top_k": top_k,
+                    "intent_type": detected_intent.value if detected_intent else None,
+                    "tool_intent_filter": tool_intent_filter_str,
                 },
             ) as retrieval_handle:
-                candidates, evidence = await self.tool_catalog_retriever.retrieve_candidates(
+                (
+                    candidates,
+                    evidence,
+                ) = await self.tool_catalog_retriever.retrieve_candidates(
                     tenant_id=context.tenant_id,
                     rag_config_id=rag_config_id,
                     user_input=user_input,
                     available_tools=filtered_tools,
-                    top_k=5,
-                    tool_intent_filter=tool_intent_filter,
+                    top_k=top_k,
+                    tool_intent_filter=tool_intent_filter_str,
                 )
                 if retrieval_handle:
                     retrieval_handle.success(
@@ -173,96 +184,72 @@ class ToolSelectionNode:
                     context=context,
                     config=config,
                     candidate_tools=filtered_tools,
-                    reason="rag_returned_no_candidates",
+                    reason=ToolSelectionReason.RAG_RETURNED_NO_CANDIDATES,
                     execution_handle=execution_handle,
                     best_score=0.0,
                     semantic_evidence_count=len(evidence),
                     detected_intent=detected_intent,
+                    confidence_threshold=confidence_threshold,
                 )
                 if llm_result is not None:
                     return llm_result
                 result = self._build_result([], context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "semantic_noop",
-                            "reason": "rag_returned_no_candidates",
-                            "intent_type": detected_intent,
-                            "candidate_count": 0,
-                            "selected_tools": [],
-                        }
-                    )
-                return result
-
-            if (
-                not evidence
-                and len(candidates) == 1
-                and candidates[0].retrieval_score is None
-                and len(filtered_tools) == 1
-            ):
-                context.available_tools = candidates
-                result = self._build_result(candidates, context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "single_candidate_no_llm",
-                            "reason": "no_semantic_evidence_but_single_candidate",
-                            "intent_type": detected_intent,
-                            "best_score": 0.0,
-                            "confidence_threshold": self.confidence_threshold,
-                            "candidate_count": len(candidates),
-                            "selected_tools": self._extract_selected_tools(result),
-                        }
-                    )
+                self._report_success(
+                    execution_handle,
+                    result,
+                    ToolSelectionMode.SEMANTIC_NOOP,
+                    ToolSelectionReason.RAG_RETURNED_NO_CANDIDATES,
+                    intent_type=detected_intent,
+                    candidate_count=0,
+                )
                 return result
 
             best_score = max(
                 [tool.retrieval_score or 0.0 for tool in candidates],
                 default=0.0,
             )
-            if best_score >= self.confidence_threshold:
+            if best_score >= confidence_threshold:
                 selected = [candidates[0]]
                 context.available_tools = selected
                 result = self._build_result(selected, context)
-                if execution_handle:
-                    execution_handle.success(
-                        output={
-                            "selection_mode": "heuristic_auto_select",
-                            "best_score": best_score,
-                            "confidence_threshold": self.confidence_threshold,
-                            "intent_type": detected_intent,
-                            "candidate_count": len(selected),
-                            "selected_tools": self._extract_selected_tools(result),
-                        }
-                    )
+                self._report_success(
+                    execution_handle,
+                    result,
+                    ToolSelectionMode.HEURISTIC_AUTO_SELECT,
+                    ToolSelectionReason.ABOVE_CONFIDENCE_THRESHOLD,
+                    intent_type=detected_intent,
+                    candidate_count=len(selected),
+                    best_score=best_score,
+                    confidence_threshold=confidence_threshold,
+                )
                 return result
 
             llm_result = await self._execute_llm_fallback(
                 context=context,
                 config=config,
-                candidate_tools=candidates,
-                reason="below_confidence_threshold",
+                candidate_tools=filtered_tools,
+                reason=ToolSelectionReason.BELOW_CONFIDENCE_THRESHOLD,
                 execution_handle=execution_handle,
                 best_score=best_score,
                 semantic_evidence_count=len(evidence),
                 detected_intent=detected_intent,
+                confidence_threshold=confidence_threshold,
             )
             if llm_result is not None:
                 return llm_result
 
             context.available_tools = candidates
             result = self._build_result(candidates, context)
-            if execution_handle:
-                execution_handle.success(
-                    output={
-                        "selection_mode": "semantic",
-                        "best_score": best_score,
-                        "confidence_threshold": self.confidence_threshold,
-                        "intent_type": detected_intent,
-                        "candidate_count": len(candidates),
-                        "selected_tools": self._extract_selected_tools(result),
-                    }
-                )
+            self._report_success(
+                execution_handle,
+                result,
+                ToolSelectionMode.SEMANTIC,
+                ToolSelectionReason.BELOW_CONFIDENCE_THRESHOLD,
+                intent_type=detected_intent,
+                candidate_count=len(candidates),
+                best_score=best_score,
+                confidence_threshold=confidence_threshold,
+            )
             return result
 
     async def _execute_llm_fallback(
@@ -271,11 +258,12 @@ class ToolSelectionNode:
         context: ExecutionContext,
         config: dict[str, Any] | None,
         candidate_tools: list[AvailableTool],
-        reason: str,
-        execution_handle: Any,
+        reason: ToolSelectionReason,
+        execution_handle: ObservationHandle | None,
         best_score: float,
         semantic_evidence_count: int,
-        detected_intent: str | None,
+        detected_intent: IntentType | None,
+        confidence_threshold: float,
     ) -> NodeResult | None:
         if self.llm_fallback is None:
             return None
@@ -287,19 +275,19 @@ class ToolSelectionNode:
             available_tools=context.available_tools,
             llm_result=llm_result,
         )
-        if execution_handle:
-            execution_handle.success(
-                output={
-                    "selection_mode": "llm_fallback",
-                    "best_score": best_score,
-                    "confidence_threshold": self.confidence_threshold,
-                    "fallback_reason": reason,
-                    "semantic_evidence_count": semantic_evidence_count,
-                    "intent_type": detected_intent,
-                    "selected_tools_confidence_source": "llm_fallback",
-                    "candidate_count": len(context.available_tools),
-                    "selected_tools": self._extract_selected_tools(llm_result),
-                }
+        if execution_handle and llm_result is not None:
+            self._report_success(
+                execution_handle,
+                llm_result,
+                ToolSelectionMode.LLM_FALLBACK,
+                reason,
+                intent_type=detected_intent,
+                candidate_count=len(context.available_tools),
+                best_score=best_score,
+                confidence_threshold=confidence_threshold,
+                fallback_reason=reason,
+                semantic_evidence_count=semantic_evidence_count,
+                selected_tools_confidence_source="llm_fallback",
             )
         return llm_result
 
@@ -331,6 +319,63 @@ class ToolSelectionNode:
             next_state=next_state,
         )
 
+    def _report_success(
+        self,
+        handle: ObservationHandle | None,
+        result: NodeResult,
+        mode: ToolSelectionMode,
+        reason: ToolSelectionReason,
+        *,
+        intent_type: IntentType | None,
+        candidate_count: int,
+        best_score: float | None = None,
+        confidence_threshold: float | None = None,
+        fallback_reason: ToolSelectionReason | None = None,
+        semantic_evidence_count: int | None = None,
+        selected_tools_confidence_source: str | None = None,
+    ) -> None:
+        output: dict[str, Any] = {
+            "selection_mode": mode.value,
+            "reason": reason.value,
+            "intent_type": intent_type.value if intent_type else None,
+            "candidate_count": candidate_count,
+            "selected_tools": self._extract_selected_tools(result),
+        }
+        if best_score is not None:
+            output["best_score"] = best_score
+        if confidence_threshold is not None:
+            output["confidence_threshold"] = confidence_threshold
+        if fallback_reason is not None:
+            output["fallback_reason"] = fallback_reason.value
+        if semantic_evidence_count is not None:
+            output["semantic_evidence_count"] = semantic_evidence_count
+        if selected_tools_confidence_source is not None:
+            output["selected_tools_confidence_source"] = (
+                selected_tools_confidence_source
+            )
+        if handle:
+            handle.success(output=output)
+
+    @staticmethod
+    def _config_float(config: dict[str, Any], key: str, default: float) -> float:
+        raw = config.get(key)
+        if raw is None:
+            return default
+        if isinstance(raw, (int, float)):
+            return float(raw)
+        return default
+
+    @staticmethod
+    def _config_int(config: dict[str, Any], key: str, default: int) -> int:
+        raw = config.get(key)
+        if raw is None:
+            return default
+        if isinstance(raw, int):
+            return raw
+        if isinstance(raw, float):
+            return int(raw)
+        return default
+
     async def _index_llm_fallback_selection(
         self,
         *,
@@ -355,6 +400,9 @@ class ToolSelectionNode:
         ) as retriever_handle:
             indexed = 0
             for selection in selections:
+                confidence = float(selection.get("confidence") or 0.0)
+                if confidence < MIN_INDEXING_CONFIDENCE:
+                    continue
                 tool_config_id = str(selection.get("tool_config_id") or "")
                 selected_tool = tools_by_config.get(tool_config_id)
                 if selected_tool is None:
@@ -420,7 +468,7 @@ class ToolSelectionNode:
                 continue
         return coerced
 
-    def _resolve_detected_intent(self, context: ExecutionContext) -> str | None:
+    def _resolve_detected_intent(self, context: ExecutionContext) -> IntentType | None:
         intent_slice = context.get_node_output(NodeType.IntentDetectionNode)
         result = intent_slice.get("result") if isinstance(intent_slice, dict) else None
         if not isinstance(result, list) or not result:
@@ -433,27 +481,31 @@ class ToolSelectionNode:
             return None
         normalized = intent_type.strip().lower()
         if normalized == "execution":
-            return "command"
-        if normalized in {"query", "command", "conversation"}:
-            return normalized
+            return IntentType.COMMAND
+        if normalized == "query":
+            return IntentType.QUERY
+        if normalized == "command":
+            return IntentType.COMMAND
+        if normalized == "conversation":
+            return IntentType.CONVERSATION
         return None
 
     def _filter_tools_by_intent(
         self,
         *,
         tools: list[AvailableTool],
-        detected_intent: str | None,
-    ) -> tuple[list[AvailableTool], str | None]:
-        if detected_intent == "query":
+        detected_intent: IntentType | None,
+    ) -> tuple[list[AvailableTool], ToolIntentFilter | None]:
+        if detected_intent == IntentType.QUERY:
             filtered = [tool for tool in tools if (tool.method or "").upper() == "GET"]
-            return filtered, "Query"
-        if detected_intent == "command":
+            return filtered, ToolIntentFilter.QUERY
+        if detected_intent == IntentType.COMMAND:
             filtered = [
                 tool
                 for tool in tools
                 if (tool.method or "").upper() in {"POST", "PUT", "PATCH", "DELETE"}
             ]
-            return filtered, "Command"
+            return filtered, ToolIntentFilter.COMMAND
         return tools, None
 
     @staticmethod

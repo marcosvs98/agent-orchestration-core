@@ -7,7 +7,10 @@ from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.nodes import (
     ClarificationNode,
     FallbackNode,
+    InputModerationNode,
     IntentDetectionNode,
+    IntentDetectionLLMFallback,
+    IntentExamplesRetriever,
     ToolSelectionNode,
     ToolSelectionLLMFallback,
     ParamExtractionNode,
@@ -20,6 +23,8 @@ from domain.execution.services.graph_runtime.agent_runtime_resolver import (
     AgentRuntimeResolver,
 )
 from domain.execution.services.graph_runtime.types import NodeExecutor
+from domain.human_sla.services.human_sla_service import HumanSLAService
+from domain.llm.ports.moderation_provider import ModerationProviderPort
 from domain.llm.ports.completion_budget_policy import CompletionBudgetPolicyPort
 from domain.llm.ports.llm_executor import LLMExecutorPort
 from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
@@ -41,6 +46,9 @@ class NodeRegistry:
         tool_catalog_retriever: ToolCatalogRetriever | None = None,
         tool_catalog_indexer: ToolCatalogIndexer | None = None,
         agents_repository: AgentsRepository | None = None,
+        intent_examples_retriever: IntentExamplesRetriever | None = None,
+        llm_moderation_provider: ModerationProviderPort | None = None,
+        human_sla_service: HumanSLAService | None = None,
     ) -> None:
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
@@ -52,7 +60,11 @@ class NodeRegistry:
         self.tool_catalog_retriever = tool_catalog_retriever
         self.tool_catalog_indexer = tool_catalog_indexer
         self.agents_repository = agents_repository
+        self.intent_examples_retriever = intent_examples_retriever
+        self.llm_moderation_provider = llm_moderation_provider
+        self.human_sla_service = human_sla_service
         self._registry: Dict[str, Type[NodeExecutor]] = {
+            InputModerationNode.node_type: InputModerationNode,
             ToolSelectionNode.node_type: ToolSelectionNode,
             IntentDetectionNode.node_type: IntentDetectionNode,
             ParamExtractionNode.node_type: ParamExtractionNode,
@@ -116,15 +128,33 @@ class NodeRegistry:
                 tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
                 completion_budget_policy = self.completion_budget_policy
+                agents_repository = self.agents_repository
+                intent_examples_retriever = self.intent_examples_retriever
+                if (
+                    intent_examples_retriever is None
+                    and self.tool_catalog_retriever is not None
+                ):
+                    intent_examples_retriever = IntentExamplesRetriever(
+                        rag_runtime_service=self.tool_catalog_retriever.rag_runtime_service,
+                        tracer=tracer,
+                    )
 
                 class _IntentNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
+                        llm_fallback = None
+                        if llm_executor and prompt_resolver:
+                            llm_fallback = IntentDetectionLLMFallback(
+                                llm_executor=llm_executor,
+                                prompt_resolver=prompt_resolver,
+                                tracer=tracer,
+                                agent_runtime_resolver=agent_runtime_resolver,
+                                completion_budget_policy=completion_budget_policy,
+                            )
                         super().__init__(
-                            llm_executor=llm_executor,
-                            prompt_resolver=prompt_resolver,
                             tracer=tracer,
-                            agent_runtime_resolver=agent_runtime_resolver,
-                            completion_budget_policy=completion_budget_policy,
+                            agents_repository=agents_repository,
+                            intent_examples_retriever=intent_examples_retriever,
+                            llm_fallback=llm_fallback,
                         )
 
                 return _IntentNode
@@ -211,6 +241,30 @@ class NodeRegistry:
                         super().__init__(tracer=tracer)
 
                 return _UserContextEnrichmentNode
+            if node_type == InputModerationNode.node_type:
+                base_cls = node_cls or InputModerationNode
+                tracer = self.tracer
+                llm_moderation_provider = self.llm_moderation_provider
+
+                class _InputModerationNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        if llm_moderation_provider is None:
+                            raise ValueError("llm_moderation_provider is required")
+                        super().__init__(
+                            tracer=tracer,
+                            llm_moderation_provider=llm_moderation_provider,
+                        )
+
+                return _InputModerationNode
+            if node_type == FallbackNode.node_type:
+                base_cls = node_cls or FallbackNode
+                human_sla_service = self.human_sla_service
+
+                class _FallbackNode(base_cls):  # type: ignore[misc]
+                    def __init__(self) -> None:
+                        super().__init__(human_sla_service=human_sla_service)
+
+                return _FallbackNode
             if agent_handle and node_cls:
                 agent_handle.success(output={"node_cls": node_cls.__name__})
             return node_cls

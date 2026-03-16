@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -20,4 +20,8 @@ class NodeAIExecutionPolicyBinding(ORMBaseModel):
             ondelete="RESTRICT",
         ),
         nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("node_id", name="uq_node_ai_execution_policy_binding_node_id"),
     )

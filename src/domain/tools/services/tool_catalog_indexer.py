@@ -140,9 +140,9 @@ class ToolCatalogIndexer:
             return None
         upper_method = method.upper()
         if upper_method == "GET":
-            return "Query"
+            return "query"
         if upper_method in {"POST", "PUT", "PATCH", "DELETE"}:
-            return "Command"
+            return "command"
         return None
 
     def _extract_path(self, config: dict[str, object]) -> str | None:

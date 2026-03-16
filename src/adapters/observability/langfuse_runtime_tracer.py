@@ -16,6 +16,7 @@ from settings import (
     LANGFUSE_PUBLIC_KEY,
     LANGFUSE_SECRET_KEY,
     TRACING_ENABLED,
+    TRACING_LEVEL,
 )
 
 logger = get_logger(__name__)
@@ -296,9 +297,8 @@ class LangfuseRuntimeTracer:
             yield handle
             return
         try:
-            if as_type == "event":
+            if as_type == "event" and TRACING_LEVEL == "TRACE":
                 yield handle
-                return
                 self.langfuse.create_event(
                     name=name,
                     input=input,
@@ -327,7 +327,6 @@ class LangfuseRuntimeTracer:
                 observation_type=as_type,
                 observation_name=name,
             )
-            raise
 
     def flush(self) -> None:
         if not self._enabled or not self.langfuse:

@@ -884,7 +884,8 @@ def upgrade() -> None:
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("content_hash", sa.String(length=128), nullable=False),
         sa.Column("token_count", sa.Integer(), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=False),
+        sa.Column("embedding", Vector(1536), nullable=True),
+        sa.Column("embedding_512", Vector(512), nullable=True),
         sa.Column("embedding_model", sa.String(length=128), nullable=False),
         sa.Column("embedding_dimension", sa.Integer(), nullable=False),
         sa.Column(
@@ -936,12 +937,20 @@ def upgrade() -> None:
         unique=False,
         postgresql_using="ivfflat",
     )
+    op.create_index(
+        "ix_rag_chunk_embedding_512",
+        "rag_chunk",
+        ["embedding_512"],
+        unique=False,
+        postgresql_using="ivfflat",
+    )
     op.create_table(
         "rag_query_cache",
         sa.Column("query_cache_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("query_hash", sa.String(length=128), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=False),
+        sa.Column("embedding", Vector(1536), nullable=True),
+        sa.Column("embedding_512", Vector(512), nullable=True),
         sa.Column("embedding_model", sa.String(length=128), nullable=False),
         sa.Column("embedding_dimension", sa.Integer(), nullable=False),
         sa.Column(
@@ -982,7 +991,8 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("task_type", sa.String(length=64), nullable=False),
         sa.Column("query_hash", sa.String(length=128), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=False),
+        sa.Column("embedding", Vector(1536), nullable=True),
+        sa.Column("embedding_512", Vector(512), nullable=True),
         sa.Column(
             "response_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False
         ),
@@ -1033,6 +1043,13 @@ def upgrade() -> None:
         "ix_semantic_answer_cache_embedding",
         "semantic_answer_cache",
         ["embedding"],
+        unique=False,
+        postgresql_using="ivfflat",
+    )
+    op.create_index(
+        "ix_semantic_answer_cache_embedding_512",
+        "semantic_answer_cache",
+        ["embedding_512"],
         unique=False,
         postgresql_using="ivfflat",
     )
@@ -2600,6 +2617,100 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
     op.create_table(
+        "sla_case",
+        sa.Column("sla_case_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("session_id", sa.UUID(), nullable=False),
+        sa.Column("flow_run_id", sa.UUID(), nullable=False),
+        sa.Column("node_run_id", sa.UUID(), nullable=False),
+        sa.Column("interaction_id", sa.UUID(), nullable=True),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column(
+            "status",
+            sa.String(length=32),
+            server_default="OPEN",
+            nullable=False,
+        ),
+        sa.Column("priority", sa.String(length=32), nullable=True),
+        sa.Column("fallback_reason", sa.String(length=64), nullable=False),
+        sa.Column("human_agent_id", sa.String(length=128), nullable=True),
+        sa.Column("resolution_status", sa.String(length=32), nullable=True),
+        sa.Column("resolution_summary", sa.String(length=1024), nullable=True),
+        sa.Column("opened_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("assigned_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("sla_target_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "sla_breached",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_run_id"],
+            ["flow_run.flow_run_id"],
+            name="fk_sla_case_flow_run_id_flow_run",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["interaction_id"],
+            ["interaction.interaction_id"],
+            name="fk_sla_case_interaction_id_interaction",
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["node_run_id"],
+            ["node_run.node_run_id"],
+            name="fk_sla_case_node_run_id_node_run",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["session.session_id"],
+            name="fk_sla_case_session_id_session",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name="fk_sla_case_tenant_id_tenant",
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("sla_case_id", name="pk_sla_case"),
+        sa.UniqueConstraint(
+            "flow_run_id",
+            "node_run_id",
+            name="uq_sla_case_flow_run_node_run",
+        ),
+    )
+    op.create_index(
+        "ix_sla_case_tenant_status",
+        "sla_case",
+        ["tenant_id", "status"],
+        unique=False,
+    )
+    op.create_index("ix_sla_case_session", "sla_case", ["session_id"], unique=False)
+    op.create_index("ix_sla_case_flow_run", "sla_case", ["flow_run_id"], unique=False)
+    op.create_index("ix_sla_case_opened_at", "sla_case", ["opened_at"], unique=False)
+    op.create_index(
+        "ix_sla_case_sla_target_at",
+        "sla_case",
+        ["sla_target_at"],
+        unique=False,
+    )
+    op.create_table(
         "router",
         sa.Column("router_id", sa.UUID(), nullable=False),
         sa.Column("node_id", sa.UUID(), nullable=False),
@@ -3026,6 +3137,12 @@ def downgrade() -> None:
     op.drop_table("routing_rule")
     op.drop_table("graph_state")
     op.drop_table("agent_run")
+    op.drop_index("ix_sla_case_sla_target_at", table_name="sla_case")
+    op.drop_index("ix_sla_case_opened_at", table_name="sla_case")
+    op.drop_index("ix_sla_case_flow_run", table_name="sla_case")
+    op.drop_index("ix_sla_case_session", table_name="sla_case")
+    op.drop_index("ix_sla_case_tenant_status", table_name="sla_case")
+    op.drop_table("sla_case")
     op.drop_index("ix_step_run_status", table_name="step_run")
     op.drop_index("ix_step_run_onboarding_run_id", table_name="step_run")
     op.drop_table("step_run")
@@ -3094,6 +3211,11 @@ def downgrade() -> None:
     op.drop_table("response_artifact")
     op.drop_table("rate_limit_policy")
     op.drop_table("rag_query_cache")
+    op.drop_index(
+        "ix_semantic_answer_cache_embedding_512",
+        table_name="semantic_answer_cache",
+    )
+    op.drop_index("ix_rag_chunk_embedding_512", table_name="rag_chunk")
     op.drop_index("ix_rag_chunk_embedding", table_name="rag_chunk")
     op.drop_index("ix_rag_chunk_chunk_index", table_name="rag_chunk")
     op.drop_index("ix_rag_chunk_document_id", table_name="rag_chunk")

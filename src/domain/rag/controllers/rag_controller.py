@@ -10,9 +10,12 @@ from domain.rag.schemas.rag import (
     RagDocument,
     RagDocumentCreate,
     VectorStore,
+    VectorStoreCreate,
 )
 from domain.rag.services.rag_service import RagService
 from domain.rag.services.rag_runtime_service import RagRuntimeService
+from domain.governance.schemas.scopes import Scope
+from exceptions.service_exceptions import AuthorizationDeniedException
 from utils.auth import AuthContext, get_auth_context
 
 
@@ -69,6 +72,13 @@ class RagController:
             response_model=list[VectorStore],
         )
         r(
+            "/vector-stores",
+            self.create_vector_store,
+            methods=["POST"],
+            response_model=VectorStore,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
             "/rag-configs/{rag_config_id}/documents:ingest",
             self.ingest_document,
             methods=["POST"],
@@ -87,6 +97,11 @@ class RagController:
             methods=["GET"],
             response_model=list[RagChunk],
         )
+
+    @staticmethod
+    def _ensure_scope(auth: AuthContext, scope: Scope) -> None:
+        if scope.value not in auth.scopes:
+            raise AuthorizationDeniedException(message="insufficient_scope")
 
     async def list_rag_configs(
         self,
@@ -151,7 +166,19 @@ class RagController:
     async def list_vector_stores(
         self, auth: AuthContext = Depends(get_auth_context)
     ) -> list[VectorStore]:
-        return await self.service.list_vector_stores()
+        self._ensure_scope(auth, Scope.VectorStoresList)
+        return await self.service.list_vector_stores(tenant_id=auth.tenant_id)
+
+    async def create_vector_store(
+        self,
+        vector_store_create: VectorStoreCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> VectorStore:
+        self._ensure_scope(auth, Scope.VectorStoresCreate)
+        return await self.service.create_vector_store(
+            tenant_id=auth.tenant_id,
+            vector_store_create=vector_store_create,
+        )
 
     async def ingest_document(
         self,

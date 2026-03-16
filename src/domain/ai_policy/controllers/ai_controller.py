@@ -1,16 +1,23 @@
 from fastapi import APIRouter, Depends, Query, status
+from uuid import UUID
 
 from domain.ai_policy.schemas.ai import (
     AITask,
+    AITaskCreate,
     AIExecutionPolicy,
     AIExecutionPolicyCreate,
     AIExecutionPolicyVersion,
     AIExecutionPolicyVersionCreate,
     Model,
+    ModelCreate,
+    NodeAIExecutionPolicyBinding,
+    NodeAIExecutionPolicyBindingCreate,
 )
 from domain.ai_policy.services.ai_service import AIService
 from domain.common.schemas.change import ChangeRequest
 from domain.common.schemas.error import ErrorResponse
+from domain.governance.schemas.scopes import Scope
+from exceptions.service_exceptions import AuthorizationDeniedException
 from utils.auth import AuthContext, get_auth_context
 
 
@@ -84,14 +91,60 @@ class AIController:
             methods=["GET"],
             response_model=list[Model],
         )
+        r(
+            "/ai-tasks",
+            self.create_ai_task,
+            methods=["POST"],
+            response_model=AITask,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/models",
+            self.create_model,
+            methods=["POST"],
+            response_model=Model,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/node-ai-execution-policy-bindings",
+            self.create_node_ai_execution_policy_binding,
+            methods=["POST"],
+            response_model=NodeAIExecutionPolicyBinding,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/node-ai-execution-policy-bindings",
+            self.list_node_ai_execution_policy_bindings,
+            methods=["GET"],
+            response_model=list[NodeAIExecutionPolicyBinding],
+        )
+        r(
+            "/node-ai-execution-policy-bindings/{binding_id}",
+            self.delete_node_ai_execution_policy_binding,
+            methods=["DELETE"],
+            status_code=status.HTTP_204_NO_CONTENT,
+        )
 
     def _resp405(self) -> dict[int, dict[str, object]]:
         return {status.HTTP_405_METHOD_NOT_ALLOWED: {"model": ErrorResponse}}
+
+    @staticmethod
+    def _ensure_scope(auth: AuthContext, scope: Scope) -> None:
+        if scope.value not in auth.scopes:
+            raise AuthorizationDeniedException(message="insufficient_scope")
 
     async def list_ai_tasks(
         self, auth: AuthContext = Depends(get_auth_context)
     ) -> list[AITask]:
         return await self.service.list_ai_tasks()
+
+    async def create_ai_task(
+        self,
+        ai_task_create: AITaskCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> AITask:
+        self._ensure_scope(auth, Scope.AITasksCreate)
+        return await self.service.create_ai_task(ai_task_create=ai_task_create)
 
     async def create_ai_execution_policy(
         self,
@@ -191,3 +244,45 @@ class AIController:
         self, auth: AuthContext = Depends(get_auth_context)
     ) -> list[Model]:
         return await self.service.list_models()
+
+    async def create_model(
+        self,
+        model_create: ModelCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> Model:
+        self._ensure_scope(auth, Scope.ModelsCreate)
+        return await self.service.create_model(model_create=model_create)
+
+    async def create_node_ai_execution_policy_binding(
+        self,
+        node_ai_execution_policy_binding_create: NodeAIExecutionPolicyBindingCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> NodeAIExecutionPolicyBinding:
+        self._ensure_scope(auth, Scope.NodeAIExecutionPolicyBindingsCreate)
+        return await self.service.create_node_ai_execution_policy_binding(
+            node_ai_execution_policy_binding_create=node_ai_execution_policy_binding_create
+        )
+
+    async def list_node_ai_execution_policy_bindings(
+        self,
+        node_id: UUID | None = Query(default=None),
+        ai_execution_policy_version_id: UUID | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[NodeAIExecutionPolicyBinding]:
+        self._ensure_scope(auth, Scope.NodeAIExecutionPolicyBindingsList)
+        return await self.service.list_node_ai_execution_policy_bindings(
+            node_id=node_id,
+            ai_execution_policy_version_id=ai_execution_policy_version_id,
+            limit=limit,
+        )
+
+    async def delete_node_ai_execution_policy_binding(
+        self,
+        binding_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> None:
+        self._ensure_scope(auth, Scope.NodeAIExecutionPolicyBindingsDelete)
+        await self.service.delete_node_ai_execution_policy_binding(
+            binding_id=binding_id
+        )

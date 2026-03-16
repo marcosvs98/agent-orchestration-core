@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from domain.common.schemas.versioning import VersionStatus
 from exceptions.service_exceptions import NotFoundServiceException
@@ -13,6 +13,10 @@ from infra.database.models.ai_policy.execution_policy_version import (
     AIExecutionPolicyVersion as AIExecutionPolicyVersionModel,
 )
 from infra.database.models.ai_policy.model import Model as ModelModel
+from infra.database.models.ai_policy.node_ai_execution_policy_binding import (
+    NodeAIExecutionPolicyBinding as NodeAIExecutionPolicyBindingModel,
+)
+from infra.database.models.flow.node import Node as NodeModel
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from utils.query_compiler import compile_query
 
@@ -75,6 +79,28 @@ class AIRepository:
 
                 return items
 
+    async def create_ai_task(
+        self,
+        *,
+        name: str,
+        allow_rag_tenant: bool,
+        allow_user_memory: bool,
+        allow_session_context: bool,
+        allow_memory_write: bool,
+    ) -> AITaskModel:
+        async with self.db.get_session() as session:
+            instance = AITaskModel(
+                name=name,
+                allow_rag_tenant=allow_rag_tenant,
+                allow_user_memory=allow_user_memory,
+                allow_session_context=allow_session_context,
+                allow_memory_write=allow_memory_write,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
     async def get_model(self, model_id: UUID) -> ModelModel | None:
         async with self.db.get_session() as session:
             stmt = select(ModelModel).where(ModelModel.model_id == model_id)
@@ -125,6 +151,14 @@ class AIRepository:
                     )
 
                 return items
+
+    async def create_model(self, *, name: str) -> ModelModel:
+        async with self.db.get_session() as session:
+            instance = ModelModel(name=name)
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
 
     async def get_ai_execution_policy(
         self, ai_execution_policy_id: UUID
@@ -470,4 +504,56 @@ class AIRepository:
                     message="ai_execution_policy_version_not_found"
                 )
             instance.status = str(status)
+            await session.commit()
+
+    async def get_node(self, node_id: UUID) -> NodeModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(NodeModel).where(NodeModel.node_id == node_id)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def create_node_ai_execution_policy_binding(
+        self, *, node_id: UUID, ai_execution_policy_version_id: UUID
+    ) -> NodeAIExecutionPolicyBindingModel:
+        async with self.db.get_session() as session:
+            instance = NodeAIExecutionPolicyBindingModel(
+                node_id=node_id,
+                ai_execution_policy_version_id=ai_execution_policy_version_id,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def list_node_ai_execution_policy_bindings(
+        self,
+        *,
+        node_id: UUID | None = None,
+        ai_execution_policy_version_id: UUID | None = None,
+        limit: int = 200,
+    ) -> list[NodeAIExecutionPolicyBindingModel]:
+        async with self.db.get_session() as session:
+            stmt = select(NodeAIExecutionPolicyBindingModel)
+            if node_id is not None:
+                stmt = stmt.where(NodeAIExecutionPolicyBindingModel.node_id == node_id)
+            if ai_execution_policy_version_id is not None:
+                stmt = stmt.where(
+                    NodeAIExecutionPolicyBindingModel.ai_execution_policy_version_id
+                    == ai_execution_policy_version_id
+                )
+            stmt = stmt.order_by(
+                NodeAIExecutionPolicyBindingModel.created_at.desc()
+            ).limit(limit)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def delete_node_ai_execution_policy_binding(
+        self, *, node_ai_execution_policy_binding_id: UUID
+    ) -> None:
+        async with self.db.get_session() as session:
+            stmt = delete(NodeAIExecutionPolicyBindingModel).where(
+                NodeAIExecutionPolicyBindingModel.node_ai_execution_policy_binding_id
+                == node_ai_execution_policy_binding_id
+            )
+            await session.execute(stmt)
             await session.commit()

@@ -73,7 +73,7 @@ from infra.database.models.execution import (
     ExecutionEvent,
     FlowRunLock,
 )
-from infra.database.models.escalation import Escalation, EscalationPolicy
+from infra.database.models.escalation import Escalation, EscalationPolicy, SLACase
 from infra.database.models.onboarding import (
     Onboarding,
     OnboardingRun,
@@ -143,6 +143,7 @@ __all__ = [
     "RunFailure",
     "EscalationPolicy",
     "Escalation",
+    "SLACase",
     "Onboarding",
     "OnboardingVersion",
     "OnboardingRun",

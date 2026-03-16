@@ -54,7 +54,6 @@ class OpenAIEmbeddingAdapter:
     async def generate_embedding(
         self, text: str, *, model: str | None = None, dimension: int | None = None
     ) -> List[float]:
-        """Generate a single embedding for the provided text."""
         model_name = model or self.model
         dims = dimension or self.dimension
         cache_key = self._embedding_cache_key(text, model_name, dims)

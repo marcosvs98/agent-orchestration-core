@@ -6,6 +6,10 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from domain.rag.schemas.rag import (
+    DEFAULT_EMBEDDING_DIMENSION,
+    EMBEDDING_DIMENSION_REDUCED,
+)
 from infra.database import DatabaseConnection
 from infra.database.models.llm.semantic_answer_cache import (
     SemanticAnswerCache as SemanticAnswerCacheModel,
@@ -13,8 +17,13 @@ from infra.database.models.llm.semantic_answer_cache import (
 
 
 class SemanticCacheRepository:
-    def __init__(self, database_connection: DatabaseConnection) -> None:
+    def __init__(
+        self,
+        database_connection: DatabaseConnection,
+        embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION,
+    ) -> None:
         self.db = database_connection
+        self.embedding_dimension = embedding_dimension
 
     async def search_similar(
         self,
@@ -25,9 +34,14 @@ class SemanticCacheRepository:
         similarity_threshold: float,
         now: datetime,
     ) -> SemanticAnswerCacheModel | None:
-        distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(
-            query_embedding
-        )
+        if self.embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
+            distance_expr = SemanticAnswerCacheModel.embedding_512.cosine_distance(
+                query_embedding
+            )
+        else:
+            distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(
+                query_embedding
+            )
         stmt = (
             select(
                 SemanticAnswerCacheModel,
@@ -37,9 +51,12 @@ class SemanticCacheRepository:
             .where(SemanticAnswerCacheModel.task_type == task_type)
             .where(SemanticAnswerCacheModel.expires_at > now)
             .where(distance_expr <= (1.0 - similarity_threshold))
-            .order_by(distance_expr.asc())
-            .limit(1)
         )
+        if self.embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
+            stmt = stmt.where(SemanticAnswerCacheModel.embedding_512.is_not(None))
+        else:
+            stmt = stmt.where(SemanticAnswerCacheModel.embedding.is_not(None))
+        stmt = stmt.order_by(distance_expr.asc()).limit(1)
         async with self.db.get_session() as session:
             result = await session.execute(stmt)
             row = result.first()
@@ -57,6 +74,7 @@ class SemanticCacheRepository:
             "task_type": entry.task_type,
             "query_hash": entry.query_hash,
             "embedding": entry.embedding,
+            "embedding_512": getattr(entry, "embedding_512", None),
             "response_json": entry.response_json,
             "model_alias": entry.model_alias,
             "inference_layer": entry.inference_layer,
@@ -74,6 +92,7 @@ class SemanticCacheRepository:
                 constraint="uq_semantic_answer_cache_tenant_task_query",
                 set_={
                     "embedding": entry.embedding,
+                    "embedding_512": getattr(entry, "embedding_512", None),
                     "response_json": entry.response_json,
                     "model_alias": entry.model_alias,
                     "inference_layer": entry.inference_layer,

@@ -157,6 +157,7 @@ async def seed_tool_catalog_rag() -> None:
                 "method": "POST",
                 "path": "/createExpense",
                 "cluster": "direct_verbs",
+                "tool_intent": "Command",
             },
         ),
         RagDocumentCreate(
@@ -180,6 +181,7 @@ async def seed_tool_catalog_rag() -> None:
                 "method": "POST",
                 "path": "/createExpense",
                 "cluster": "colloquial",
+                "tool_intent": "Command",
             },
         ),
         RagDocumentCreate(
@@ -207,6 +209,7 @@ async def seed_tool_catalog_rag() -> None:
                 "method": "POST",
                 "path": "/createExpense",
                 "cluster": "payment_methods",
+                "tool_intent": "Command",
             },
         ),
         RagDocumentCreate(
@@ -232,7 +235,57 @@ async def seed_tool_catalog_rag() -> None:
                 "method": "POST",
                 "path": "/createExpense",
                 "cluster": "amount_signals",
+                "tool_intent": "command",
             },
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.query.1",
+            content="consultar saldo",
+            metadata={"intent_type": "query"},
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.query.2",
+            content="Ver despesas",
+            metadata={"intent_type": "query"},
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.query.3",
+            content="Quanto gastei no mês",
+            metadata={"intent_type": "query"},
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.command.1",
+            content="Registrar uma nova despesa",
+            metadata={"intent_type": "command"},
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.conversation.1",
+            content="o que você faz",
+            metadata={"intent_type": "conversation"},
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.conversation.2",
+            content="explique como funciona",
+            metadata={"intent_type": "conversation"},
+        ),
+        RagDocumentCreate(
+            source="intent_examples",
+            doc_type="intent_examples",
+            version="intent.conversation.3",
+            content="quais tarefas você resolve",
+            metadata={"intent_type": "conversation"},
         ),
     ]
 

@@ -7,6 +7,10 @@ from uuid import uuid4, UUID
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.llm.repositories.semantic_cache_repository import SemanticCacheRepository
+from domain.rag.schemas.rag import (
+    DEFAULT_EMBEDDING_DIMENSION,
+    EMBEDDING_DIMENSION_REDUCED,
+)
 from domain.llm.schemas.inference_cache import CacheLookupResult, SemanticCacheEntry
 from infra.database.models.llm.semantic_answer_cache import (
     SemanticAnswerCache as SemanticAnswerCacheModel,
@@ -20,10 +24,12 @@ class SemanticCacheService:
         repository: SemanticCacheRepository,
         embedding_adapter: OpenAIEmbeddingAdapter,
         tracer: RuntimeTracerPort,
+        embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION,
     ) -> None:
         self.repository = repository
         self.embedding_adapter = embedding_adapter
         self.tracer = tracer
+        self.embedding_dimension = embedding_dimension
 
     async def lookup(
         self,
@@ -43,7 +49,8 @@ class SemanticCacheService:
             },
         ) as retriever_handle:
             query_embedding = await self.embedding_adapter.generate_embedding(
-                user_query
+                user_query,
+                dimension=self.embedding_dimension,
             )
             now = datetime.now(UTC)
             cache_entry = await self.repository.search_similar(
@@ -111,16 +118,23 @@ class SemanticCacheService:
             effective_embedding = query_embedding
             if effective_embedding is None:
                 effective_embedding = await self.embedding_adapter.generate_embedding(
-                    user_query
+                    user_query,
+                    dimension=self.embedding_dimension,
                 )
             now = datetime.now(UTC)
             expires_at = now + timedelta(seconds=ttl_seconds)
+            dim = self.embedding_dimension
             entry = SemanticAnswerCacheModel(
                 cache_id=uuid4(),
                 tenant_id=tenant_id,
                 task_type=task_type,
                 query_hash=self._hash_text(user_query),
-                embedding=effective_embedding,
+                embedding=effective_embedding
+                if dim == DEFAULT_EMBEDDING_DIMENSION
+                else None,
+                embedding_512=effective_embedding
+                if dim == EMBEDDING_DIMENSION_REDUCED
+                else None,
                 response_json=response,
                 model_alias=model_alias,
                 inference_layer=inference_layer,

@@ -1,14 +1,20 @@
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from domain.ai_policy.ports.service import AIServicePort
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.ai_policy.schemas.ai import (
     AITask,
+    AITaskCreate,
     AIExecutionPolicy,
     AIExecutionPolicyCreate,
     AIExecutionPolicyVersion,
     AIExecutionPolicyVersionCreate,
     Model,
+    ModelCreate,
+    NodeAIExecutionPolicyBinding,
+    NodeAIExecutionPolicyBindingCreate,
 )
 from domain.common.schemas.change import ChangeRequest
 from domain.common.schemas.versioning import VersionStatus
@@ -44,6 +50,23 @@ class AIService(AIServicePort):
             )
             for task in tasks
         ]
+
+    async def create_ai_task(self, *, ai_task_create: AITaskCreate) -> AITask:
+        created = await self.repository.create_ai_task(
+            name=ai_task_create.name,
+            allow_rag_tenant=ai_task_create.allow_rag_tenant,
+            allow_user_memory=ai_task_create.allow_user_memory,
+            allow_session_context=ai_task_create.allow_session_context,
+            allow_memory_write=ai_task_create.allow_memory_write,
+        )
+        return AITask(
+            id=created.ai_task_id,
+            name=created.name,
+            allow_rag_tenant=bool(created.allow_rag_tenant),
+            allow_user_memory=bool(created.allow_user_memory),
+            allow_session_context=bool(created.allow_session_context),
+            allow_memory_write=bool(created.allow_memory_write),
+        )
 
     async def create_ai_execution_policy(
         self,
@@ -166,6 +189,10 @@ class AIService(AIServicePort):
     async def list_models(self) -> list[Model]:
         models = await self.repository.list_models()
         return [Model(id=model.model_id, name=model.name) for model in models]
+
+    async def create_model(self, *, model_create: ModelCreate) -> Model:
+        created = await self.repository.create_model(name=model_create.name)
+        return Model(id=created.model_id, name=created.name)
 
     async def list_ai_execution_policy_versions(
         self,
@@ -367,4 +394,68 @@ class AIService(AIServicePort):
             version_minor=refreshed.version_minor,
             version_patch=refreshed.version_patch,
             config_hash=refreshed.config_hash,
+        )
+
+    async def create_node_ai_execution_policy_binding(
+        self,
+        *,
+        node_ai_execution_policy_binding_create: NodeAIExecutionPolicyBindingCreate,
+    ) -> NodeAIExecutionPolicyBinding:
+        node = await self.repository.get_node(
+            node_ai_execution_policy_binding_create.node_id
+        )
+        if node is None:
+            raise NotFoundServiceException(message="node_not_found")
+        policy_version = await self.repository.get_ai_execution_policy_version(
+            node_ai_execution_policy_binding_create.ai_execution_policy_version_id
+        )
+        if policy_version is None:
+            raise NotFoundServiceException(
+                message="ai_execution_policy_version_not_found"
+            )
+        if policy_version.status != VersionStatus.PUBLISHED:
+            raise ResourceBlockedServiceException(
+                message="ai_execution_policy_version_not_published"
+            )
+        try:
+            created = await self.repository.create_node_ai_execution_policy_binding(
+                node_id=node_ai_execution_policy_binding_create.node_id,
+                ai_execution_policy_version_id=node_ai_execution_policy_binding_create.ai_execution_policy_version_id,
+            )
+        except IntegrityError as exc:
+            raise DomainValidationException(
+                message="node_ai_execution_policy_binding_conflict"
+            ) from exc
+        return NodeAIExecutionPolicyBinding(
+            id=created.node_ai_execution_policy_binding_id,
+            node_id=created.node_id,
+            ai_execution_policy_version_id=created.ai_execution_policy_version_id,
+        )
+
+    async def list_node_ai_execution_policy_bindings(
+        self,
+        *,
+        node_id: UUID | None = None,
+        ai_execution_policy_version_id: UUID | None = None,
+        limit: int = 200,
+    ) -> list[NodeAIExecutionPolicyBinding]:
+        rows = await self.repository.list_node_ai_execution_policy_bindings(
+            node_id=node_id,
+            ai_execution_policy_version_id=ai_execution_policy_version_id,
+            limit=limit,
+        )
+        return [
+            NodeAIExecutionPolicyBinding(
+                id=row.node_ai_execution_policy_binding_id,
+                node_id=row.node_id,
+                ai_execution_policy_version_id=row.ai_execution_policy_version_id,
+            )
+            for row in rows
+        ]
+
+    async def delete_node_ai_execution_policy_binding(
+        self, *, binding_id: UUID
+    ) -> None:
+        await self.repository.delete_node_ai_execution_policy_binding(
+            node_ai_execution_policy_binding_id=binding_id
         )

@@ -8,6 +8,11 @@ from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
 from domain.llm.adapters.slm_local_provider import SLMLocalProvider
+from domain.llm.adapters.moderation_openai_adapter import ModerationOpenAIAdapter
+from domain.llm.adapters.moderation_slm_adapter import ModerationSLMAdapter
+from domain.llm.services.moderation_orchestration_service import (
+    ModerationOrchestrationService,
+)
 from infra.database import DatabaseConnection, async_session, engine
 
 from domain.tenants.controllers.tenants_controller import TenantsController
@@ -55,6 +60,29 @@ from domain.governance.services.rate_limit_service import RateLimitService
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
+from domain.governance.controllers.llm_admin_controller import LLMAdminController
+from domain.governance.controllers.governance_policies_controller import (
+    GovernancePoliciesController,
+)
+from domain.governance.repositories.llm_provider_repository import LLMProviderRepository
+from domain.governance.repositories.llm_model_mapping_repository import (
+    LLMModelMappingRepository,
+)
+from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
+from domain.governance.services.llm_admin_service import LLMAdminService
+from domain.governance.repositories.runtime_policy_repository import (
+    RuntimePolicyRepository,
+)
+from domain.governance.repositories.billing_policy_repository import (
+    BillingPolicyRepository,
+)
+from domain.governance.repositories.memory_policy_repository import (
+    MemoryPolicyRepository,
+)
+from domain.governance.repositories.rag_policy_repository import RagPolicyRepository
+from domain.governance.services.governance_policies_service import (
+    GovernancePoliciesService,
+)
 from domain.onboarding.controllers.onboarding_controller import OnboardingController
 from domain.onboarding.services.onboarding_service import OnboardingService
 from domain.onboarding.repositories.onboarding_repository import OnboardingRepository
@@ -72,6 +100,9 @@ from domain.conversation.controllers.conversation_controller import (
     ConversationController,
 )
 from domain.conversation.services.conversation_service import ConversationService
+from domain.human_sla.controllers.human_sla_controller import HumanSLAController
+from domain.human_sla.repositories.human_sla_repository import HumanSLARepository
+from domain.human_sla.services.human_sla_service import HumanSLAService
 from services.conversation_boundary import ConversationBoundary
 
 
@@ -249,7 +280,7 @@ class RAGContainer(containers.DeclarativeContainer):
         OpenAIEmbeddingAdapter,
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",
-        dimension=1536,
+        dimension=settings.EMBEDDING_DIMENSION,
         tracer=adapters.tracer,
         cache_adapter=adapters.redis_adapter,
     )
@@ -264,10 +295,28 @@ class RAGContainer(containers.DeclarativeContainer):
     )
 
 
+class HumanSLAContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+
+    human_sla_repository = providers.Factory(
+        HumanSLARepository,
+        database_connection=core.database_connection,
+    )
+    human_sla_service = providers.Factory(
+        HumanSLAService,
+        repository=human_sla_repository,
+    )
+    human_sla_controller = providers.Factory(
+        HumanSLAController,
+        service=human_sla_service,
+    )
+
+
 class ExecutionContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
     tools = providers.DependenciesContainer()
+    human_sla = providers.DependenciesContainer()
 
     access_policy_repository = providers.Factory(
         AccessPolicyRepository,
@@ -301,6 +350,61 @@ class ExecutionContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         cache_adapter=adapters.redis_adapter,
     )
+    prompt_repository = providers.Factory(
+        PromptRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    prompt_service = providers.Factory(
+        PromptService,
+        repository=prompt_repository,
+        execution_repository=execution_repository,
+        tracer=adapters.tracer,
+    )
+    moderation_default_config = providers.Object(
+        {
+            "primary": {
+                "provider": "SLM_LOCAL",
+                "model_alias": "slm-local-moderation",
+                "timeout_ms": 300,
+            },
+            "fallback": {
+                "provider": "OPENAI",
+                "model_alias": settings.OPENAI_MODERATION_MODEL,
+                "timeout_ms": 1000,
+            },
+            "fallback_enabled": True,
+            "prompt_key": "InputModerationNode",
+            "temperature": 0.0,
+            "max_tokens": 18,
+        }
+    )
+    openai_moderation_adapter = providers.Factory(
+        ModerationOpenAIAdapter,
+        client=adapters.openai_client,
+        cache_adapter=adapters.redis_adapter,
+        tracer=adapters.tracer,
+        model=settings.OPENAI_MODERATION_MODEL,
+        timeout=1,
+    )
+    slm_moderation_adapter = providers.Factory(
+        ModerationSLMAdapter,
+        slm_provider=adapters.slm_local_provider,
+        prompt_text=None,
+        output_schema=None,
+        prompt_service=prompt_service,
+        prompt_key="InputModerationNode",
+        model_alias="slm-local-moderation",
+        slm_timeout_s=0.3,
+        temperature=0.0,
+        max_tokens=18,
+    )
+    moderation_orchestration_service = providers.Factory(
+        ModerationOrchestrationService,
+        slm_provider=slm_moderation_adapter,
+        openai_provider=openai_moderation_adapter,
+        default_config=moderation_default_config,
+    )
     idempotency_service = providers.Factory(
         IdempotencyService,
         redis_adapter=adapters.redis_adapter,
@@ -326,6 +430,8 @@ class ExecutionContainer(containers.DeclarativeContainer):
         openai_provider=adapters.openai_provider,
         slm_local_provider=adapters.slm_local_provider,
         secret_resolver=adapters.secret_resolver,
+        llm_moderation_provider=moderation_orchestration_service,
+        human_sla_service=human_sla.human_sla_service,
     )
     tool_executor = providers.Singleton(HttpToolExecutor, tracer=adapters.tracer)
     tool_orchestrator = providers.Factory(
@@ -437,6 +543,80 @@ class ConversationContainer(containers.DeclarativeContainer):
     )
 
 
+class GovernanceContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
+
+    llm_provider_repository = providers.Factory(
+        LLMProviderRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
+    )
+    llm_model_mapping_repository = providers.Factory(
+        LLMModelMappingRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
+    )
+    llm_pricing_repository = providers.Factory(
+        LLMPricingRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
+    )
+    llm_admin_service = providers.Factory(
+        LLMAdminService,
+        provider_repository=llm_provider_repository,
+        mapping_repository=llm_model_mapping_repository,
+        pricing_repository=llm_pricing_repository,
+    )
+    llm_admin_controller = providers.Factory(
+        LLMAdminController,
+        service=llm_admin_service,
+    )
+    runtime_policy_repository = providers.Factory(
+        RuntimePolicyRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    access_policy_repository = providers.Factory(
+        AccessPolicyRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    rate_limit_policy_repository = providers.Factory(
+        RateLimitPolicyRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    billing_policy_repository = providers.Factory(
+        BillingPolicyRepository,
+        database_connection=core.database_connection,
+    )
+    memory_policy_repository = providers.Factory(
+        MemoryPolicyRepository,
+        database_connection=core.database_connection,
+    )
+    rag_policy_repository = providers.Factory(
+        RagPolicyRepository,
+        database_connection=core.database_connection,
+    )
+    governance_policies_service = providers.Factory(
+        GovernancePoliciesService,
+        runtime_repository=runtime_policy_repository,
+        access_repository=access_policy_repository,
+        rate_limit_repository=rate_limit_policy_repository,
+        billing_repository=billing_policy_repository,
+        memory_repository=memory_policy_repository,
+        rag_repository=rag_policy_repository,
+    )
+    governance_policies_controller = providers.Factory(
+        GovernancePoliciesController,
+        service=governance_policies_service,
+    )
+
+
 class ApplicationContainer(containers.DeclarativeContainer):
     """Application root container, grouping domain containers."""
 
@@ -452,8 +632,13 @@ class ApplicationContainer(containers.DeclarativeContainer):
     tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
     ai_policy = providers.Container(AIPolicyContainer, core=core, adapters=adapters)
     rag = providers.Container(RAGContainer, core=core, adapters=adapters)
+    human_sla = providers.Container(HumanSLAContainer, core=core)
     execution = providers.Container(
-        ExecutionContainer, core=core, adapters=adapters, tools=tools
+        ExecutionContainer,
+        core=core,
+        adapters=adapters,
+        tools=tools,
+        human_sla=human_sla,
     )
     onboarding = providers.Container(OnboardingContainer, core=core)
     prompts = providers.Container(
@@ -468,3 +653,4 @@ class ApplicationContainer(containers.DeclarativeContainer):
         adapters=adapters,
         user_prompts=user_prompts,
     )
+    governance = providers.Container(GovernanceContainer, core=core, adapters=adapters)

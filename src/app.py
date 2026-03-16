@@ -65,12 +65,15 @@ def create_app() -> FastAPI:
             container.tools.tools_controller(),
             container.ai_policy.ai_controller(),
             container.rag.rag_controller(),
+            container.human_sla.human_sla_controller(),
             container.execution.execution_controller(),
             container.execution.execution_plane_controller(),
             container.conversation.conversation_controller(),
             container.onboarding.onboarding_controller(),
             container.prompts.prompt_controller(),
             container.user_prompts.user_prompts_controller(),
+            container.governance.governance_policies_controller(),
+            container.governance.llm_admin_controller(),
         ],
     )
     return app

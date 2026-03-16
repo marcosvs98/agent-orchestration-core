@@ -22,13 +22,13 @@ from seeds.demo.ids import (
     NODE_CLARIFICATION_ID,
     NODE_CLARIFICATION_INTENT_ID,
     NODE_FALLBACK_SLA_ID,
+    NODE_INPUT_MODERATION_ID,
     NODE_INTENT_ID,
     NODE_PRE_EXEC_VALIDATION_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_ERROR_HANDLER_ID,
     NODE_TOOL_EXEC_ID,
-
     NODE_TOOL_SELECTION_ID,
     NODE_USER_CONTEXT_ENRICHMENT_ID,
 )
@@ -37,6 +37,7 @@ from seeds.demo.ids import (
 async def seed_nodes() -> None:
     async with get_db() as session:
         nodes = [
+            (NODE_INPUT_MODERATION_ID, None, "InputModeration"),
             (NODE_USER_CONTEXT_ENRICHMENT_ID, None, "UserContextEnrichment"),
             (NODE_INTENT_ID, AI_TASK_INTENT_DETECTION_ID, "IntentDetection"),
             (NODE_CLARIFICATION_INTENT_ID, AI_TASK_CLARIFICATION_ID, "ClarificationIntent"),

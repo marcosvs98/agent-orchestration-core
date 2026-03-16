@@ -20,10 +20,12 @@ class SLMLocalProvider(LLMProviderPort):
         *,
         credential_secret_ref: str | None = None,
         model_name: str | None = SLM_MODEL_PATH,
+        timeout_s: int | None = SLM_INFERENCE_TIMEOUT_MS,
     ) -> None:
         self.credential_secret_ref = credential_secret_ref
         self._engine: Optional[Llama] = None
         self.model_name = model_name
+        self.timeout_s = timeout_s
         self._engine_instance()
 
     def _engine_instance(self) -> Llama:
@@ -33,7 +35,6 @@ class SLMLocalProvider(LLMProviderPort):
         if not self.model_name:
             raise DomainValidationException("llm_provider_missing_model_path")
 
-        return None  # todo:
         resolved_path = resolve_slm_model_path(self.model_name)
 
         engine_config: Dict[str, Any] = {}
@@ -105,7 +106,8 @@ class SLMLocalProvider(LLMProviderPort):
 
         if structured_expected:
             if properties := schema_payload.get("properties"):
-                if properties.get("result").get("type") == "array":
+                result = properties.get("result")
+                if result and result.get("type") == "array":
                     properties["result"]["maxItems"] = 2
 
             payload["response_format"] = {
@@ -115,7 +117,7 @@ class SLMLocalProvider(LLMProviderPort):
 
         loop = asyncio.get_running_loop()
         started = time.perf_counter()
-        timeout_s = SLM_INFERENCE_TIMEOUT_MS / 1000.0
+        timeout_s = request.max_latency_ms  # / 1000.0
 
         inference_future = loop.run_in_executor(
             None,

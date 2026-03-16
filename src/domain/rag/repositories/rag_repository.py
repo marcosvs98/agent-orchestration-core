@@ -11,6 +11,7 @@ from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.rag.schemas.embedding_job import EmbeddingStatus
+from domain.rag.schemas.rag import EMBEDDING_DIMENSION_REDUCED
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
 from infra.database.models.rag.rag_config import RagConfig as RagConfigModel
@@ -34,11 +35,15 @@ class RagRepository:
         self.tracer = tracer
         self.cache_adapter = cache_adapter
 
-    async def get_vector_store(self, vector_store_id: UUID) -> VectorStoreModel | None:
+    async def get_vector_store(
+        self, vector_store_id: UUID, *, tenant_id: UUID | None = None
+    ) -> VectorStoreModel | None:
         async with self.db.get_session() as session:
             stmt = select(VectorStoreModel).where(
                 VectorStoreModel.vector_store_id == vector_store_id
             )
+            if tenant_id is not None:
+                stmt = stmt.where(VectorStoreModel.tenant_id == tenant_id)
             query_sql = compile_query(stmt)
             if self.tracer:
                 with self.tracer.observe(
@@ -46,7 +51,10 @@ class RagRepository:
                     name="domain.rag.rag_repository.get_vector_store",
                     input={
                         "query": query_sql,
-                        "params": {"vector_store_id": str(vector_store_id)},
+                        "params": {
+                            "vector_store_id": str(vector_store_id),
+                            "tenant_id": str(tenant_id) if tenant_id else None,
+                        },
                     },
                     metadata={"retriever_name": "get_vector_store"},
                 ) as retriever_handle:
@@ -63,18 +71,25 @@ class RagRepository:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def list_vector_stores(self) -> list[VectorStoreModel]:
+    async def list_vector_stores(self, *, tenant_id: UUID) -> list[VectorStoreModel]:
         async with self.db.get_session() as session:
-            stmt = select(VectorStoreModel).order_by(
-                VectorStoreModel.name.asc().nulls_last(),
-                VectorStoreModel.vector_store_id.asc(),
+            stmt = (
+                select(VectorStoreModel)
+                .where(VectorStoreModel.tenant_id == tenant_id)
+                .order_by(
+                    VectorStoreModel.name.asc().nulls_last(),
+                    VectorStoreModel.vector_store_id.asc(),
+                )
             )
             query_sql = compile_query(stmt)
             if self.tracer:
                 with self.tracer.observe(
                     as_type="retriever",
                     name="domain.rag.rag_repository.list_vector_stores",
-                    input={"query": query_sql, "params": {}},
+                    input={
+                        "query": query_sql,
+                        "params": {"tenant_id": str(tenant_id)},
+                    },
                     metadata={"retriever_name": "list_vector_stores"},
                 ) as retriever_handle:
                     result = await session.execute(stmt)
@@ -89,6 +104,16 @@ class RagRepository:
                     return rows
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    async def create_vector_store(
+        self, *, tenant_id: UUID, name: str
+    ) -> VectorStoreModel:
+        async with self.db.get_session() as session:
+            instance = VectorStoreModel(tenant_id=tenant_id, name=name)
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
 
     async def get_rag_config(self, rag_config_id: UUID) -> RagConfigModel | None:
         key = f"rag_config:{rag_config_id}"
@@ -470,6 +495,35 @@ class RagRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
+    async def list_chunks_pending_embedding_512(
+        self, *, limit: int, offset: int = 0
+    ) -> list[RagChunkModel]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(RagChunkModel)
+                .where(RagChunkModel.embedding_512.is_(None))
+                .where(RagChunkModel.embedding.is_not(None))
+                .order_by(RagChunkModel.chunk_id.asc())
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def update_chunk_embedding_512(
+        self, *, chunk_id: UUID, embedding_512: list[float]
+    ) -> bool:
+        async with self.db.get_session() as session:
+            stmt = (
+                update(RagChunkModel)
+                .where(RagChunkModel.chunk_id == chunk_id)
+                .values(embedding_512=embedding_512)
+                .execution_options(synchronize_session=False)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0) > 0
+
     async def create_chunks(self, *, chunks: list[RagChunkModel]) -> None:
         if not chunks:
             return
@@ -485,6 +539,7 @@ class RagRepository:
                         "content_hash": chunk.content_hash,
                         "token_count": chunk.token_count,
                         "embedding": chunk.embedding,
+                        "embedding_512": getattr(chunk, "embedding_512", None),
                         "embedding_model": chunk.embedding_model,
                         "embedding_dimension": chunk.embedding_dimension,
                         "chunk_metadata": chunk.chunk_metadata,
@@ -562,17 +617,20 @@ class RagRepository:
         tenant_id: UUID,
         user_id: str | None,
         query_embedding: list[float],
+        embedding_dimension: int,
         top_k: int,
         similarity_threshold: float,
         filters: dict[str, object] | None,
     ) -> list[tuple[RagChunkModel, float, datetime | None, str | None]]:
+        if embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
+            distance_col = RagChunkModel.embedding_512.cosine_distance(query_embedding)
+        else:
+            distance_col = RagChunkModel.embedding.cosine_distance(query_embedding)
         async with self.db.get_session() as session:
             stmt = (
                 select(
                     RagChunkModel,
-                    RagChunkModel.embedding.cosine_distance(query_embedding).label(
-                        "distance"
-                    ),
+                    distance_col.label("distance"),
                     RagDocumentModel.created_at.label("document_created_at"),
                     RagDocumentModel.doc_metadata["observed_at"].astext.label(
                         "document_observed_at"
@@ -584,6 +642,10 @@ class RagRepository:
                 )
                 .where(RagDocumentModel.tenant_id == tenant_id)
             )
+            if embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
+                stmt = stmt.where(RagChunkModel.embedding_512.is_not(None))
+            else:
+                stmt = stmt.where(RagChunkModel.embedding.is_not(None))
             if filters:
                 if filters.get("source"):
                     stmt = stmt.where(RagDocumentModel.source == filters["source"])
@@ -612,6 +674,11 @@ class RagRepository:
                     stmt = stmt.where(
                         RagDocumentModel.doc_metadata["category"].astext
                         == str(filters["category"])
+                    )
+                if filters.get("tool_intent"):
+                    stmt = stmt.where(
+                        RagDocumentModel.doc_metadata["tool_intent"].astext
+                        == str(filters["tool_intent"])
                     )
                 if filters.get("created_after"):
                     created_after_value = filters["created_after"]

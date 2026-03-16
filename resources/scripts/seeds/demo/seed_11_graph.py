@@ -34,6 +34,7 @@ from seeds.demo.ids import (
     NODE_CLARIFICATION_ID,
     NODE_CLARIFICATION_INTENT_ID,
     NODE_FALLBACK_SLA_ID,
+    NODE_INPUT_MODERATION_ID,
     NODE_INTENT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
@@ -76,6 +77,29 @@ class _UserContextLayersConfig(BaseModel):
 class _UserContextNodeConfig(BaseModel):
     publish: bool
     layers: _UserContextLayersConfig
+
+
+class _ModerationProviderConfig(BaseModel):
+    provider: str
+    model_alias: str
+    timeout_ms: int
+
+
+class _ModerationNodeConfig(BaseModel):
+    primary: _ModerationProviderConfig = _ModerationProviderConfig(
+        provider="SLM_LOCAL",
+        model_alias="slm-local-moderation",
+        timeout_ms=300,
+    )
+    fallback: _ModerationProviderConfig = _ModerationProviderConfig(
+        provider="OPENAI",
+        model_alias="omni-moderation-latest",
+        timeout_ms=1000,
+    )
+    fallback_enabled: bool = True
+    prompt_key: str = "InputModerationNode"
+    temperature: float = 0.0
+    max_tokens: int = 18
 
 
 def _llm_node_config(
@@ -149,6 +173,10 @@ def _user_context_node_config() -> dict[str, object]:
     ).model_dump(mode="json")
 
 
+def _moderation_node_config() -> dict[str, object]:
+    return _ModerationNodeConfig().model_dump(mode="json")
+
+
 async def seed_graph() -> None:
     async with get_db() as session:
         result = await session.execute(
@@ -163,8 +191,12 @@ async def seed_graph() -> None:
             )
 
         definition = FlowGraphDefinition(
-            start_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
+            start_node=str(NODE_INPUT_MODERATION_ID),
             nodes={
+                str(NODE_INPUT_MODERATION_ID): FlowGraphNodeSpec(
+                    type="InputModerationNode",
+                    config=_moderation_node_config(),
+                ),
                 str(NODE_USER_CONTEXT_ENRICHMENT_ID): FlowGraphNodeSpec(
                     type="UserContextEnrichmentNode",
                     config=_user_context_node_config(),
@@ -263,8 +295,12 @@ async def seed_graph() -> None:
                     config={"max_retries": 1},
                 ),
                 str(NODE_FALLBACK_SLA_ID): FlowGraphNodeSpec(
-                    type="FallbackNode",
-                    config={},
+                    type="FallbackNodeSLA",
+                    config={
+                        "system_output": "I could not complete this automatically. A human specialist will continue your request.",
+                        "severity": "medium",
+                        "fallback_reason": "UNKNOWN_INTENT",
+                    },
                 ),
                 str(NODE_RESPONSE_ID): FlowGraphNodeSpec(
                     type="ResponseComposer",
@@ -284,6 +320,18 @@ async def seed_graph() -> None:
                 ),
             },
             edges=[
+                FlowGraphEdge(
+                    from_node=str(NODE_INPUT_MODERATION_ID),
+                    to_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
+                    condition="flagged == false",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_INPUT_MODERATION_ID),
+                    to_node=str(NODE_FALLBACK_SLA_ID),
+                    condition="flagged == true",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
                 FlowGraphEdge(
                     from_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
                     to_node=str(NODE_INTENT_ID),

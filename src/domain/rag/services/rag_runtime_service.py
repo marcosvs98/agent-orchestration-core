@@ -19,6 +19,9 @@ from domain.rag.schemas.rag import (
     RagDocumentCreate,
     RagChunk,
     RagPreparedDocument,
+    SUPPORTED_EMBEDDING_DIMENSIONS,
+    DEFAULT_EMBEDDING_DIMENSION,
+    EMBEDDING_DIMENSION_REDUCED,
 )
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -198,6 +201,7 @@ class RagRuntimeService:
                     model=options.embedding.model_alias,
                     dimension=options.embedding.dimension,
                 )
+                dim = options.embedding.dimension
                 chunk_models: list[RagChunkModel] = []
                 for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_models.append(
@@ -208,9 +212,14 @@ class RagRuntimeService:
                             content=chunk_text,
                             content_hash=self._hash_text(chunk_text),
                             token_count=len(self._encode_tokens(chunk_text)),
-                            embedding=embedding,
+                            embedding=embedding
+                            if dim == DEFAULT_EMBEDDING_DIMENSION
+                            else None,
+                            embedding_512=embedding
+                            if dim == EMBEDDING_DIMENSION_REDUCED
+                            else None,
                             embedding_model=options.embedding.model_alias,
-                            embedding_dimension=options.embedding.dimension,
+                            embedding_dimension=dim,
                             chunk_metadata=document_metadata,
                         )
                     )
@@ -304,7 +313,7 @@ class RagRuntimeService:
             )
 
         options = RagConfigOptions.model_validate(config.options or {})
-        if options.embedding.dimension != 1536:  # Todo: Criar env em settings
+        if options.embedding.dimension not in SUPPORTED_EMBEDDING_DIMENSIONS:
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )
@@ -312,13 +321,18 @@ class RagRuntimeService:
         cached = await self.repository.get_query_cache(
             tenant_id=tenant_id, query_hash=query_hash
         )
+        dim = options.embedding.dimension
         embedding: list[float]
         if (
             cached
             and cached.embedding_model == options.embedding.model_alias
             and cached.embedding_dimension == options.embedding.dimension
         ):
-            embedding = cached.embedding
+            embedding = (
+                (cached.embedding_512 or [])
+                if dim == EMBEDDING_DIMENSION_REDUCED
+                else (cached.embedding or [])
+            )
             await self.repository.update_query_cache_usage(
                 cache_id=cached.query_cache_id
             )
@@ -331,9 +345,10 @@ class RagRuntimeService:
             cache_entry = RagQueryCacheModel(
                 tenant_id=tenant_id,
                 query_hash=query_hash,
-                embedding=embedding,
+                embedding=embedding if dim == DEFAULT_EMBEDDING_DIMENSION else None,
+                embedding_512=embedding if dim == EMBEDDING_DIMENSION_REDUCED else None,
                 embedding_model=options.embedding.model_alias,
-                embedding_dimension=options.embedding.dimension,
+                embedding_dimension=dim,
             )
             await self.repository.save_query_cache(cache_entry=cache_entry)
 
@@ -356,6 +371,7 @@ class RagRuntimeService:
                 tenant_id=tenant_id,
                 user_id=user_id,
                 query_embedding=embedding,
+                embedding_dimension=dim,
                 top_k=effective_top_k,
                 similarity_threshold=options.retrieval.similarity_threshold,
                 filters=effective_filters,
@@ -450,7 +466,7 @@ class RagRuntimeService:
         if config is None or config.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rag_config_not_found")
         options = RagConfigOptions.model_validate(config.options or {})
-        if options.embedding.dimension != 1536:
+        if options.embedding.dimension not in SUPPORTED_EMBEDDING_DIMENSIONS:
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )

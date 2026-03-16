@@ -679,8 +679,10 @@ class RuntimeExecutor:
         flow_run_id: UUID,
         correlation_id: UUID,
         reason: FlowFailureReason,
-        exc: BaseServiceException,
+        exc: BaseServiceException | None = None,
     ) -> None:
+        if exc is None:
+            exc = DomainValidationException(message=reason.value)
         error_detail = await format_exception(reason, str(correlation_id), exc)
 
         await self.repository.fail_flow_run(

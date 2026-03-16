@@ -108,6 +108,37 @@ class RuntimePolicyRepository:
                 await session.commit()
             return instance
 
+    async def get_policy(self, runtime_policy_id: UUID) -> RuntimePolicyModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RuntimePolicyModel).where(
+                RuntimePolicyModel.runtime_policy_id == runtime_policy_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def update_policy(
+        self,
+        *,
+        runtime_policy_id: UUID,
+        policy_definition: dict[str, object] | None = None,
+        status: str | None = None,
+    ) -> RuntimePolicyModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RuntimePolicyModel).where(
+                RuntimePolicyModel.runtime_policy_id == runtime_policy_id
+            )
+            result = await session.execute(stmt)
+            instance = result.scalar_one_or_none()
+            if instance is None:
+                return None
+            if policy_definition is not None:
+                instance.policy_definition = policy_definition
+            if status is not None:
+                instance.status = status
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
     async def get_active_flow_policy(
         self, tenant_id: UUID, flow_id: UUID
     ) -> RuntimePolicyModel | None:

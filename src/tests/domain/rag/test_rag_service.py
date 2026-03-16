@@ -38,20 +38,22 @@ class TestRagService:
     async def test_list_vector_stores_returns_empty_list_when_no_results(
         self, rag_service, repository
     ):
+        tenant_id = uuid4()
         repository.list_vector_stores = AsyncMock(return_value=[])
 
-        result = await rag_service.list_vector_stores()
+        result = await rag_service.list_vector_stores(tenant_id=tenant_id)
 
         assert result == []
-        repository.list_vector_stores.assert_called_once()
+        repository.list_vector_stores.assert_called_once_with(tenant_id=tenant_id)
 
     @pytest.mark.asyncio
     async def test_list_vector_stores_returns_stores(self, rag_service, repository):
+        tenant_id = uuid4()
         store_id = uuid4()
         mock_store = SimpleNamespace(vector_store_id=store_id, name="Pinecone")
         repository.list_vector_stores = AsyncMock(return_value=[mock_store])
 
-        result = await rag_service.list_vector_stores()
+        result = await rag_service.list_vector_stores(tenant_id=tenant_id)
 
         assert len(result) == 1
         assert result[0].id == store_id
@@ -134,7 +136,10 @@ class TestRagService:
         assert result.id == config_id
         assert result.vector_store_id == vector_store_id
         assert result.options == {"chunk_size": 512}
-        repository.get_vector_store.assert_called_once_with(vector_store_id)
+        repository.get_vector_store.assert_called_once_with(
+            vector_store_id,
+            tenant_id=tenant_id,
+        )
         repository.create_rag_config.assert_called_once()
         authoring_events.append_event.assert_called_once()
         call_args = authoring_events.append_event.call_args[1]
@@ -183,6 +188,7 @@ class TestRagService:
         )
         mock_published_config = SimpleNamespace(
             rag_config_id=config_id,
+            tenant_id=tenant_id,
             vector_store_id=vector_store_id,
             options={"chunk_size": 512},
             status=VersionStatus.PUBLISHED,
@@ -191,9 +197,10 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(return_value=mock_config)
+        repository.get_rag_config = AsyncMock(
+            side_effect=[mock_config, mock_published_config]
+        )
         repository.set_rag_config_status = AsyncMock()
-        repository.get_rag_config = AsyncMock(return_value=mock_published_config)
 
         result = await rag_service.publish_rag_config(
             tenant_id=tenant_id,
@@ -258,6 +265,7 @@ class TestRagService:
         )
         mock_deprecated_config = SimpleNamespace(
             rag_config_id=config_id,
+            tenant_id=tenant_id,
             vector_store_id=vector_store_id,
             options={"chunk_size": 512},
             status=VersionStatus.DEPRECATED,
@@ -266,9 +274,10 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(return_value=mock_config)
+        repository.get_rag_config = AsyncMock(
+            side_effect=[mock_config, mock_deprecated_config]
+        )
         repository.set_rag_config_status = AsyncMock()
-        repository.get_rag_config = AsyncMock(return_value=mock_deprecated_config)
 
         result = await rag_service.deprecate_rag_config(
             tenant_id=tenant_id,
@@ -333,6 +342,7 @@ class TestRagService:
         )
         mock_disabled_config = SimpleNamespace(
             rag_config_id=config_id,
+            tenant_id=tenant_id,
             vector_store_id=vector_store_id,
             options={"chunk_size": 512},
             status=VersionStatus.DISABLED,
@@ -341,9 +351,10 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(return_value=mock_config)
+        repository.get_rag_config = AsyncMock(
+            side_effect=[mock_config, mock_disabled_config]
+        )
         repository.set_rag_config_status = AsyncMock()
-        repository.get_rag_config = AsyncMock(return_value=mock_disabled_config)
 
         result = await rag_service.disable_rag_config(
             tenant_id=tenant_id,

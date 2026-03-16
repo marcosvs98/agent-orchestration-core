@@ -102,3 +102,91 @@ class RateLimitPolicyRepository:
                     )
 
                 return version
+
+    async def create_policy(
+        self, *, tenant_id: UUID, name: str
+    ) -> RateLimitPolicyModel:
+        async with self.db.get_session() as session:
+            instance = RateLimitPolicyModel(tenant_id=tenant_id, name=name)
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def list_policies(self, *, tenant_id: UUID) -> list[RateLimitPolicyModel]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(RateLimitPolicyModel)
+                .where(RateLimitPolicyModel.tenant_id == tenant_id)
+                .order_by(RateLimitPolicyModel.created_at.desc())
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_policy(
+        self, *, rate_limit_policy_id: UUID
+    ) -> RateLimitPolicyModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RateLimitPolicyModel).where(
+                RateLimitPolicyModel.rate_limit_policy_id == rate_limit_policy_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def create_version(
+        self,
+        *,
+        rate_limit_policy_id: UUID,
+        status: str,
+        version_major: int,
+        version_minor: int,
+        version_patch: int,
+        action: str,
+        principal_type: str,
+        limit: int,
+        window_seconds: int,
+        config_hash: str | None = None,
+    ) -> RateLimitPolicyVersionModel:
+        async with self.db.get_session() as session:
+            instance = RateLimitPolicyVersionModel(
+                rate_limit_policy_id=rate_limit_policy_id,
+                status=status,
+                version_major=version_major,
+                version_minor=version_minor,
+                version_patch=version_patch,
+                config_hash=config_hash,
+                action=action,
+                principal_type=principal_type,
+                limit=limit,
+                window_seconds=window_seconds,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def get_version(
+        self, *, rate_limit_policy_version_id: UUID
+    ) -> RateLimitPolicyVersionModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RateLimitPolicyVersionModel).where(
+                RateLimitPolicyVersionModel.rate_limit_policy_version_id
+                == rate_limit_policy_version_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def set_version_status(
+        self, *, rate_limit_policy_version_id: UUID, status: str
+    ) -> None:
+        async with self.db.get_session() as session:
+            stmt = select(RateLimitPolicyVersionModel).where(
+                RateLimitPolicyVersionModel.rate_limit_policy_version_id
+                == rate_limit_policy_version_id
+            )
+            result = await session.execute(stmt)
+            instance = result.scalar_one_or_none()
+            if instance is None:
+                return
+            instance.status = status
+            await session.commit()

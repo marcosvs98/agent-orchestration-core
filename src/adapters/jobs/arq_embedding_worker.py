@@ -143,7 +143,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",
-        dimension=1536,
+        dimension=settings.EMBEDDING_DIMENSION,
         tracer=tracer,
         cache_adapter=cache_adapter,
     )

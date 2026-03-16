@@ -76,6 +76,7 @@ from domain.governance.repositories.llm_model_mapping_repository import (
 )
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from domain.governance.services.execution_limit_service import ExecutionLimitService
+
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.jobs.arq_embedding_queue import ArqEmbeddingQueueAdapter
@@ -84,6 +85,7 @@ from domain.prompts.repositories.prompt_repository import PromptRepository
 from domain.agents.repositories.agents_repository import AgentsRepository
 from application.prompts.prompt_resolver import PromptResolver
 from domain.llm.services.context_builder import ContextBuilder
+from domain.llm.ports.moderation_provider import ModerationProviderPort
 from domain.llm.services.structured_output_schema_composer import (
     StructuredOutputSchemaComposer,
 )
@@ -104,6 +106,7 @@ from domain.context.services.memory_retrieval import MemoryRetrievalService
 from domain.context.services.session_context import SessionContextService
 from domain.context.services.memory_writer import MemoryWriteService
 from domain.context.services.runtime_policy import RuntimeContextLayerPolicy
+from domain.human_sla.services.human_sla_service import HumanSLAService
 from domain.governance.services.memory_policy_service import MemoryPolicyService
 from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.rag.repositories.rag_repository import RagRepository
@@ -141,6 +144,8 @@ class ExecutionService(ExecutionServicePort):
         openai_provider: LLMProviderPort | None = None,
         slm_local_provider: LLMProviderPort | None = None,
         secret_resolver: SecretResolverPort | None = None,
+        llm_moderation_provider: ModerationProviderPort | None = None,
+        human_sla_service: HumanSLAService | None = None,
     ) -> None:
         self.repository = repository
         self.idempotency = idempotency
@@ -207,7 +212,7 @@ class ExecutionService(ExecutionServicePort):
         embedding_adapter = OpenAIEmbeddingAdapter(
             api_key=settings.OPENAI_API_KEY,
             model="text-embedding-3-small",
-            dimension=1536,
+            dimension=settings.EMBEDDING_DIMENSION,
             tracer=tracer,
             cache_adapter=cache_adapter,
         )
@@ -223,11 +228,15 @@ class ExecutionService(ExecutionServicePort):
         )
         if not tools_service and isinstance(self.tools_service, ToolsService):
             self.tools_service.tool_catalog_indexer = tool_catalog_indexer
-        semantic_cache_repository = SemanticCacheRepository(repository.db)
+        semantic_cache_repository = SemanticCacheRepository(
+            repository.db,
+            embedding_dimension=settings.EMBEDDING_DIMENSION,
+        )
         semantic_cache_service = SemanticCacheService(
             repository=semantic_cache_repository,
             embedding_adapter=embedding_adapter,
             tracer=self.tracer,
+            embedding_dimension=settings.EMBEDDING_DIMENSION,
         )
         self.llm_executor = LayeredInferenceOrchestrator(
             llm_executor=llm_executor_base,
@@ -325,6 +334,8 @@ class ExecutionService(ExecutionServicePort):
                 tool_catalog_retriever=tool_catalog_retriever,
                 tool_catalog_indexer=tool_catalog_indexer,
                 agents_repository=self.agents_repository,
+                llm_moderation_provider=llm_moderation_provider,
+                human_sla_service=human_sla_service,
             ),
             tracer=self.tracer,
             hook=self.hook,
@@ -366,6 +377,22 @@ class ExecutionService(ExecutionServicePort):
                     "max_llm_calls_per_tenant_window": 500,
                     "tenant_llm_calls_window_seconds": 3600,
                     "max_latency_ms_hard": 15000,
+                },
+                "moderation": {
+                    "primary": {
+                        "provider": "SLM_LOCAL",
+                        "model_alias": "slm-local-moderation",
+                        "timeout_ms": 300,
+                    },
+                    "fallback": {
+                        "provider": "OPENAI",
+                        "model_alias": settings.OPENAI_MODERATION_MODEL,
+                        "timeout_ms": 1000,
+                    },
+                    "fallback_enabled": True,
+                    "prompt_key": "InputModerationNode",
+                    "temperature": 0.0,
+                    "max_tokens": 18,
                 },
                 "memory_extraction": {},
                 "memory_retrieval": {},

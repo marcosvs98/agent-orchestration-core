@@ -63,31 +63,20 @@ class ToolCatalogRetriever:
             )
             selected = ranked[:top_k]
             if not selected:
-                sorted_tools = sorted(
-                    available_tools, key=lambda t: (t.name or "").lower()
-                )
-                candidates = sorted_tools[:1]
-                evidence: list[dict[str, Any]] = []
+                evidence_empty: list[dict[str, Any]] = []
                 if retrieve_handle:
                     retrieve_handle.success(
                         output={
                             "context_item_count": len(context.context_items),
                             "ranked_count": len(ranked),
-                            "candidate_count": len(candidates),
-                            "fallback_used": True,
+                            "candidate_count": 0,
+                            "fallback_used": False,
                             "rag_reason": str(context.reason),
-                            "selected_tools": [
-                                {
-                                    "name": candidate.name,
-                                    "tool_config_id": str(candidate.tool_config_id),
-                                    "retrieval_score": candidate.retrieval_score,
-                                }
-                                for candidate in candidates
-                            ],
-                            "evidence": evidence,
+                            "selected_tools": [],
+                            "evidence": evidence_empty,
                         }
                     )
-                return candidates, evidence
+                return [], evidence_empty
             candidates = []
             evidence = []
             for item in selected:

@@ -65,9 +65,9 @@ def _policy_definition() -> dict:
             "max_tokens": 1024,
             "inference_layers": {
                 "cache_enabled": True,
-                "cache_similarity_threshold": 0.92,
+                "cache_similarity_threshold": 0.95,
                 "cache_ttl_seconds": 3600,
-                "slm_enabled": False,
+                "slm_enabled": True,
                 "slm_eligible_tasks": [
                     "intent_selection",
                     "tool_selection",
@@ -76,6 +76,22 @@ def _policy_definition() -> dict:
                 "slm_model_alias": "qwen2.5-1.5b-instruct",
                 "escalation_on_schema_mismatch": True,
             },
+        },
+        "moderation": {
+            "primary": {
+                "provider": "SLM_LOCAL",
+                "model_alias": "slm-local-moderation",
+                "timeout_ms": 300,
+            },
+            "fallback": {
+                "provider": "OPENAI",
+                "model_alias": "omni-moderation-latest",
+                "timeout_ms": 1000,
+            },
+            "fallback_enabled": True,
+            "prompt_key": "InputModerationNode",
+            "temperature": 0.0,
+            "max_tokens": 18,
         },
         "user_context_enrichment": {
             "enabled": False,

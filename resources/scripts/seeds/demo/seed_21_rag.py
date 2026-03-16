@@ -23,7 +23,7 @@ from infra.database import get_db
 from infra.database import DatabaseConnection, async_session, engine
 from infra.database.models.rag.rag_config import RagConfig
 from infra.database.models.rag.vector_store import VectorStore
-from settings import OPENAI_API_KEY
+from settings import EMBEDDING_DIMENSION, OPENAI_API_KEY
 
 from seeds.demo.ids import (
     RAG_CONFIG_DEMO_ID,
@@ -172,7 +172,7 @@ async def seed_rag() -> None:
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=OPENAI_API_KEY,
         model="text-embedding-3-small",
-        dimension=1536,
+        dimension=EMBEDDING_DIMENSION,
         tracer=tracer,
         cache_adapter=cache_adapter,
     )

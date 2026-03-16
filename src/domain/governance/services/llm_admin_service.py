@@ -7,6 +7,7 @@ from domain.governance.repositories.llm_model_mapping_repository import (
 )
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from domain.governance.repositories.llm_provider_repository import LLMProviderRepository
+from exceptions.service_exceptions import DomainValidationException
 
 
 class LLMAdminService:
@@ -49,6 +50,12 @@ class LLMAdminService:
         status: str,
         created_by: str,
     ):
+        active_provider = await self.provider_repository.get_active_config(
+            tenant_id=tenant_id,
+            provider=provider,
+        )
+        if active_provider is None:
+            raise DomainValidationException(message="llm_provider_config_not_active")
         return await self.mapping_repository.upsert_mapping(
             tenant_id=tenant_id,
             provider=provider,

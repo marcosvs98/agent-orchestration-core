@@ -92,3 +92,81 @@ class AccessPolicyRepository:
                     )
 
                 return version
+
+    async def create_policy(self, *, tenant_id: UUID, name: str) -> AccessPolicyModel:
+        async with self.db.get_session() as session:
+            instance = AccessPolicyModel(tenant_id=tenant_id, name=name)
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def get_policy(self, *, access_policy_id: UUID) -> AccessPolicyModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(AccessPolicyModel).where(
+                AccessPolicyModel.access_policy_id == access_policy_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def list_policies(self, *, tenant_id: UUID) -> list[AccessPolicyModel]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AccessPolicyModel)
+                .where(AccessPolicyModel.tenant_id == tenant_id)
+                .order_by(AccessPolicyModel.created_at.desc())
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def create_version(
+        self,
+        *,
+        access_policy_id: UUID,
+        rules: dict[str, object],
+        status: str,
+        version_major: int,
+        version_minor: int,
+        version_patch: int,
+        config_hash: str | None = None,
+    ) -> AccessPolicyVersionModel:
+        async with self.db.get_session() as session:
+            instance = AccessPolicyVersionModel(
+                access_policy_id=access_policy_id,
+                status=status,
+                version_major=version_major,
+                version_minor=version_minor,
+                version_patch=version_patch,
+                config_hash=config_hash,
+                rules=rules,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def get_version(
+        self, *, access_policy_version_id: UUID
+    ) -> AccessPolicyVersionModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(AccessPolicyVersionModel).where(
+                AccessPolicyVersionModel.access_policy_version_id
+                == access_policy_version_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def set_version_status(
+        self, *, access_policy_version_id: UUID, status: str
+    ) -> None:
+        async with self.db.get_session() as session:
+            stmt = select(AccessPolicyVersionModel).where(
+                AccessPolicyVersionModel.access_policy_version_id
+                == access_policy_version_id
+            )
+            result = await session.execute(stmt)
+            instance = result.scalar_one_or_none()
+            if instance is None:
+                return
+            instance.status = status
+            await session.commit()

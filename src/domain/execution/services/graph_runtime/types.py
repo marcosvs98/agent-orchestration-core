@@ -47,6 +47,53 @@ class OperationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ToolSelectionMode(StrEnum):
+    """How tool selection was decided. Used for observability and tracing."""
+
+    SEMANTIC_NOOP = "semantic_noop"
+    SINGLE_TOOL_AUTO_SELECT = "single_tool_auto_select"
+    SINGLE_CANDIDATE_NO_LLM = "single_candidate_no_llm"
+    HEURISTIC_AUTO_SELECT = "heuristic_auto_select"
+    SEMANTIC = "semantic"
+    LLM_FALLBACK = "llm_fallback"
+
+
+class ToolSelectionReason(StrEnum):
+    """Reason for the tool selection outcome. Used for observability and tracing."""
+
+    MISSING_USER_INPUT = "missing_user_input"
+    SINGLE_TOOL_AFTER_INTENT_FILTER = "single_tool_after_intent_filter"
+    NO_TOOLS_AFTER_INTENT_FILTER = "no_tools_after_intent_filter"
+    RAG_CONFIG_NOT_FOUND = "rag_config_not_found"
+    RAG_RETURNED_NO_CANDIDATES = "rag_returned_no_candidates"
+    NO_SEMANTIC_EVIDENCE_BUT_SINGLE_CANDIDATE = (
+        "no_semantic_evidence_but_single_candidate"
+    )
+    ABOVE_CONFIDENCE_THRESHOLD = "above_confidence_threshold"
+    BELOW_CONFIDENCE_THRESHOLD = "below_confidence_threshold"
+
+
+class ToolIntentFilter(StrEnum):
+    QUERY = "query"
+    COMMAND = "command"
+
+
+class IntentClassificationMode(StrEnum):
+    HEURISTIC = "heuristic"
+    SEMANTIC = "semantic"
+    LLM_FALLBACK = "llm_fallback"
+    DEFAULT = "default"
+
+
+class IntentClassificationReason(StrEnum):
+    EMPTY_USER_INPUT = "empty_user_input"
+    RAG_CONFIG_NOT_FOUND = "rag_config_not_found"
+    NO_SEMANTIC_MATCH = "no_semantic_match"
+    ABOVE_CONFIDENCE_THRESHOLD = "above_confidence_threshold"
+    BELOW_CONFIDENCE_THRESHOLD = "below_confidence_threshold"
+    LLM_FALLBACK_UNAVAILABLE = "llm_fallback_unavailable"
+
+
 class ExecutionContext(BaseModel):
     """Immutable per-step context used by the runtime."""
 

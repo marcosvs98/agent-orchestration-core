@@ -18,7 +18,8 @@ class RagQueryCache(ORMBaseModel):
         nullable=False,
     )
     query_hash = Column(String(length=128), nullable=False)
-    embedding = Column(Vector(1536), nullable=False)
+    embedding = Column(Vector(1536), nullable=True)
+    embedding_512 = Column(Vector(512), nullable=True)
     embedding_model = Column(String(length=128), nullable=False)
     embedding_dimension = Column(Integer, nullable=False)
     use_count = Column(Integer, nullable=False, server_default="0")

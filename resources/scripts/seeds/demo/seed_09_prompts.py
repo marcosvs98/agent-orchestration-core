@@ -17,6 +17,7 @@ from infra.database.models.prompts.node_prompt import NodePrompt
 from seeds.demo.ids import (
     PRINCIPAL_SYSTEM,
     PROMPT_CLARIFICATION_ID,
+    PROMPT_INPUT_MODERATION_ID,
     PROMPT_INTENT_ID,
     PROMPT_RESPONSE_ID,
     PROMPT_SLOT_ID,
@@ -91,7 +92,26 @@ Select the best matching tool(s) for each user intent. Return one entry per inte
 # Constraints
 - selected_tool must reference a tool from available_tools by name and tool_config_id.
 - confidence between 0 and 1."""
+        input_moderation_template = """You are a moderation classifier.
+Return JSON only.
+{
+ "flagged": boolean
+}
+
+flagged = true if the text contains hate, harassment, sexual content,
+self harm, violence, or offensive language."""
         prompts = [
+            (
+                PROMPT_INPUT_MODERATION_ID,
+                "InputModerationNode",
+                input_moderation_template,
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"flagged": {"type": "boolean"}},
+                    "required": ["flagged"],
+                },
+            ),
             (
                 PROMPT_INTENT_ID,
                 "IntentDetectionNode",

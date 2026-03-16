@@ -8,6 +8,10 @@ class AIServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
+    async def create_ai_task(self, ai_task_create):
+        raise NotImplementedServiceException()
+
+    @abstractmethod
     async def create_ai_execution_policy(self, ai_execution_policy_create):
         raise NotImplementedServiceException()
 
@@ -19,4 +23,8 @@ class AIServicePort(ABC):
 
     @abstractmethod
     async def list_models(self):
+        raise NotImplementedServiceException()
+
+    @abstractmethod
+    async def create_model(self, model_create):
         raise NotImplementedServiceException()
