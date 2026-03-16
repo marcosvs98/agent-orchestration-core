@@ -336,6 +336,21 @@ class ToolsService(ToolsServicePort):
             tool_config_id=model.tool_config_id,
         )
 
+    async def list_tool_bindings_by_agent_version(
+        self, *, tenant_id: UUID, agent_version_id: UUID
+    ) -> list[AgentVersionToolBinding]:
+        models = await self.repository.list_tool_bindings_by_agent_version_id(
+            tenant_id=tenant_id, agent_version_id=agent_version_id
+        )
+        return [
+            AgentVersionToolBinding(
+                id=m.agent_version_tool_binding_id,
+                agent_version_id=m.agent_version_id,
+                tool_config_id=m.tool_config_id,
+            )
+            for m in models
+        ]
+
     async def _index_tool_catalog_document(
         self,
         *,

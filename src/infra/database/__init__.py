@@ -17,7 +17,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=3600,
     echo_pool=False,
-    pool_reset_on_return="commit",
+    pool_reset_on_return="rollback",
     connect_args={"server_settings": {"application_name": "agent-orchestration-core"}},
 )
 async_session = sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
@@ -40,6 +40,10 @@ class DatabaseConnection:
                 await session.rollback()
                 raise exc from exc
             finally:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
                 await session.close()
 
 
@@ -54,6 +58,10 @@ async def get_db() -> _AsyncGeneratorContextManager[AsyncSession]:  # type: igno
             await session.rollback()
             raise exc from exc
         finally:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             await session.close()
 
 

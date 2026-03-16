@@ -38,7 +38,9 @@ class RagPolicyRepository:
 
     async def get_policy(self, *, rag_policy_id: UUID) -> RagPolicyModel | None:
         async with self.db.get_session() as session:
-            stmt = select(RagPolicyModel).where(RagPolicyModel.rag_policy_id == rag_policy_id)
+            stmt = select(RagPolicyModel).where(
+                RagPolicyModel.rag_policy_id == rag_policy_id
+            )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
@@ -78,7 +80,9 @@ class RagPolicyRepository:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def set_version_status(self, *, rag_policy_version_id: UUID, status: str) -> None:
+    async def set_version_status(
+        self, *, rag_policy_version_id: UUID, status: str
+    ) -> None:
         async with self.db.get_session() as session:
             stmt = select(RagPolicyVersionModel).where(
                 RagPolicyVersionModel.rag_policy_version_id == rag_policy_version_id

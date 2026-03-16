@@ -49,6 +49,41 @@ class HumanSLAService:
             return None
         return created_case.sla_case_id
 
+    async def get_or_create_open_case_for_fallback(
+        self,
+        tenant_id: UUID,
+        session_id: UUID,
+        flow_run_id: UUID,
+        node_run_id: UUID,
+        interaction_id: UUID | None,
+        user_id: str,
+        fallback_reason: SLAFallbackReason,
+        opened_at: datetime,
+        priority: str | None = None,
+        sla_target_at: datetime | None = None,
+    ) -> SLACaseResponse | None:
+        existing = await self.repository.get_last_open_case_for_session(
+            tenant_id=tenant_id, session_id=session_id
+        )
+        if existing is not None:
+            return SLACaseResponse.model_validate(existing)
+        case_create = SLACaseCreate(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            flow_run_id=flow_run_id,
+            node_run_id=node_run_id,
+            interaction_id=interaction_id,
+            user_id=user_id,
+            priority=priority,
+            fallback_reason=fallback_reason,
+            opened_at=opened_at,
+            sla_target_at=sla_target_at,
+        )
+        created_case = await self.repository.create_case(case_create)
+        if created_case is None:
+            return None
+        return SLACaseResponse.model_validate(created_case)
+
     async def list_open_cases(
         self, tenant_id: UUID, limit: int, offset: int
     ) -> list[SLACaseResponse]:
@@ -75,8 +110,12 @@ class HumanSLAService:
         )
         return [SLACaseResponse.model_validate(case) for case in cases]
 
-    async def get_case_detail(self, tenant_id: UUID, sla_case_id: UUID) -> SLACaseResponse:
-        case = await self.repository.get_case(sla_case_id=sla_case_id, tenant_id=tenant_id)
+    async def get_case_detail(
+        self, tenant_id: UUID, sla_case_id: UUID
+    ) -> SLACaseResponse:
+        case = await self.repository.get_case(
+            sla_case_id=sla_case_id, tenant_id=tenant_id
+        )
         if case is None:
             raise NotFoundServiceException(message="sla_case_not_found")
         return SLACaseResponse.model_validate(case)

@@ -760,6 +760,7 @@ class ExecutionService(ExecutionServicePort):
                 ) as chain_handle:
                     await self.runtime.run(
                         tenant_id=tenant_id,
+                        interaction_id=interaction_id,
                         session_id=flow_run.session_id,
                         input_payload=flow_run.input,
                         flow_id=flow_id,

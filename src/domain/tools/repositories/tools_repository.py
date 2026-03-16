@@ -515,3 +515,28 @@ class ToolsRepository:
                 await session.commit()
                 await session.refresh(instance)
                 return instance
+
+    async def list_tool_bindings_by_agent_version_id(
+        self, *, tenant_id: UUID, agent_version_id: UUID
+    ) -> list[AgentVersionToolBindingModel]:
+        async with self.db.get_session() as session:
+            stmt_av = (
+                select(AgentVersionModel.agent_version_id)
+                .join(AgentModel, AgentVersionModel.agent_id == AgentModel.agent_id)
+                .where(
+                    AgentVersionModel.agent_version_id == agent_version_id,
+                    AgentModel.tenant_id == tenant_id,
+                )
+            )
+            result_av = await session.execute(stmt_av)
+            if result_av.scalar_one_or_none() is None:
+                raise NotFoundServiceException(message="agent_version_not_found")
+            stmt = (
+                select(AgentVersionToolBindingModel)
+                .where(
+                    AgentVersionToolBindingModel.agent_version_id == agent_version_id,
+                )
+                .order_by(AgentVersionToolBindingModel.agent_version_tool_binding_id)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())

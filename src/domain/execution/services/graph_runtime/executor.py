@@ -61,6 +61,7 @@ class RuntimeExecutor:
         self,
         *,
         tenant_id: UUID,
+        interaction_id: UUID,
         session_id: UUID,
         input_payload: FlowRunInput,
         flow_id: UUID,
@@ -94,6 +95,7 @@ class RuntimeExecutor:
 
         context = ExecutionContext(
             tenant_id=tenant_id,
+            interaction_id=interaction_id,
             user_id=trace_user_id,
             session_id=session_id,
             input_payload=input_payload.model_dump(mode="json"),

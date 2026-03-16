@@ -12,6 +12,7 @@ class LLMTaskType(StrEnum):
     CLARIFICATION = "clarification"
     RESPONSE_RENDER = "response_render"
     MEMORY_EXTRACTION = "memory_extraction"  # Todo: needs-clarification: removing this enum member requires changing MemoryExtractionProcessor task typing and event contracts.
+    FALLBACK_RESPONSE = "fallback_response"
 
 
 class LLMProviderType(StrEnum):

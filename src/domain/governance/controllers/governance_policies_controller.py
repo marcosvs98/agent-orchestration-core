@@ -31,7 +31,9 @@ from domain.governance.schemas.policy_admin import (
     RuntimePolicyUpdate,
 )
 from domain.governance.schemas.scopes import Scope
-from domain.governance.services.governance_policies_service import GovernancePoliciesService
+from domain.governance.services.governance_policies_service import (
+    GovernancePoliciesService,
+)
 from exceptions.service_exceptions import AuthorizationDeniedException
 from utils.auth import AuthContext, get_auth_context
 
@@ -48,34 +50,209 @@ class GovernancePoliciesController:
 
     def _bind_routes(self) -> None:
         r = self.router.add_api_route
-        r("/runtime-policies", self.create_runtime_policy, methods=["POST"], response_model=RuntimePolicyResponse)
-        r("/runtime-policies", self.list_runtime_policies, methods=["GET"], response_model=list[RuntimePolicyResponse])
-        r("/runtime-policies/{runtime_policy_id}", self.get_runtime_policy, methods=["GET"], response_model=RuntimePolicyResponse)
-        r("/runtime-policies/{runtime_policy_id}", self.update_runtime_policy, methods=["PATCH"], response_model=RuntimePolicyResponse)
-        r("/runtime-policies/{runtime_policy_id}:activate", self.activate_runtime_policy, methods=["POST"], response_model=RuntimePolicyResponse)
+        r(
+            "/runtime-policies",
+            self.create_runtime_policy,
+            methods=["POST"],
+            response_model=RuntimePolicyResponse,
+        )
+        r(
+            "/runtime-policies",
+            self.list_runtime_policies,
+            methods=["GET"],
+            response_model=list[RuntimePolicyResponse],
+        )
+        r(
+            "/runtime-policies/{runtime_policy_id}",
+            self.get_runtime_policy,
+            methods=["GET"],
+            response_model=RuntimePolicyResponse,
+        )
+        r(
+            "/runtime-policies/{runtime_policy_id}",
+            self.update_runtime_policy,
+            methods=["PATCH"],
+            response_model=RuntimePolicyResponse,
+        )
+        r(
+            "/runtime-policies/{runtime_policy_id}:activate",
+            self.activate_runtime_policy,
+            methods=["POST"],
+            response_model=RuntimePolicyResponse,
+        )
 
-        r("/access-policies", self.create_access_policy, methods=["POST"], response_model=AccessPolicyResponse)
-        r("/access-policies/{access_policy_id}/versions", self.create_access_policy_version, methods=["POST"], response_model=AccessPolicyVersionResponse)
-        r("/access-policies/versions/{access_policy_version_id}:publish", self.publish_access_policy_version, methods=["POST"], response_model=AccessPolicyVersionResponse)
+        r(
+            "/access-policies",
+            self.create_access_policy,
+            methods=["POST"],
+            response_model=AccessPolicyResponse,
+        )
+        r(
+            "/access-policies",
+            self.list_access_policies,
+            methods=["GET"],
+            response_model=list[AccessPolicyResponse],
+        )
+        r(
+            "/access-policies/{access_policy_id}",
+            self.get_access_policy,
+            methods=["GET"],
+            response_model=AccessPolicyResponse,
+        )
+        r(
+            "/access-policies/{access_policy_id}/versions",
+            self.create_access_policy_version,
+            methods=["POST"],
+            response_model=AccessPolicyVersionResponse,
+        )
+        r(
+            "/access-policies/versions/{access_policy_version_id}:publish",
+            self.publish_access_policy_version,
+            methods=["POST"],
+            response_model=AccessPolicyVersionResponse,
+        )
 
-        r("/rate-limit-policies", self.create_rate_limit_policy, methods=["POST"], response_model=RateLimitPolicyResponse)
-        r("/rate-limit-policies/{rate_limit_policy_id}/versions", self.create_rate_limit_policy_version, methods=["POST"], response_model=RateLimitPolicyVersionResponse)
-        r("/rate-limit-policies/versions/{rate_limit_policy_version_id}:publish", self.publish_rate_limit_policy_version, methods=["POST"], response_model=RateLimitPolicyVersionResponse)
+        r(
+            "/rate-limit-policies",
+            self.create_rate_limit_policy,
+            methods=["POST"],
+            response_model=RateLimitPolicyResponse,
+        )
+        r(
+            "/rate-limit-policies",
+            self.list_rate_limit_policies,
+            methods=["GET"],
+            response_model=list[RateLimitPolicyResponse],
+        )
+        r(
+            "/rate-limit-policies/{rate_limit_policy_id}",
+            self.get_rate_limit_policy,
+            methods=["GET"],
+            response_model=RateLimitPolicyResponse,
+        )
+        r(
+            "/rate-limit-policies/{rate_limit_policy_id}/versions",
+            self.create_rate_limit_policy_version,
+            methods=["POST"],
+            response_model=RateLimitPolicyVersionResponse,
+        )
+        r(
+            "/rate-limit-policies/versions/{rate_limit_policy_version_id}:publish",
+            self.publish_rate_limit_policy_version,
+            methods=["POST"],
+            response_model=RateLimitPolicyVersionResponse,
+        )
 
-        r("/billing-policies", self.create_billing_policy, methods=["POST"], response_model=BillingPolicyResponse)
-        r("/billing-policies/{billing_policy_id}/versions", self.create_billing_policy_version, methods=["POST"], response_model=BillingPolicyVersionResponse)
-        r("/billing-policies/versions/{billing_policy_version_id}:publish", self.publish_billing_policy_version, methods=["POST"], response_model=BillingPolicyVersionResponse)
-        r("/billing-policies/versions/{billing_policy_version_id}:activate", self.activate_billing_policy_version, methods=["POST"], response_model=BillingPolicyVersionResponse)
+        r(
+            "/billing-policies",
+            self.create_billing_policy,
+            methods=["POST"],
+            response_model=BillingPolicyResponse,
+        )
+        r(
+            "/billing-policies",
+            self.list_billing_policies,
+            methods=["GET"],
+            response_model=list[BillingPolicyResponse],
+        )
+        r(
+            "/billing-policies/{billing_policy_id}",
+            self.get_billing_policy,
+            methods=["GET"],
+            response_model=BillingPolicyResponse,
+        )
+        r(
+            "/billing-policies/{billing_policy_id}/versions",
+            self.create_billing_policy_version,
+            methods=["POST"],
+            response_model=BillingPolicyVersionResponse,
+        )
+        r(
+            "/billing-policies/versions/{billing_policy_version_id}:publish",
+            self.publish_billing_policy_version,
+            methods=["POST"],
+            response_model=BillingPolicyVersionResponse,
+        )
+        r(
+            "/billing-policies/versions/{billing_policy_version_id}:activate",
+            self.activate_billing_policy_version,
+            methods=["POST"],
+            response_model=BillingPolicyVersionResponse,
+        )
 
-        r("/memory-policies", self.create_memory_policy, methods=["POST"], response_model=MemoryPolicyResponse)
-        r("/memory-policies/{memory_policy_id}/versions", self.create_memory_policy_version, methods=["POST"], response_model=MemoryPolicyVersionResponse)
-        r("/memory-policies/versions/{memory_policy_version_id}:publish", self.publish_memory_policy_version, methods=["POST"], response_model=MemoryPolicyVersionResponse)
-        r("/memory-policies/versions/{memory_policy_version_id}:activate", self.activate_memory_policy_version, methods=["POST"], response_model=MemoryPolicyVersionResponse)
+        r(
+            "/memory-policies",
+            self.create_memory_policy,
+            methods=["POST"],
+            response_model=MemoryPolicyResponse,
+        )
+        r(
+            "/memory-policies",
+            self.list_memory_policies,
+            methods=["GET"],
+            response_model=list[MemoryPolicyResponse],
+        )
+        r(
+            "/memory-policies/{memory_policy_id}",
+            self.get_memory_policy,
+            methods=["GET"],
+            response_model=MemoryPolicyResponse,
+        )
+        r(
+            "/memory-policies/{memory_policy_id}/versions",
+            self.create_memory_policy_version,
+            methods=["POST"],
+            response_model=MemoryPolicyVersionResponse,
+        )
+        r(
+            "/memory-policies/versions/{memory_policy_version_id}:publish",
+            self.publish_memory_policy_version,
+            methods=["POST"],
+            response_model=MemoryPolicyVersionResponse,
+        )
+        r(
+            "/memory-policies/versions/{memory_policy_version_id}:activate",
+            self.activate_memory_policy_version,
+            methods=["POST"],
+            response_model=MemoryPolicyVersionResponse,
+        )
 
-        r("/rag-policies", self.create_rag_policy, methods=["POST"], response_model=RagPolicyResponse)
-        r("/rag-policies/{rag_policy_id}/versions", self.create_rag_policy_version, methods=["POST"], response_model=RagPolicyVersionResponse)
-        r("/rag-policies/versions/{rag_policy_version_id}:publish", self.publish_rag_policy_version, methods=["POST"], response_model=RagPolicyVersionResponse)
-        r("/rag-policies/versions/{rag_policy_version_id}:activate", self.activate_rag_policy_version, methods=["POST"], response_model=RagPolicyVersionResponse)
+        r(
+            "/rag-policies",
+            self.create_rag_policy,
+            methods=["POST"],
+            response_model=RagPolicyResponse,
+        )
+        r(
+            "/rag-policies",
+            self.list_rag_policies,
+            methods=["GET"],
+            response_model=list[RagPolicyResponse],
+        )
+        r(
+            "/rag-policies/{rag_policy_id}",
+            self.get_rag_policy,
+            methods=["GET"],
+            response_model=RagPolicyResponse,
+        )
+        r(
+            "/rag-policies/{rag_policy_id}/versions",
+            self.create_rag_policy_version,
+            methods=["POST"],
+            response_model=RagPolicyVersionResponse,
+        )
+        r(
+            "/rag-policies/versions/{rag_policy_version_id}:publish",
+            self.publish_rag_policy_version,
+            methods=["POST"],
+            response_model=RagPolicyVersionResponse,
+        )
+        r(
+            "/rag-policies/versions/{rag_policy_version_id}:activate",
+            self.activate_rag_policy_version,
+            methods=["POST"],
+            response_model=RagPolicyVersionResponse,
+        )
 
     @staticmethod
     def _ensure_scope(auth: AuthContext, scope: Scope) -> None:
@@ -144,7 +321,27 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> AccessPolicyResponse:
         self._ensure_scope(auth, Scope.AccessPoliciesCreate)
-        return await self.service.create_access_policy(tenant_id=auth.tenant_id, payload=payload)
+        return await self.service.create_access_policy(
+            tenant_id=auth.tenant_id, payload=payload
+        )
+
+    async def list_access_policies(
+        self,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[AccessPolicyResponse]:
+        self._ensure_scope(auth, Scope.AccessPoliciesList)
+        return await self.service.list_access_policies(tenant_id=auth.tenant_id)
+
+    async def get_access_policy(
+        self,
+        access_policy_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> AccessPolicyResponse:
+        self._ensure_scope(auth, Scope.AccessPoliciesRead)
+        return await self.service.get_access_policy(
+            tenant_id=auth.tenant_id,
+            access_policy_id=access_policy_id,
+        )
 
     async def create_access_policy_version(
         self,
@@ -174,7 +371,27 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> RateLimitPolicyResponse:
         self._ensure_scope(auth, Scope.RateLimitPoliciesCreate)
-        return await self.service.create_rate_limit_policy(tenant_id=auth.tenant_id, payload=payload)
+        return await self.service.create_rate_limit_policy(
+            tenant_id=auth.tenant_id, payload=payload
+        )
+
+    async def list_rate_limit_policies(
+        self,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[RateLimitPolicyResponse]:
+        self._ensure_scope(auth, Scope.RateLimitPoliciesList)
+        return await self.service.list_rate_limit_policies(tenant_id=auth.tenant_id)
+
+    async def get_rate_limit_policy(
+        self,
+        rate_limit_policy_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RateLimitPolicyResponse:
+        self._ensure_scope(auth, Scope.RateLimitPoliciesRead)
+        return await self.service.get_rate_limit_policy(
+            tenant_id=auth.tenant_id,
+            rate_limit_policy_id=rate_limit_policy_id,
+        )
 
     async def create_rate_limit_policy_version(
         self,
@@ -204,7 +421,27 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> BillingPolicyResponse:
         self._ensure_scope(auth, Scope.BillingPoliciesCreate)
-        return await self.service.create_billing_policy(tenant_id=auth.tenant_id, payload=payload)
+        return await self.service.create_billing_policy(
+            tenant_id=auth.tenant_id, payload=payload
+        )
+
+    async def list_billing_policies(
+        self,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[BillingPolicyResponse]:
+        self._ensure_scope(auth, Scope.BillingPoliciesList)
+        return await self.service.list_billing_policies(tenant_id=auth.tenant_id)
+
+    async def get_billing_policy(
+        self,
+        billing_policy_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> BillingPolicyResponse:
+        self._ensure_scope(auth, Scope.BillingPoliciesRead)
+        return await self.service.get_billing_policy(
+            tenant_id=auth.tenant_id,
+            billing_policy_id=billing_policy_id,
+        )
 
     async def create_billing_policy_version(
         self,
@@ -248,7 +485,27 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> MemoryPolicyResponse:
         self._ensure_scope(auth, Scope.MemoryPoliciesCreate)
-        return await self.service.create_memory_policy(tenant_id=auth.tenant_id, payload=payload)
+        return await self.service.create_memory_policy(
+            tenant_id=auth.tenant_id, payload=payload
+        )
+
+    async def list_memory_policies(
+        self,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[MemoryPolicyResponse]:
+        self._ensure_scope(auth, Scope.MemoryPoliciesList)
+        return await self.service.list_memory_policies(tenant_id=auth.tenant_id)
+
+    async def get_memory_policy(
+        self,
+        memory_policy_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> MemoryPolicyResponse:
+        self._ensure_scope(auth, Scope.MemoryPoliciesRead)
+        return await self.service.get_memory_policy(
+            tenant_id=auth.tenant_id,
+            memory_policy_id=memory_policy_id,
+        )
 
     async def create_memory_policy_version(
         self,
@@ -292,7 +549,27 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> RagPolicyResponse:
         self._ensure_scope(auth, Scope.RagPoliciesCreate)
-        return await self.service.create_rag_policy(tenant_id=auth.tenant_id, payload=payload)
+        return await self.service.create_rag_policy(
+            tenant_id=auth.tenant_id, payload=payload
+        )
+
+    async def list_rag_policies(
+        self,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[RagPolicyResponse]:
+        self._ensure_scope(auth, Scope.RagPoliciesList)
+        return await self.service.list_rag_policies(tenant_id=auth.tenant_id)
+
+    async def get_rag_policy(
+        self,
+        rag_policy_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagPolicyResponse:
+        self._ensure_scope(auth, Scope.RagPoliciesRead)
+        return await self.service.get_rag_policy(
+            tenant_id=auth.tenant_id,
+            rag_policy_id=rag_policy_id,
+        )
 
     async def create_rag_policy_version(
         self,

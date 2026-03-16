@@ -16,7 +16,10 @@ from domain.execution.schemas.execution import (
 )
 from domain.execution.services.execution_service import ExecutionService
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
-from exceptions.service_exceptions import NotFoundServiceException
+from exceptions.service_exceptions import (
+    DomainValidationException,
+    NotFoundServiceException,
+)
 from utils.auth import AuthContext
 
 
@@ -244,7 +247,12 @@ class ExecutionBoundary:
             scopes=auth.scopes,
             action=str(Scope.ExecutionNodeRunsList),
         )
-        flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
+        try:
+            flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
+        except (ValueError, TypeError):
+            raise DomainValidationException(
+                message="Invalid flow_run_id format; expected UUID."
+            )
         return await self.execution_service.list_node_runs(
             tenant_id=auth.tenant_id, flow_run_id=flow_run_uuid, limit=limit
         )
@@ -269,7 +277,12 @@ class ExecutionBoundary:
             scopes=auth.scopes,
             action=str(Scope.ExecutionAgentRunsList),
         )
-        flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
+        try:
+            flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
+        except (ValueError, TypeError):
+            raise DomainValidationException(
+                message="Invalid flow_run_id format; expected UUID."
+            )
         return await self.execution_service.list_agent_runs(
             tenant_id=auth.tenant_id, flow_run_id=flow_run_uuid, limit=limit
         )

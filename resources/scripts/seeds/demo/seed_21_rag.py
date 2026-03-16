@@ -129,6 +129,7 @@ async def seed_rag() -> None:
         if existing_store is None:
             vector_store = VectorStore(
                 vector_store_id=VECTOR_STORE_DEMO_ID,
+                tenant_id=TENANT_DEMO_ID,
                 name="Assistente de Bolso - Conhecimento",
             )
             session.add(vector_store)

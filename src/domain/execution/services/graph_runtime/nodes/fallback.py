@@ -2,91 +2,75 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict
-from uuid import UUID
 
-from domain.human_sla.schemas.sla_case import SLAFallbackReason
-from domain.human_sla.services.human_sla_service import HumanSLAService
+from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.execution.services.graph_runtime.nodes._llm_base import LLMNodeExecutor
 from domain.execution.services.graph_runtime.types import (
     ExecutionContext,
     NodeExecutionStatus,
-    NodeExecutor,
     NodeResult,
 )
-from domain.prompts.schemas.prompt import NodeType
+from domain.human_sla.schemas.sla_case import SLAFallbackReason, SeverityLevel
+from domain.human_sla.services.human_sla_service import HumanSLAService
+from domain.llm.ports.completion_budget_policy import CompletionBudgetPolicyPort
+from domain.llm.ports.llm_executor import LLMExecutorPort
+from domain.llm.schemas.llm import LLMTaskType
+from domain.prompts.schemas.prompt import NodeType, PromptIntent
+from domain.execution.services.graph_runtime.agent_runtime_resolver import (
+    AgentRuntimeResolver,
+)
 
 
-class FallbackNode(NodeExecutor):
+class FallbackNode(LLMNodeExecutor):
     node_type = NodeType.FallbackNodeSLA
+    llm_task = LLMTaskType.FALLBACK_RESPONSE
+    prompt_intent = PromptIntent.FALLBACK_RESPONSE
     side_effect = True
     deterministic = True
+    resolve_prompt_passes_node_type = True
+    include_available_tools = False
+    result_status = NodeExecutionStatus.SUCCESS
+    write_next_state = False
+    state_key_use_value = False
 
-    def __init__(self, human_sla_service: HumanSLAService | None = None) -> None:
+    def __init__(
+        self,
+        tracer: RuntimeTracerPort,
+        llm_executor: LLMExecutorPort,
+        prompt_resolver: Any,
+        human_sla_service: HumanSLAService | None = None,
+        agent_runtime_resolver: AgentRuntimeResolver | None = None,
+        completion_budget_policy: CompletionBudgetPolicyPort | None = None,
+    ) -> None:
+        super().__init__(
+            tracer=tracer,
+            llm_executor=llm_executor,
+            prompt_resolver=prompt_resolver,
+            agent_runtime_resolver=agent_runtime_resolver,
+            completion_budget_policy=completion_budget_policy,
+        )
         self.human_sla_service = human_sla_service
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
     ) -> NodeResult:
-        node_config = config or {}
-        fallback_reason_raw = node_config.get(
-            "fallback_reason",
-            SLAFallbackReason.UNKNOWN_INTENT.value,
-        )
-        if fallback_reason_raw is None or fallback_reason_raw == "":
-            fallback_reason_raw = SLAFallbackReason.UNKNOWN_INTENT.value
-        try:
-            fallback_reason = SLAFallbackReason(str(fallback_reason_raw).upper())
-        except ValueError:
-            fallback_reason = SLAFallbackReason.UNKNOWN_INTENT
-
-        origin_node = context.metadata.get("origin_node") or context.state.get(
-            "origin_node"
-        )
-        operation_ids = (
-            context.metadata.get("operation_ids")
-            or context.state.get("operation_ids")
-            or []
-        )
-        interaction_id_value = context.metadata.get(
-            "interaction_id"
-        ) or context.state.get("interaction_id")
-        interaction_id: UUID | None = None
-        if interaction_id_value is not None:
-            try:
-                interaction_id = UUID(str(interaction_id_value))
-            except ValueError:
-                interaction_id = None
-
-        sla_case_id: UUID | None = None
         if (
             self.human_sla_service is not None
             and context.current_node_run_id is not None
         ):
-            sla_case_id = await self.human_sla_service.create_case_for_fallback(
-                tenant_id=context.tenant_id,
-                session_id=context.session_id,
-                flow_run_id=context.flow_run_id,
-                node_run_id=context.current_node_run_id,
-                interaction_id=interaction_id,
-                user_id=context.user_id,
-                fallback_reason=fallback_reason,
-                priority=node_config.get("priority"),
-                opened_at=datetime.now(timezone.utc),
+            (
+                await self.human_sla_service.get_or_create_open_case_for_fallback(
+                    tenant_id=context.tenant_id,
+                    session_id=context.session_id,
+                    flow_run_id=context.flow_run_id,
+                    node_run_id=context.current_node_run_id,
+                    interaction_id=context.interaction_id,
+                    user_id=context.user_id,
+                    fallback_reason=SLAFallbackReason.LOW_CONFIDENCE,
+                    priority=SeverityLevel.LOW,
+                    opened_at=datetime.now(timezone.utc),
+                    # sla_target_at=
+                )
             )
 
-        data = {
-            "system_output": node_config.get(
-                "system_output",
-                "We could not complete your request automatically. A human specialist will continue from here.",
-            ),
-            "severity": node_config.get("severity", "medium"),
-            "fallback": {
-                "reason": fallback_reason.value,
-                "origin_node": origin_node,
-                "operation_ids": operation_ids,
-                "sla_triggered": sla_case_id is not None,
-                "ticket_id": str(sla_case_id) if sla_case_id is not None else None,
-            },
-        }
-        return NodeResult(
-            node=self.node_type, status=NodeExecutionStatus.SUCCESS, data=data
-        )
+        return await super().execute(context)

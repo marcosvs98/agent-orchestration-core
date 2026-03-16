@@ -22,6 +22,7 @@ from seeds.demo.ids import (
     PROMPT_RESPONSE_ID,
     PROMPT_SLOT_ID,
     PROMPT_TOOL_SELECTION_ID,
+    PROMPT_FALLBACK_SLA_ID,
 )
 
 
@@ -100,6 +101,29 @@ Return JSON only.
 
 flagged = true if the text contains hate, harassment, sexual content,
 self harm, violence, or offensive language."""
+
+        fallback_template = """Classify the user message.
+
+high = system error blocking usage
+medium = insults, aggression, anger, legal threats
+low = frustration, cancellation or normal question
+
+Never downgrade priority.
+
+Reply in Brazilian Portuguese using this template:
+"Seu ticket é <ticket> e será resolvido em até <time>."
+
+time:
+high = 4 horas
+medium = 8 horas
+low = 24 horas
+
+Return only JSON:
+
+{
+  "system_output": "...",
+  "new_priority": "high | medium | low"
+}"""
         prompts = [
             (
                 PROMPT_INPUT_MODERATION_ID,
@@ -111,6 +135,20 @@ self harm, violence, or offensive language."""
                     "properties": {"flagged": {"type": "boolean"}},
                     "required": ["flagged"],
                 },
+            ),
+            (
+                PROMPT_FALLBACK_SLA_ID,
+                "FallbackNodeSLA",
+                fallback_template,
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "system_output": {"type": "string"},
+                        "new_priority": {"type": "string"},
+                    },
+                    "required": ["system_output", "new_priority"]
+                }
             ),
             (
                 PROMPT_INTENT_ID,

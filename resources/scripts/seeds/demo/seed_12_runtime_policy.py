@@ -71,6 +71,7 @@ def _policy_definition() -> dict:
                 "slm_eligible_tasks": [
                     "intent_selection",
                     "tool_selection",
+                    "fallback_response"
                 ],
                 "slm_provider": "SLM_LOCAL",
                 "slm_model_alias": "qwen2.5-1.5b-instruct",
@@ -92,6 +93,17 @@ def _policy_definition() -> dict:
             "prompt_key": "InputModerationNode",
             "temperature": 0.0,
             "max_tokens": 18,
+        },
+        "fallback_sla": {
+            "primary": {
+                "provider": "SLM_LOCAL",
+                "model_alias": "slm-local-moderation",
+                "timeout_ms": 300,
+            },
+            "fallback_enabled": False,
+            "prompt_key": "FallbackNode",
+            "temperature": 0.0,
+            "max_tokens": 100,
         },
         "user_context_enrichment": {
             "enabled": False,

@@ -32,9 +32,7 @@ class ModerationProviderSelector:
         return ordered
 
     @staticmethod
-    def _resolve_provider_cfg(
-        config: dict[str, object], key: str
-    ) -> dict[str, object]:
+    def _resolve_provider_cfg(config: dict[str, object], key: str) -> dict[str, object]:
         provider_cfg = config.get(key)
         if isinstance(provider_cfg, dict):
             return dict(provider_cfg)

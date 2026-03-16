@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query, status
 
 from domain.tools.schemas.tools import (
@@ -83,6 +85,12 @@ class ToolsController:
             response_model=AgentVersionToolBinding,
             status_code=status.HTTP_201_CREATED,
         )
+        r(
+            "/agent-versions/{agent_version_id}/tools",
+            self.list_tools_by_agent_version,
+            methods=["GET"],
+            response_model=list[AgentVersionToolBinding],
+        )
 
     def _resp405(self) -> dict[int, dict[str, object]]:
         return {status.HTTP_405_METHOD_NOT_ALLOWED: {"model": ErrorResponse}}
@@ -135,6 +143,16 @@ class ToolsController:
             tenant_id=auth.tenant_id,
             binding_create=binding_create,
             principal_id=auth.principal_id,
+        )
+
+    async def list_tools_by_agent_version(
+        self,
+        agent_version_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[AgentVersionToolBinding]:
+        return await self.service.list_tool_bindings_by_agent_version(
+            tenant_id=auth.tenant_id,
+            agent_version_id=agent_version_id,
         )
 
     async def publish_tool_config(

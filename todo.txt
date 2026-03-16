@@ -1,0 +1,618 @@
+node-agent-bindings
+Não tenho opção de listar nodes para um mesmo agent_version
+
+Exemplo;
+[
+  {
+    "node_agent_binding_id": "9a9f1554-c2cf-4faf-9b9a-e14bc2948b82",
+    "node_id": "00000000-0000-0000-0000-00000000080d",
+    "agent_version_id": "00000000-0000-0000-0000-000000000601",
+    "created_at": "2026-03-15 15:09:47.677883 +00:00",
+    "updated_at": "2026-03-15 15:09:47.677883 +00:00"
+  },
+  {
+    "node_agent_binding_id": "8acc7a71-fce0-4b08-9cb7-7956512d29c4",
+    "node_id": "00000000-0000-0000-0000-000000000800",
+    "agent_version_id": "00000000-0000-0000-0000-000000000601",
+    "created_at": "2026-03-15 15:09:47.677883 +00:00",
+    "updated_at": "2026-03-15 15:09:47.677883 +00:00"
+  }
+]
+
+Não tenho como listar tools para um agent_version
+Exemplo;
+[
+  {
+    "agent_version_tool_binding_id": "8a7fae8e-dc72-4f19-be47-9484c7133f48",
+    "agent_version_id": "00000000-0000-0000-0000-000000000601",
+    "tool_config_id": "00000000-0000-0000-0000-000000000501",
+    "created_at": "2026-03-15 15:09:47.677883 +00:00",
+    "updated_at": "2026-03-15 15:09:47.677883 +00:00"
+  }
+]
+
+
+List vector-stores quebrando {{baseUrl}}/core/v1/vector-stores
+INFO:     127.0.0.1:56009 - "GET /core/v1/vector-stores HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1160, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/adapters/observability/logging.py", line 136, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 130, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 116, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 670, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 324, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/domain/rag/controllers/rag_controller.py", line 170, in list_vector_stores
+    return await self.service.list_vector_stores(tenant_id=auth.tenant_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/domain/rag/services/rag_service.py", line 39, in list_vector_stores
+    stores = await self.repository.list_vector_stores(tenant_id=tenant_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/domain/rag/repositories/rag_repository.py", line 105, in list_vector_stores
+    result = await session.execute(stmt)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/session.py", line 449, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 201, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 585, in execute
+    self._adapt_connection.await_(
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 563, in _prepare_and_execute
+    self._handle_exception(error)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 513, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 797, in _handle_exception
+    raise translated_error from error
+sqlalchemy.exc.DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.InFailedSQLTransactionError'>: current transaction is aborted, commands ignored until end of transaction block
+[SQL: SELECT vector_store.vector_store_id, vector_store.tenant_id, vector_store.name, vector_store.created_at, vector_store.updated_at
+FROM vector_store
+WHERE vector_store.tenant_id = $1::UUID ORDER BY vector_store.name ASC NULLS LAST, vector_store.vector_store_id ASC]
+[parameters: (UUID('00000000-0000-0000-0000-000000000100'),)]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)
+
+
+---
+SLA Cases Quebrando -> {{baseUrl}}/core/v1/sla-cases?status=RESOLVED&limit=50&offset=0
+
+INFO:     127.0.0.1:56066 - "GET /core/v1/sla-cases?limit=50&offset=0 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1160, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/adapters/observability/logging.py", line 136, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 130, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 116, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 670, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 324, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/domain/human_sla/controllers/human_sla_controller.py", line 65, in list_cases
+    return await self.service.list_cases(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/domain/human_sla/services/human_sla_service.py", line 70, in list_cases
+    cases = await self.repository.list_cases(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/src/domain/human_sla/repositories/human_sla_repository.py", line 67, in list_cases
+    result = await session.execute(stmt)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/session.py", line 449, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 201, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 585, in execute
+    self._adapt_connection.await_(
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 563, in _prepare_and_execute
+    self._handle_exception(error)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 513, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "/Users/marcossilveira/repositories/marcos/agent-orchestration-core/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 797, in _handle_exception
+    raise translated_error from error
+sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedTableError'>: relation "sla_case" does not exist
+[SQL: SELECT sla_case.sla_case_id, sla_case.tenant_id, sla_case.session_id, sla_case.flow_run_id, sla_case.node_run_id, sla_case.interaction_id, sla_case.user_id, sla_case.status, sla_case.priority, sla_case.fallback_reason, sla_case.human_agent_id, sla_case.resolution_status, sla_case.resolution_summary, sla_case.opened_at, sla_case.assigned_at, sla_case.resolved_at, sla_case.sla_target_at, sla_case.sla_breached, sla_case.created_at, sla_case.updated_at
+FROM sla_case
+WHERE sla_case.tenant_id = $1::UUID ORDER BY sla_case.opened_at DESC
+ LIMIT $2::INTEGER OFFSET $3::INTEGER]
+[parameters: (UUID('00000000-0000-0000-0000-000000000100'), 50, 0)]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+
+---
+GET {{baseUrl}}/core/v1/flow-runs/:flow_run_id/graph-state
+
+{
+    "code": "METHOD_NOT_ALLOWED",
+    "message": "Endpoint not available.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/flow-runs/ca0b9e5a-b4b3-459f-b409-1c7299b61eb0/graph-state",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+GET {{baseUrl}}/core/v1/flow-runs/:flow_run_id
+
+{
+    "code": "METHOD_NOT_ALLOWED",
+    "message": "Endpoint not available.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/flow-runs/00000000-0000-0000-0000-000000000701",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+
+GET {{baseUrl}}/core/v1/node-runs
+
+{
+    "code": "METHOD_NOT_ALLOWED",
+    "message": "Endpoint not available.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/node-runs",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+GET {{baseUrl}}/core/v1/agent-runs
+
+{
+    "code": "METHOD_NOT_ALLOWED",
+    "message": "Endpoint not available.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/agent-runs",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+
+GET {{baseUrl}}/core/v1/executions/flow-runs/:flow_run_id/graph-state
+
+{
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred. Please contact the support.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/executions/flow-runs/ca0b9e5a-b4b3-459f-b409-1c7299b61eb0/graph-state",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+
+GET {{baseUrl}}/core/v1/executions/flow-runs/:flow_run_id
+
+{
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred. Please contact the support.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/executions/flow-runs/ca0b9e5a-b4b3-459f-b409-1c7299b61eb0",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+
+GET {{baseUrl}}/core/v1/executions/node-runs?flow_run_id=ca0b9e5a-b4b3-459f-b409-1c7299b61eb0&limit=200
+
+{
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred. Please contact the support.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/executions/node-runs",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+---
+
+GET {{baseUrl}}/core/v1/executions/agent-runs?flow_run_id=ca0b9e5a-b4b3-459f-b409-1c7299b61eb0&limit=200
+
+{
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred. Please contact the support.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/executions/agent-runs",
+        "errors": []
+    },
+    "input_data": {}
+}
+---
+
+
+GET {{baseUrl}}/core/v1/executions/execution-events?flow_run_id=ca0b9e5a-b4b3-459f-b409-1c7299b61eb0&correlation_id=414dccd6-5e47-40e8-8abc-fc515a7dcdea&limit=200
+
+{
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred. Please contact the support.",
+    "correlation_id": null,
+    "details": {
+        "service": "agent-orchestration-core",
+        "resource": "/core/v1/executions/execution-events",
+        "errors": []
+    },
+    "input_data": {}
+}
+
+
+---
+Não encontrei GET/LIST para;
+
+rag-policies
+memory-policies
+billing-policies
+rate-limit-policies
+access-policies
+
+---
+
+Não encontrei endpoint para users
+
+Onde eu consiga visualizar as tabelas
+
+end_user (Get, List)
+ -> user_preferences
+ -> user_memory_profile
+
+
+Não encontrei endpoint para gerenciar meus flow
+
+flow_graph
+flow_graph_draft
+flow_graph_snapshot
+
+Não encontrei endpoint para gerenciar interaction (GET, LIST
+Não encontrei endpoint para gerenciar node
+
+Não encontrei endpoint para listar response_artifact
+Não encontrei endpoint para gerenciar router e rounting_rule
+
+Não encontrei endpoint para visualizar run_failure
+Não encontrei endpoint para PATCH do Tenant
+
+--
+Em geral, avalie quais Modelos hoje não podem ser geridos via API, Avalie quais endpoint estão deprecados e podem sair da API com segurança.
+Avalie possibilidade de criar join estrategicos do Tenant em {{baseUrl}}/core/v1/tenants/current
+Onde eu consiga ter métricas do tenant, quantos flows, quantos agents e etc ... Será importante ter uma inspiração para isso
+
+
+---
+
+# Avaliação
+
+## 1. Bugs (prioridade alta)
+
+### GET `/core/v1/vector-stores` → 500 (InFailedSQLTransactionError)
+
+- **Causa:** Sessão/connection usada após falha em outra query, sem rollback; ou connection devolvida ao pool ainda em transação abortada (`pool_reset_on_return`).
+- **Ação:**
+  - No contexto de sessão (`get_session()` em `infra/database`): em um `finally`, chamar `await session.rollback()` antes de `close()` (e tratar/logar falha do rollback).
+  - No engine async: usar `pool_reset_on_return="rollback"` para que connections devolvidas ao pool não deixem transação abortada.
+- **Não é bug no RagRepository:** cada método já usa uma sessão nova via `get_session()`.
+
+### GET `/core/v1/sla-cases` → 500 (relation "sla_case" does not exist)
+
+- **Causa:** Tabela `sla_case` está na migração inicial `861cb744f4f0`; o erro indica que o banco usado em runtime **não** tem essa tabela (migração não aplicada, outro DB ou schema).
+- **Ação:**
+  - Rodar `alembic current` no mesmo DB da app e confirmar que está em `861cb744f4f0` (ou revisão posterior que inclui `sla_case`).
+  - No mesmo `DATABASE_URL`: checar se a tabela existe (ex.: `information_schema.tables` ou `\dt sla_case`).
+  - Se a revisão estiver “current” mas a tabela não existir, criar migração que crie `sla_case` apenas se não existir, ou corrigir o estado do banco e reaplicar.
+  - Documentar qual DB cada ambiente usa e garantir que deploy/CI rode `alembic upgrade head` nesse DB.
+
+---
+
+## 2. Endpoints de execução (flow-runs, node-runs, agent-runs, graph-state)
+
+- **Rotas antigas (deprecated):**  
+  `ExecutionController` com prefix `/core/v1`:  
+  - GET `/flow-runs/{id}`, `/flow-runs/{id}/graph-state`, `/node-runs`, `/agent-runs` **retornam 405** de propósito (`MethodNotAllowedPlaceholderException`).
+  - POST (create flow-run, tool-run, execute) ainda funcionam, mas estão marcados como deprecated.
+
+- **Rotas canônicas:**  
+  `ExecutionPlaneController` com prefix **`/core/v1/executions`**:
+  - POST/GET flow-runs, tool-runs, node-runs, agent-runs, graph-state, execution-events.
+  - O frontend deve usar **só** `/core/v1/executions/flow-runs`, `/core/v1/executions/node-runs`, etc.
+
+- **INTERNAL_ERROR em `/core/v1/executions/*`:**  
+  Bug a corrigir no fluxo atual (boundary/service/repository): validação de tenant, tratamento de exceção ou uso de sessão. Não criar outro controller; corrigir e adicionar testes de integração para GET flow-run, graph-state, node-runs, agent-runs.
+
+- **Recomendação:**  
+  Manter as rotas deprecated **documentadas** (ex.: no OpenAPI: “Deprecated. Use /core/v1/executions/...”). Opcional: redirect 307/308 dos GET deprecated para `/core/v1/executions/...`. Remover os GET deprecated só após sunset definido e migração de clientes.
+
+---
+
+## 3. LIST/GET que faltam (paridade de API)
+
+### Políticas de governance (access, rate-limit, billing, memory, rag)
+
+- **Repos já têm** `list_policies(tenant_id)` para todos.
+- **Falta:** no **GovernancePoliciesService** e no **GovernancePoliciesController**:
+  - GET list e (opcional) GET by id para: access-policies, rate-limit-policies, billing-policies, memory-policies, rag-policies.
+- **Padrão:** igual ao de runtime-policies (mesmo recurso: GET list + POST create).
+- **DB:** Garantir índice em `tenant_id` (e, se fizer ORDER BY, composto ex.: `(tenant_id, created_at)` ou `(tenant_id, name)`). LIST com `limit`/`offset` e limite máximo (ex.: 100).
+
+### Node–agent e tool–agent (por agent_version)
+
+- **Listar nodes por agent_version:**  
+  Não existe. **Onde:** `AgentsRepository`: método tipo `list_node_ids_by_agent_version_id(agent_version_id)` (ou listar bindings); expor no controller, ex.: GET `/core/v1/agent-versions/{agent_version_id}/nodes` ou sob agents.
+
+- **Listar tools (ou bindings) por agent_version:**  
+  Não existe. **Onde:** `ToolsRepository`: método tipo `list_tool_bindings_by_agent_version_id(agent_version_id)`; expor ex.: GET `/core/v1/agent-versions/{agent_version_id}/tools` (ou equivalente sob agents/tools).
+
+---
+
+## 4. Recursos sem API ou com API parcial (resumo)
+
+| Recurso | Repo | Service | API | Observação |
+|--------|------|--------|-----|------------|
+| **access/rate/billing/memory/rag policies** | list_policies | não expõe list | só create/version/publish | Falta LIST (e opcional GET por id) no service + controller. |
+| **end_user** | não dedicado | não | não | Só modelo; para get/list precisa repo + service + controller. |
+| **user_preferences / user_memory_profile** | sim (ExecutionRepository) | usado internamente | não | Dá para expor GET (e talvez PATCH) se o produto precisar. |
+| **flow_graph** | sim | sim | só POST (create) | Falta GET (ex.: por flow_id + version_id). |
+| **flow_graph_draft** | sim | sim | só POST (upsert/validate) | Falta GET draft. |
+| **flow_graph_snapshot** | sim | sim | não | Falta GET snapshot se for necessário. |
+| **interaction** | create/link só | não get/list | não | Para GET/LIST: novo método em repo + service + controller. |
+| **node** | sim | sim | list por flow_version + create | Falta GET por node_id; list por agent_version cobre no item “nodes por agent_version”. |
+| **response_artifact** | create só | não list | não | List (ex.: por flow_run_id) só se houver uso definido. |
+| **router** | sim | sim | list + create | Falta GET `/routers/{router_id}`. |
+| **routing_rule** | sim | sim | só create | Falta LIST (ex.: por flow_version). |
+| **run_failure** | create só | não list | não | GET/list só se houver consumer definido. |
+| **PATCH tenant** | não | não | não | Adicionar update no repo, patch no service, PATCH no controller, schema TenantPatch. |
+
+---
+
+## 5. Modelos não gerenciáveis via API / endpoints deprecated
+
+- **Modelos sem API de gestão (hoje):**  
+  flow_graph (só create), flow_graph_draft (só POST), flow_graph_snapshot, router (sem get por id), routing_rule (sem list), run_failure, interaction (sem get/list), response_artifact (sem list), end_user, user_preferences, user_memory_profile (sem API dedicada).  
+  Priorizar conforme contrato do frontend; evitar endpoints “por speculação”.
+
+- **Deprecated e seguros de remover (no longo prazo):**  
+  Apenas os **GET/list** do `ExecutionController` em `/core/v1` (flow-runs, node-runs, agent-runs, graph-state), que já retornam 405. Remover só após sunset e migração para `/core/v1/executions`.  
+  **Não** remover os POST deprecated em `/core/v1` antes de os clientes usarem POST em `/core/v1/executions`.
+
+---
+
+## 6. Tenant “dashboard” (GET `/core/v1/tenants/current` com métricas)
+
+- **Recomendação (governance + DB):**  
+  Um único modelo de leitura/DTO é aceitável (ex.: estender `TenantCurrentResponse` ou `GET /core/v1/tenants/current/dashboard`).
+
+- **Implementação sugerida (DB):**  
+  Uma única query com subqueries escalares (ex.: counts de flow, agent, etc. por `tenant_id`) para evitar N+1; garantir índice em `tenant_id` nas tabelas contadas.
+
+- **Escopo:**  
+  Contagens sempre por `tenant_id` do auth; sem agregação cross-tenant.
+
+---
+
+## 7. Plano de ação sugerido (ordem prática)
+
+1. **Bugs**  
+   - Ajustar sessão/pool (rollback no `finally`, `pool_reset_on_return="rollback"`) para eliminar 500 em vector-stores.  
+   - Verificar migração e existência de `sla_case` no DB de runtime; corrigir e documentar processo de migração.
+
+2. **Execução**  
+   - Corrigir INTERNAL_ERROR nos GET de `/core/v1/executions/*` (flow-run, graph-state, node-runs, agent-runs).  
+   - Documentar no OpenAPI que a API canônica de execução é `/core/v1/executions`.
+
+3. **Governance**  
+   - Expor LIST (e opcionalmente GET por id) para access, rate-limit, billing, memory e rag policies (service + controller), com limit/offset e índices adequados.
+
+4. **Bindings por agent_version**  
+   - Implementar list nodes por agent_version e list tools (ou bindings) por agent_version em repo + service + controller, reutilizando entidades existentes.
+
+5. **Tenant**  
+   - Opcional: PATCH tenant (repo update, service patch, PATCH `/core/v1/tenants/current`, schema TenantPatch).  
+   - Opcional: dashboard em GET `/core/v1/tenants/current` (ou `/current/dashboard`) com contagens em uma query.
+
+6. **Demais recursos (end_user, interaction, flow_graph GET, etc.)**  
+   - Incluir conforme necessidade real do frontend/contrato; evitar expor tudo “por lista”.
+
+Com isso, o TODO fica classificado em: **bugs (fix imediato)**, **paridade mínima (execution + policies + bindings)**, **melhorias (tenant PATCH/dashboard)** e **demais itens sob demanda**.

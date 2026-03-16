@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query, status
 
 from domain.common.schemas.change import ChangeRequest
@@ -104,6 +106,12 @@ class AgentsController:
             methods=["POST"],
             response_model=NodeAgentBinding,
             status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/agent-versions/{agent_version_id}/nodes",
+            self.list_nodes_by_agent_version,
+            methods=["GET"],
+            response_model=list[NodeAgentBinding],
         )
 
     def _resp405(self) -> dict[int, dict[str, object]]:
@@ -298,4 +306,14 @@ class AgentsController:
             tenant_id=auth.tenant_id,
             node_agent_binding_create=node_agent_binding_create,
             principal_id=auth.principal_id,
+        )
+
+    async def list_nodes_by_agent_version(
+        self,
+        agent_version_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[NodeAgentBinding]:
+        return await self.service.list_node_bindings_by_agent_version(
+            tenant_id=auth.tenant_id,
+            agent_version_id=agent_version_id,
         )

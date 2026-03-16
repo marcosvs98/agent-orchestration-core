@@ -296,11 +296,21 @@ async def seed_graph() -> None:
                 ),
                 str(NODE_FALLBACK_SLA_ID): FlowGraphNodeSpec(
                     type="FallbackNodeSLA",
-                    config={
-                        "system_output": "I could not complete this automatically. A human specialist will continue your request.",
-                        "severity": "medium",
-                        "fallback_reason": "UNKNOWN_INTENT",
-                    },
+                    config=_llm_node_config(
+                        task_type="FALLBACK_SLA",
+                        provider="OPENAI",
+                        model_alias="gpt-4.1-mini",
+                        use_system_prompt=False,
+                        use_system_context=False,
+                        temperature=0.0,
+                        top_p=0.0,
+                        use_conversation_history=False,
+                        completion_budget={
+                            "schema_factor": 1.2,
+                            "safety_margin": 16,
+                            "floor": 32,
+                        },
+                    )
                 ),
                 str(NODE_RESPONSE_ID): FlowGraphNodeSpec(
                     type="ResponseComposer",

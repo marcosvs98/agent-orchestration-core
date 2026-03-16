@@ -258,11 +258,23 @@ class NodeRegistry:
                 return _InputModerationNode
             if node_type == FallbackNode.node_type:
                 base_cls = node_cls or FallbackNode
+                tracer = self.tracer
                 human_sla_service = self.human_sla_service
+                llm_executor = self.llm_executor
+                prompt_resolver = self.prompt_resolver
+                agent_runtime_resolver = self.agent_runtime_resolver
+                completion_budget_policy = self.completion_budget_policy
 
                 class _FallbackNode(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
-                        super().__init__(human_sla_service=human_sla_service)
+                        super().__init__(
+                            tracer=tracer,
+                            llm_executor=llm_executor,
+                            prompt_resolver=prompt_resolver,
+                            human_sla_service=human_sla_service,
+                            agent_runtime_resolver=agent_runtime_resolver,
+                            completion_budget_policy=completion_budget_policy,
+                        )
 
                 return _FallbackNode
             if agent_handle and node_cls:

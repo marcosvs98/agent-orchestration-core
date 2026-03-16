@@ -40,7 +40,7 @@ def test_node_registry_resolves_valid_node_types():
     assert issubclass(response_cls, ResponseComposer)
     fallback_cls = registry.resolve("FallbackNodeSLA")
     assert fallback_cls is not None
-    assert fallback_cls == FallbackNode
+    assert issubclass(fallback_cls, FallbackNode)
 
 
 def test_node_registry_returns_none_for_unknown_type():

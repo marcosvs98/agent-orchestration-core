@@ -98,6 +98,7 @@ class ExecutionContext(BaseModel):
     """Immutable per-step context used by the runtime."""
 
     tenant_id: UUID
+    interaction_id: UUID
     user_id: str
     session_id: UUID
     input_payload: dict[str, Any] | None

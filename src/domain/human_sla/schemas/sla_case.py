@@ -27,6 +27,12 @@ class SLAFallbackReason(StrEnum):
     USER_INSULT = "USER_INSULT"
 
 
+class SeverityLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class SLAResolutionStatus(StrEnum):
     RESOLVED = "RESOLVED"
     UNRESOLVED = "UNRESOLVED"

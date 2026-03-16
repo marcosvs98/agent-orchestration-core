@@ -183,6 +183,21 @@ class AgentsService(AgentsServicePort):
             agent_version_id=model.agent_version_id,
         )
 
+    async def list_node_bindings_by_agent_version(
+        self, *, tenant_id: UUID, agent_version_id: UUID
+    ) -> list[NodeAgentBinding]:
+        models = await self.repository.list_node_bindings_by_agent_version_id(
+            tenant_id=tenant_id, agent_version_id=agent_version_id
+        )
+        return [
+            NodeAgentBinding(
+                id=m.node_agent_binding_id,
+                node_id=m.node_id,
+                agent_version_id=m.agent_version_id,
+            )
+            for m in models
+        ]
+
     async def validate_agent_version(
         self, *, tenant_id: UUID, agent_id: str, agent_version_id: str
     ):

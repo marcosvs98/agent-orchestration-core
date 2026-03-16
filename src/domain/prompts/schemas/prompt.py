@@ -14,6 +14,7 @@ class PromptIntent(StrEnum):
     SLOT_FILLING = "slot_filling"
     CLARIFICATION = "clarification"
     RESPONSE_RENDER = "response_render"
+    FALLBACK_RESPONSE = "fallback_response"
 
 
 class NodeType(StrEnum):

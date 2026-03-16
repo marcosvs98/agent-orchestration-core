@@ -138,6 +138,7 @@ class PromptResolver:
             PromptIntent.SLOT_FILLING: NodeType.ParamExtractionNode,
             PromptIntent.CLARIFICATION: NodeType.ClarificationNode,
             PromptIntent.RESPONSE_RENDER: NodeType.ResponseComposer,
+            PromptIntent.FALLBACK_RESPONSE: NodeType.FallbackNodeSLA,
         }
 
         resolved = mapping.get(intent)
@@ -158,6 +159,7 @@ class PromptResolver:
             NodeType.ParamExtractionNode: LLMTaskType.SLOT_FILLING,
             NodeType.ClarificationNode: LLMTaskType.CLARIFICATION,
             NodeType.ResponseComposer: LLMTaskType.RESPONSE_RENDER,
+            NodeType.FallbackNodeSLA: LLMTaskType.FALLBACK_RESPONSE,
         }
 
         if node_type in node_map:
@@ -168,6 +170,7 @@ class PromptResolver:
             PromptIntent.SLOT_FILLING: LLMTaskType.SLOT_FILLING,
             PromptIntent.CLARIFICATION: LLMTaskType.CLARIFICATION,
             PromptIntent.RESPONSE_RENDER: LLMTaskType.RESPONSE_RENDER,
+            PromptIntent.FALLBACK_RESPONSE: LLMTaskType.FALLBACK_RESPONSE,
         }
 
         task_type = intent_map.get(intent)

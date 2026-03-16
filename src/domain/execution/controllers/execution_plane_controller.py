@@ -15,9 +15,7 @@ from domain.execution.schemas.execution import (
 )
 from services.execution_boundary import ExecutionBoundary
 from domain.common.schemas.error import ErrorResponse
-from exceptions.service_exceptions import (
-    RouterValidationException,
-)
+from exceptions.service_exceptions import RouterValidationException
 from utils.auth import AuthContext, get_auth_context
 
 
@@ -179,14 +177,16 @@ class ExecutionPlaneController:
             )
 
     async def get_flow_run(
-        self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)
+        self, flow_run_id: UUID, auth: AuthContext = Depends(get_auth_context)
     ) -> FlowRun:
         with self.tracer.observe(
             as_type="span",
             name="domain.execution.plane_controller.get_flow_run",
-            input={"flow_run_id": flow_run_id},
+            input={"flow_run_id": str(flow_run_id)},
         ):
-            return await self.boundary.get_flow_run(auth=auth, flow_run_id=flow_run_id)
+            return await self.boundary.get_flow_run(
+                auth=auth, flow_run_id=str(flow_run_id)
+            )
 
     async def resume_flow_run(
         self,
@@ -226,15 +226,15 @@ class ExecutionPlaneController:
             )
 
     async def get_graph_state(
-        self, flow_run_id: str, auth: AuthContext = Depends(get_auth_context)
+        self, flow_run_id: UUID, auth: AuthContext = Depends(get_auth_context)
     ) -> GraphState:
         with self.tracer.observe(
             as_type="span",
             name="domain.execution.plane_controller.get_graph_state",
-            input={"flow_run_id": flow_run_id},
+            input={"flow_run_id": str(flow_run_id)},
         ):
             return await self.boundary.get_graph_state(
-                auth=auth, flow_run_id=flow_run_id
+                auth=auth, flow_run_id=str(flow_run_id)
             )
 
     async def list_node_runs(
@@ -283,8 +283,13 @@ class ExecutionPlaneController:
                 "limit": limit,
             },
         ):
-            flow_uuid = UUID(flow_run_id) if flow_run_id else None
-            corr_uuid = UUID(correlation_id) if correlation_id else None
+            try:
+                flow_uuid = UUID(flow_run_id) if flow_run_id else None
+                corr_uuid = UUID(correlation_id) if correlation_id else None
+            except (ValueError, TypeError):
+                raise RouterValidationException(
+                    message="Invalid flow_run_id or correlation_id format; expected UUID."
+                )
             events = await self.boundary.list_execution_events(
                 flow_run_id=flow_uuid,
                 correlation_id=corr_uuid,

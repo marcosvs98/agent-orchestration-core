@@ -23,7 +23,7 @@ class HumanSLARepository:
         async with self.db.get_session() as session:
             stmt = (
                 pg_insert(SLACase)
-                .values(case_create.model_dump(mode="json"))
+                .values(case_create.model_dump())
                 .on_conflict_do_nothing(
                     constraint="uq_sla_case_flow_run_node_run",
                 )
@@ -81,6 +81,23 @@ class HumanSLARepository:
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    async def get_last_open_case_for_session(
+        self, tenant_id: UUID, session_id: UUID
+    ) -> SLACase | None:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(SLACase)
+                .where(
+                    SLACase.tenant_id == tenant_id,
+                    SLACase.session_id == session_id,
+                    SLACase.status == SLAStatus.OPEN.value,
+                )
+                .order_by(SLACase.opened_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def assign_case(
         self, tenant_id: UUID, sla_case_id: UUID, human_agent_id: str
