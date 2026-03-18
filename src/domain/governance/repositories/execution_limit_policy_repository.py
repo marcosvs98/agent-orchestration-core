@@ -99,3 +99,34 @@ class ExecutionLimitPolicyRepository:
                     )
 
                 return version
+
+    async def list_policies_for_tenant(
+        self, tenant_id: UUID, *, limit: int = 100
+    ) -> list[ExecutionLimitPolicyModel]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(ExecutionLimitPolicyModel)
+                .where(ExecutionLimitPolicyModel.tenant_id == tenant_id)
+                .order_by(ExecutionLimitPolicyModel.created_at.desc())
+                .limit(limit)
+            )
+            query_sql = compile_query(stmt)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.governance.execution_limit_policy_repository.list_policies_for_tenant",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id), "limit": limit},
+                },
+                metadata={"retriever_name": "list_policies_for_tenant"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                items = list(result.scalars().all())
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(items),
+                            "found": len(items) > 0,
+                        }
+                    )
+                return items

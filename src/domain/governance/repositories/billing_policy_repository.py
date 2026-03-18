@@ -4,10 +4,9 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from datetime import datetime, timezone
+
 from infra.database import DatabaseConnection
-from infra.database.models.governance.active_billing_policy_version import (
-    ActiveBillingPolicyVersion as ActiveBillingPolicyVersionModel,
-)
 from infra.database.models.governance.billing_policy import (
     BillingPolicy as BillingPolicyModel,
 )
@@ -105,25 +104,29 @@ class BillingPolicyRepository:
         billing_policy_version_id: UUID,
         activated_by_principal_id: str,
         justification: str,
-    ) -> ActiveBillingPolicyVersionModel:
+    ) -> BillingPolicyVersionModel | None:
         async with self.db.get_session() as session:
-            stmt = select(ActiveBillingPolicyVersionModel).where(
-                ActiveBillingPolicyVersionModel.tenant_id == tenant_id
-            )
-            result = await session.execute(stmt)
-            active = result.scalar_one_or_none()
-            if active is None:
-                active = ActiveBillingPolicyVersionModel(
-                    tenant_id=tenant_id,
-                    billing_policy_version_id=billing_policy_version_id,
-                    activated_by_principal_id=activated_by_principal_id,
-                    justification=justification,
+            result = await session.execute(
+                select(BillingPolicyVersionModel).where(
+                    BillingPolicyVersionModel.tenant_id == tenant_id,
+                    BillingPolicyVersionModel.is_active.is_(True),
                 )
-                session.add(active)
-            else:
-                active.billing_policy_version_id = billing_policy_version_id
-                active.activated_by_principal_id = activated_by_principal_id
-                active.justification = justification
+            )
+            for row in result.scalars().all():
+                row.is_active = False
+
+            stmt = select(BillingPolicyVersionModel).where(
+                BillingPolicyVersionModel.billing_policy_version_id
+                == billing_policy_version_id
+            )
+            target = (await session.execute(stmt)).scalar_one_or_none()
+            if target is None:
+                return None
+            target.tenant_id = tenant_id
+            target.is_active = True
+            target.activated_at = datetime.now(timezone.utc)
+            target.activated_by_principal_id = activated_by_principal_id
+            target.justification = justification
             await session.commit()
-            await session.refresh(active)
-            return active
+            await session.refresh(target)
+            return target

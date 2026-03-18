@@ -1,5 +1,5 @@
-from sqlalchemy import Column, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import Column, ForeignKey, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
 
@@ -16,5 +16,12 @@ class Node(ORMBaseModel):
     ai_task_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("ai_task.ai_task_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    node_type = Column(String(length=128), nullable=True)
+    config = Column(JSONB, nullable=True)
+    source_node_template_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("node_template.node_template_id", ondelete="SET NULL"),
         nullable=True,
     )

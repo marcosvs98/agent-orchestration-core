@@ -86,7 +86,7 @@ Sem binding implícito.
 
 #### 5. Tools
 
-• POST /tools/import-openapi
+• POST /tools/import-tools
 • GET /tools
 • POST /tool-configs
 • POST /agent-version-tool-bindings

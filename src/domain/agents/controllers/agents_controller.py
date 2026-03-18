@@ -135,7 +135,7 @@ class AgentsController:
 
     async def list_agent_versions(
         self,
-        agent_id: str,
+        agent_id: UUID,
         status_filter: list[str] | None = Query(default=None),
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[AgentVersion]:
@@ -145,7 +145,7 @@ class AgentsController:
 
     async def create_agent_version(
         self,
-        agent_id: str,
+        agent_id: UUID,
         agent_version_create: AgentVersionCreate,
         auth: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
@@ -158,8 +158,8 @@ class AgentsController:
 
     async def validate_agent_version(
         self,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         auth: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
         model = await self.service.validate_agent_version(
@@ -187,8 +187,8 @@ class AgentsController:
 
     async def publish_agent_version(
         self,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         change: ChangeRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
@@ -219,8 +219,8 @@ class AgentsController:
 
     async def activate_agent_version(
         self,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         change: ChangeRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
@@ -251,8 +251,8 @@ class AgentsController:
 
     async def rollback_agent_version(
         self,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         change: ChangeRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
@@ -283,16 +283,16 @@ class AgentsController:
 
     async def deprecate_agent_version(
         self,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         _: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
         raise MethodNotAllowedPlaceholderException()
 
     async def disable_agent_version(
         self,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         _: AuthContext = Depends(get_auth_context),
     ) -> AgentVersion:
         raise MethodNotAllowedPlaceholderException()

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TenantCreate(BaseModel):
@@ -13,7 +13,10 @@ class TenantCreate(BaseModel):
     language: str = "pt_BR"
     contact_name: str | None = None
     contact_phone: str | None = None
-    settings: dict[str, object] | None = None
+    settings: dict[str, object] | None = Field(
+        default=None,
+        description="Unstructured key-value store for tenant-level configuration (e.g. feature flags, limits). No formal contract; clients may send any JSON object.",
+    )
 
 
 class TenantCurrentResponse(BaseModel):
@@ -27,7 +30,10 @@ class TenantCurrentResponse(BaseModel):
     language: str
     contact_name: str | None = None
     contact_phone: str | None = None
-    settings: dict[str, object] | None = None
+    settings: dict[str, object] | None = Field(
+        default=None,
+        description="Unstructured key-value store for tenant-level configuration. No formal contract.",
+    )
 
 
 class TenantResponse(BaseModel):
@@ -41,9 +47,15 @@ class TenantResponse(BaseModel):
     language: str
     contact_name: str | None = None
     contact_phone: str | None = None
-    settings: dict[str, object] | None = None
+    settings: dict[str, object] | None = Field(
+        default=None,
+        description="Unstructured key-value store for tenant-level configuration. No formal contract.",
+    )
 
 
 class TenantSettingsResponse(BaseModel):
     id: UUID
-    settings: dict[str, object] | None = None
+    settings: dict[str, object] | None = Field(
+        default=None,
+        description="Unstructured key-value store for tenant-level configuration. No formal contract.",
+    )

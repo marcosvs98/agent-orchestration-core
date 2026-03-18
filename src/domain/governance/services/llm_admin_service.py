@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.governance.repositories.llm_model_mapping_repository import (
     LLMModelMappingRepository,
 )
@@ -13,10 +14,12 @@ from exceptions.service_exceptions import DomainValidationException
 class LLMAdminService:
     def __init__(
         self,
+        ai_repository: AIRepository,
         provider_repository: LLMProviderRepository,
         mapping_repository: LLMModelMappingRepository,
         pricing_repository: LLMPricingRepository,
     ) -> None:
+        self.ai_repository = ai_repository
         self.provider_repository = provider_repository
         self.mapping_repository = mapping_repository
         self.pricing_repository = pricing_repository
@@ -56,8 +59,14 @@ class LLMAdminService:
         )
         if active_provider is None:
             raise DomainValidationException(message="llm_provider_config_not_active")
+        catalog = await self.ai_repository.get_model_by_name(model_alias)
+        if catalog is None:
+            raise DomainValidationException(
+                message="model_catalog_entry_required_for_llm_model_mapping"
+            )
         return await self.mapping_repository.upsert_mapping(
             tenant_id=tenant_id,
+            model_id=catalog.model_id,
             provider=provider,
             model_alias=model_alias,
             provider_model=provider_model,

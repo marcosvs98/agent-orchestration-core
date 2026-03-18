@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parents[3]
@@ -8,14 +9,11 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from domain.common.schemas.versioning import VersionStatus
 from domain.governance.schemas.memory_policy import MemoryPolicyDefinition
 from infra.database import get_db
-from infra.database.models.governance.active_memory_policy_version import (
-    ActiveMemoryPolicyVersion,
-)
 from infra.database.models.governance.memory_policy import MemoryPolicy
 from infra.database.models.governance.memory_policy_version import MemoryPolicyVersion
 from seeds.demo.ids import (
@@ -101,22 +99,25 @@ async def seed_memory_policy() -> None:
             session.add(policy_version)
             await session.commit()
 
-        result = await session.execute(
-            select(ActiveMemoryPolicyVersion).where(
-                ActiveMemoryPolicyVersion.tenant_id == TENANT_DEMO_ID
+        await session.execute(
+            update(MemoryPolicyVersion)
+            .where(
+                MemoryPolicyVersion.tenant_id == TENANT_DEMO_ID,
+                MemoryPolicyVersion.memory_policy_version_id != MEMORY_POLICY_VERSION_V1_ID,
             )
+            .values(is_active=False)
         )
-        active_version = result.scalar_one_or_none()
-        if active_version is None:
-            active_version = ActiveMemoryPolicyVersion(
+        await session.execute(
+            update(MemoryPolicyVersion)
+            .where(
+                MemoryPolicyVersion.memory_policy_version_id == MEMORY_POLICY_VERSION_V1_ID,
+            )
+            .values(
                 tenant_id=TENANT_DEMO_ID,
-                memory_policy_version_id=MEMORY_POLICY_VERSION_V1_ID,
+                is_active=True,
+                activated_at=datetime.now(timezone.utc),
                 activated_by_principal_id=PRINCIPAL_SYSTEM,
                 justification="bootstrap memory policy",
             )
-        else:
-            active_version.memory_policy_version_id = MEMORY_POLICY_VERSION_V1_ID
-            active_version.activated_by_principal_id = PRINCIPAL_SYSTEM
-            active_version.justification = "bootstrap memory policy"
-        session.add(active_version)
+        )
         await session.commit()

@@ -30,8 +30,8 @@ async def test_publish_agent_version_requires_validated(mocker):
     with pytest.raises(ResourceBlockedServiceException, match="agent_version_not_validated"):
         await service.publish_agent_version(
             tenant_id=tenant_id,
-            agent_id=str(agent_id),
-            agent_version_id=str(agent_version_id),
+            agent_id=agent_id,
+            agent_version_id=agent_version_id,
             principal_id=principal_id,
             change_request=ChangeRequest(change_type="agent", justification="j"),
         )
@@ -58,15 +58,15 @@ async def test_activate_and_rollback_emit_authoring_events(mocker):
 
     await service.activate_agent_version(
         tenant_id=tenant_id,
-        agent_id=str(agent_id),
-        agent_version_id=str(agent_version_id),
+        agent_id=agent_id,
+        agent_version_id=agent_version_id,
         principal_id=principal_id,
         change_request=ChangeRequest(change_type="activate", justification="activate"),
     )
     await service.rollback_agent_version(
         tenant_id=tenant_id,
-        agent_id=str(agent_id),
-        agent_version_id=str(agent_version_id),
+        agent_id=agent_id,
+        agent_version_id=agent_version_id,
         principal_id=principal_id,
         change_request=ChangeRequest(change_type="rollback", justification="rollback"),
     )

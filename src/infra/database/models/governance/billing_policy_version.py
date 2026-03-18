@@ -1,4 +1,12 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -25,3 +33,12 @@ class BillingPolicyVersion(ORMBaseModel):
     updated_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    tenant_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    is_active = Column(Boolean(), nullable=False, server_default="false")
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    activated_by_principal_id = Column(String(length=128), nullable=True)
+    justification = Column(String(length=512), nullable=True)

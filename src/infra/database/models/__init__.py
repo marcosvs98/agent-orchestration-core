@@ -7,8 +7,6 @@ from infra.database.models.governance import (
     RateLimitPolicy,
     RateLimitPolicyVersion,
     AuthoringEvent,
-    ActiveBillingPolicyVersion,
-    ActiveMemoryPolicyVersion,
     BillingPolicy,
     BillingPolicyVersion,
     ExecutionLimitPolicy,
@@ -19,7 +17,6 @@ from infra.database.models.governance import (
     MemoryPolicyVersion,
     RagPolicy,
     RagPolicyVersion,
-    ActiveRagPolicyVersion,
     RuntimePolicy,
 )
 from infra.database.models.conversation import (
@@ -35,7 +32,6 @@ from infra.database.models.flow import (
     FlowVersion,
     Node,
     Router,
-    ActiveFlowVersion,
     FlowGraph,
     FlowGraphDraft,
     FlowGraphSnapshot,
@@ -45,7 +41,6 @@ from infra.database.models.agent import (
     Agent,
     AgentVersion,
     NodeAgentBinding,
-    ActiveAgentVersion,
 )
 from infra.database.models.ai_policy import (
     AITask,
@@ -73,7 +68,7 @@ from infra.database.models.execution import (
     ExecutionEvent,
     FlowRunLock,
 )
-from infra.database.models.escalation import Escalation, EscalationPolicy, SLACase
+from infra.database.models.escalation import SLACase
 from infra.database.models.onboarding import (
     Onboarding,
     OnboardingRun,
@@ -95,13 +90,10 @@ __all__ = [
     "AuthoringEvent",
     "BillingPolicy",
     "BillingPolicyVersion",
-    "ActiveBillingPolicyVersion",
     "MemoryPolicy",
     "MemoryPolicyVersion",
-    "ActiveMemoryPolicyVersion",
     "RagPolicy",
     "RagPolicyVersion",
-    "ActiveRagPolicyVersion",
     "Session",
     "User",
     "UserPreference",
@@ -112,14 +104,12 @@ __all__ = [
     "ExecutionEvent",
     "FlowRunLock",
     "FlowVersion",
-    "ActiveFlowVersion",
     "Node",
     "Router",
     "ConditionExpression",
     "RoutingRule",
     "Agent",
     "AgentVersion",
-    "ActiveAgentVersion",
     "NodeAgentBinding",
     "AITask",
     "Model",
@@ -141,8 +131,6 @@ __all__ = [
     "ToolRun",
     "GraphState",
     "RunFailure",
-    "EscalationPolicy",
-    "Escalation",
     "SLACase",
     "Onboarding",
     "OnboardingVersion",

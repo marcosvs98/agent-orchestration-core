@@ -1,6 +1,7 @@
 from enum import StrEnum
-from typing import Any, Dict, Literal
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Literal, Self
+
+from pydantic import BaseModel, Field, model_validator
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
 
 
@@ -49,7 +50,7 @@ class LLMRequest(BaseModel):
     text_format: str | None = "json_object"
     temperature: float | None = 0.2
     max_tokens: int | None = None
-    max_latency_ms: int | None = 5000  # Todo: Create env of this
+    max_latency_ms: int | None = None
     max_cost_usd: float | None = None
     retry_limit: int | None = None
     fallback_model_alias: str | None = None
@@ -67,6 +68,16 @@ class LLMRequest(BaseModel):
     stream: bool = False
 
     model_config = {"frozen": True}
+
+    @model_validator(mode="after")
+    def _default_max_latency_ms(self) -> Self:
+        if self.max_latency_ms is None:
+            import settings as app_settings
+
+            return self.model_copy(
+                update={"max_latency_ms": app_settings.LLM_DEFAULT_MAX_LATENCY_MS}
+            )
+        return self
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.task_type})"

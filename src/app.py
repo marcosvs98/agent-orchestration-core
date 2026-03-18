@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
         app,
         [
             container.tenants.tenants_controller(),
+            container.auth.auth_controller(),
             container.flows.flows_controller(),
             container.agents.agents_controller(),
             container.tools.tools_controller(),
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
             container.execution.execution_controller(),
             container.execution.execution_plane_controller(),
             container.conversation.conversation_controller(),
+            container.conversation.conversation_read_controller(),
             container.onboarding.onboarding_controller(),
             container.prompts.prompt_controller(),
             container.user_prompts.user_prompts_controller(),

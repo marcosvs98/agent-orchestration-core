@@ -7151,7 +7151,7 @@
 							"name": "tools",
 							"item": [
 								{
-									"name": "import-openapi",
+									"name": "import-tools",
 									"item": [
 										{
 											"name": "Import Tool",
@@ -7188,7 +7188,7 @@
 													}
 												},
 												"url": {
-													"raw": "{{baseUrl}}/core/v1/tools/import-openapi",
+													"raw": "{{baseUrl}}/core/v1/tools/import-tools",
 													"host": [
 														"{{baseUrl}}"
 													],
@@ -7196,7 +7196,7 @@
 														"core",
 														"v1",
 														"tools",
-														"import-openapi"
+														"import-tools"
 													]
 												}
 											},
@@ -7231,7 +7231,7 @@
 															}
 														},
 														"url": {
-															"raw": "{{baseUrl}}/core/v1/tools/import-openapi",
+															"raw": "{{baseUrl}}/core/v1/tools/import-tools",
 															"host": [
 																"{{baseUrl}}"
 															],
@@ -7239,7 +7239,7 @@
 																"core",
 																"v1",
 																"tools",
-																"import-openapi"
+																"import-tools"
 															]
 														}
 													},
@@ -7285,7 +7285,7 @@
 															}
 														},
 														"url": {
-															"raw": "{{baseUrl}}/core/v1/tools/import-openapi",
+															"raw": "{{baseUrl}}/core/v1/tools/import-tools",
 															"host": [
 																"{{baseUrl}}"
 															],
@@ -7293,7 +7293,7 @@
 																"core",
 																"v1",
 																"tools",
-																"import-openapi"
+																"import-tools"
 															]
 														}
 													},

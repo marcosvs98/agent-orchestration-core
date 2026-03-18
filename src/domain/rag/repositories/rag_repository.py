@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
 
 import sqlalchemy as sa
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from adapters.cache.redis_adapter import RedisAdapter
@@ -12,6 +12,10 @@ from domain.common.schemas.versioning import VersionStatus
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.rag.schemas.embedding_job import EmbeddingStatus
 from domain.rag.schemas.rag import EMBEDDING_DIMENSION_REDUCED
+from domain.rag.schemas.rag_tenant_summary import (
+    RagConfigPreviewRow,
+    RagTenantSummaryData,
+)
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
 from infra.database.models.rag.rag_config import RagConfig as RagConfigModel
@@ -337,6 +341,7 @@ class RagRepository:
         version: str | None,
         metadata: dict[str, object] | None,
         embedding_status: EmbeddingStatus = EmbeddingStatus.PENDING,
+        rag_config_id: UUID | None = None,
     ) -> RagDocumentModel:
         async with self.db.get_session() as session:
             instance = RagDocumentModel(
@@ -348,6 +353,7 @@ class RagRepository:
                 version=version,
                 embedding_status=embedding_status.value,
                 doc_metadata=metadata,
+                rag_config_id=rag_config_id,
             )
             session.add(instance)
             await session.commit()
@@ -416,7 +422,11 @@ class RagRepository:
             return int(result.rowcount or 0) > 0
 
     async def list_documents(
-        self, *, tenant_id: UUID, limit: int
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int,
+        rag_config_id: UUID | None = None,
     ) -> list[RagDocumentModel]:
         async with self.db.get_session() as session:
             stmt = (
@@ -425,15 +435,17 @@ class RagRepository:
                 .order_by(RagDocumentModel.created_at.desc())
                 .limit(limit)
             )
+            if rag_config_id is not None:
+                stmt = stmt.where(RagDocumentModel.rag_config_id == rag_config_id)
             query_sql = compile_query(stmt)
+            params: dict[str, object] = {"tenant_id": str(tenant_id), "limit": limit}
+            if rag_config_id is not None:
+                params["rag_config_id"] = str(rag_config_id)
             if self.tracer:
                 with self.tracer.observe(
                     as_type="retriever",
                     name="domain.rag.rag_repository.list_documents",
-                    input={
-                        "query": query_sql,
-                        "params": {"tenant_id": str(tenant_id), "limit": limit},
-                    },
+                    input={"query": query_sql, "params": params},
                     metadata={"retriever_name": "list_documents"},
                 ) as retriever_handle:
                     result = await session.execute(stmt)
@@ -753,3 +765,71 @@ class RagRepository:
                     continue
                 items.append((chunk, score, document_created_at, document_observed_at))
             return items
+
+    async def get_tenant_rag_summary(
+        self,
+        *,
+        tenant_id: UUID,
+        configs_limit: int = 200,
+    ) -> RagTenantSummaryData:
+        async with self.db.get_session() as session:
+            vs_cnt = await session.execute(
+                select(func.count())
+                .select_from(VectorStoreModel)
+                .where(VectorStoreModel.tenant_id == tenant_id)
+            )
+            doc_cnt = await session.execute(
+                select(func.count())
+                .select_from(RagDocumentModel)
+                .where(RagDocumentModel.tenant_id == tenant_id)
+            )
+            chunk_cnt = await session.execute(
+                select(func.count())
+                .select_from(RagChunkModel)
+                .join(
+                    RagDocumentModel,
+                    RagChunkModel.document_id == RagDocumentModel.document_id,
+                )
+                .where(RagDocumentModel.tenant_id == tenant_id)
+            )
+            cfg_cnt = await session.execute(
+                select(func.count())
+                .select_from(RagConfigModel)
+                .where(RagConfigModel.tenant_id == tenant_id)
+            )
+            cfg_rows = await session.execute(
+                select(
+                    RagConfigModel.rag_config_id,
+                    RagConfigModel.status,
+                    RagConfigModel.vector_store_id,
+                    VectorStoreModel.name,
+                )
+                .join(
+                    VectorStoreModel,
+                    RagConfigModel.vector_store_id == VectorStoreModel.vector_store_id,
+                )
+                .where(RagConfigModel.tenant_id == tenant_id)
+                .order_by(
+                    VectorStoreModel.name.asc(),
+                    RagConfigModel.version_major.desc(),
+                    RagConfigModel.version_minor.desc(),
+                    RagConfigModel.version_patch.desc(),
+                )
+                .limit(configs_limit)
+            )
+            configs = [
+                RagConfigPreviewRow(
+                    vector_store_id=row.vector_store_id,
+                    name=row.name or "",
+                    rag_config_id=row.rag_config_id,
+                    status=str(row.status),
+                )
+                for row in cfg_rows.all()
+            ]
+            return RagTenantSummaryData(
+                vector_stores_count=int(vs_cnt.scalar() or 0),
+                documents_count=int(doc_cnt.scalar() or 0),
+                chunks_count=int(chunk_cnt.scalar() or 0),
+                rag_configs_count=int(cfg_cnt.scalar() or 0),
+                configs=configs,
+            )

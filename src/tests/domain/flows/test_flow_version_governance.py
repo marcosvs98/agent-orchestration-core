@@ -39,6 +39,9 @@ async def test_validate_flow_version_sets_validated_status(mocker):
     )
     flows_repo.list_routing_rules_for_flow_version = mocker.AsyncMock(return_value=[])
     flows_repo.set_flow_version_status = mocker.AsyncMock()
+    flows_repo.get_flow_graph_draft = mocker.AsyncMock(
+        return_value=SimpleNamespace(status="VALIDATED")
+    )
 
     policy_repo = mocker.Mock()
     policy_repo.get_default_policy_for_tenant = mocker.AsyncMock(

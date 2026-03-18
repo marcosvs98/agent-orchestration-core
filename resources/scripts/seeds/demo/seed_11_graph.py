@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parents[3]
@@ -8,7 +9,7 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from pydantic import BaseModel
 
 from domain.common.schemas.versioning import VersionStatus
@@ -23,7 +24,6 @@ from domain.flows.services.flow_graph_draft_validator import FlowGraphDraftValid
 from infra.database import get_db
 from infra.database.models.flow.flow_graph_draft import FlowGraphDraft
 from infra.database.models.flow.flow_graph_snapshot import FlowGraphSnapshot
-from infra.database.models.flow.active_flow_version import ActiveFlowVersion
 from infra.database.models.flow.flow_version import FlowVersion
 
 from seeds.demo.ids import (
@@ -491,20 +491,25 @@ async def seed_graph() -> None:
             flow_version.status = VersionStatus.PUBLISHED.value
             await session.commit()
 
-        result = await session.execute(
-            select(ActiveFlowVersion).where(
-                ActiveFlowVersion.flow_id == FLOW_DEMO_ID
+        await session.execute(
+            update(FlowVersion)
+            .where(
+                FlowVersion.flow_id == FLOW_DEMO_ID,
+                FlowVersion.flow_version_id != FLOW_VERSION_V1_ID,
             )
+            .values(is_active=False)
         )
-        active_flow = result.scalar_one_or_none()
-
-        if active_flow is None:
-            active_flow = ActiveFlowVersion(
-                flow_id=FLOW_DEMO_ID,
-                flow_version_id=FLOW_VERSION_V1_ID,
-                flow_graph_snapshot_id=FLOW_GRAPH_SNAPSHOT_ID,
+        await session.execute(
+            update(FlowVersion)
+            .where(
+                FlowVersion.flow_id == FLOW_DEMO_ID,
+                FlowVersion.flow_version_id == FLOW_VERSION_V1_ID,
+            )
+            .values(
+                is_active=True,
+                activated_at=datetime.now(timezone.utc),
                 activated_by_principal_id=PRINCIPAL_SYSTEM,
                 justification="Bootstrap seed - ativação inicial",
             )
-            session.add(active_flow)
-            await session.commit()
+        )
+        await session.commit()

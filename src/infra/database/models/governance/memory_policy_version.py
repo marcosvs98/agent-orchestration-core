@@ -1,4 +1,13 @@
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.sql import text
 
@@ -25,6 +34,15 @@ class MemoryPolicyVersion(ORMBaseModel):
     )
     allowed_sources = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     allowed_schemas = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    tenant_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    is_active = Column(Boolean(), nullable=False, server_default="false")
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    activated_by_principal_id = Column(String(length=128), nullable=True)
+    justification = Column(String(length=512), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

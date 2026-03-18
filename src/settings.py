@@ -64,6 +64,9 @@ SLM_MODEL_PATH: str = config(
 SLM_INFERENCE_TIMEOUT_MS: int = config(
     "SLM_INFERENCE_TIMEOUT_MS", default=500, cast=int
 )
+LLM_DEFAULT_MAX_LATENCY_MS: int = config(
+    "LLM_DEFAULT_MAX_LATENCY_MS", default=5000, cast=int
+)
 
 LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)
 LANGFUSE_SECRET_KEY: str | None = config("LANGFUSE_SECRET_KEY", default=None)
@@ -85,4 +88,7 @@ JWT_ALGORITHM: str = config("JWT_ALGORITHM", default="HS256", cast=str)
 JWT_ISSUER: str = config("JWT_ISSUER", default="", cast=str)
 JWT_AUDIENCE: str = config("JWT_AUDIENCE", default="", cast=str)
 JWT_LEEWAY_SECONDS: int = config("JWT_LEEWAY_SECONDS", default=0, cast=int)
+JWT_TENANT_TOKEN_EXPIRES_SECONDS: int = config(
+    "JWT_TENANT_TOKEN_EXPIRES_SECONDS", default=3600, cast=int
+)
 IDEMPOTENCY_TTL_SECONDS: int = config("IDEMPOTENCY_TTL_SECONDS", default=3600, cast=int)

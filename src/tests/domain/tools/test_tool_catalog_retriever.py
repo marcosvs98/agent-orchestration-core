@@ -192,7 +192,7 @@ async def test_retrieve_candidates_forwards_tool_intent_filter_to_rag():
         user_input="find tool",
         available_tools=available_tools,
         top_k=1,
-        tool_intent_filter=command",
+        tool_intent_filter="command",
     )
 
     kwargs = rag_runtime_service.get_context.call_args.kwargs

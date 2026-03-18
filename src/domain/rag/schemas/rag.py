@@ -99,6 +99,7 @@ class RagDocumentCreate(BaseModel):
     content: str
     version: str | None = None
     metadata: dict[str, object] | None = None
+    rag_config_id: UUID | None = None
 
 
 class RagDocument(BaseModel):
@@ -110,6 +111,7 @@ class RagDocument(BaseModel):
     content_hash: str
     metadata: dict[str, object] | None = None
     embedding_status: EmbeddingStatus | None = None
+    rag_config_id: UUID | None = None
 
 
 class RagPreparedDocument(BaseModel):

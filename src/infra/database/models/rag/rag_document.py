@@ -24,6 +24,12 @@ class RagDocument(ORMBaseModel):
         ForeignKey("tenant.tenant_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    rag_config_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("rag_config.rag_config_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     source = Column(String(length=255), nullable=True)
     doc_type = Column(String(length=128), nullable=True)
     content_hash = Column(String(length=128), nullable=False)

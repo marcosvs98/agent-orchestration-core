@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 project_root = Path(__file__).resolve().parents[3]
@@ -8,14 +9,13 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from domain.agents.schemas.agents import PersonaConfig
 from domain.common.schemas.versioning import VersionStatus
 from infra.database import get_db
 from infra.database.models.agent.agent import Agent
 from infra.database.models.agent.agent_version import AgentVersion
-from infra.database.models.agent.active_agent_version import ActiveAgentVersion
 
 from seeds.demo.ids import (
     AGENT_DEMO_ID,
@@ -100,19 +100,25 @@ Regras operacionais:
             agent_version.rag_config_id = RAG_CONFIG_DEMO_ID
             await session.commit()
 
-        result = await session.execute(
-            select(ActiveAgentVersion).where(
-                ActiveAgentVersion.agent_id == AGENT_DEMO_ID
+        await session.execute(
+            update(AgentVersion)
+            .where(
+                AgentVersion.agent_id == AGENT_DEMO_ID,
+                AgentVersion.agent_version_id != AGENT_VERSION_V1_ID,
             )
+            .values(is_active=False)
         )
-        active_version = result.scalar_one_or_none()
-
-        if active_version is None:
-            active_version = ActiveAgentVersion(
-                agent_id=AGENT_DEMO_ID,
-                agent_version_id=AGENT_VERSION_V1_ID,
+        await session.execute(
+            update(AgentVersion)
+            .where(
+                AgentVersion.agent_id == AGENT_DEMO_ID,
+                AgentVersion.agent_version_id == AGENT_VERSION_V1_ID,
+            )
+            .values(
+                is_active=True,
+                activated_at=datetime.now(timezone.utc),
                 activated_by_principal_id=PRINCIPAL_SYSTEM,
                 justification="Bootstrap seed - ativação inicial",
             )
-            session.add(active_version)
-            await session.commit()
+        )
+        await session.commit()

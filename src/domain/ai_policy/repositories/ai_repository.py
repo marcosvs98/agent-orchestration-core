@@ -101,6 +101,27 @@ class AIRepository:
             await session.refresh(instance)
             return instance
 
+    async def get_model_by_name(self, name: str) -> ModelModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(ModelModel).where(ModelModel.name == name)
+            query_sql = compile_query(stmt)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.ai_policy.repository.get_model_by_name",
+                input={"query": query_sql, "params": {"name": name}},
+                metadata={"retriever_name": "get_model_by_name"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if model else 0,
+                            "found": model is not None,
+                        }
+                    )
+                return model
+
     async def get_model(self, model_id: UUID) -> ModelModel | None:
         async with self.db.get_session() as session:
             stmt = select(ModelModel).where(ModelModel.model_id == model_id)

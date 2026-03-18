@@ -10,7 +10,7 @@ from domain.execution.services.graph_runtime.types import (
     NodeExecutionStatus,
     NodeResult,
 )
-from domain.human_sla.schemas.sla_case import SLAFallbackReason, SeverityLevel
+from domain.human_sla.schemas.sla_case import SLAFallbackReason
 from domain.human_sla.services.human_sla_service import HumanSLAService
 from domain.llm.ports.completion_budget_policy import CompletionBudgetPolicyPort
 from domain.llm.ports.llm_executor import LLMExecutorPort
@@ -58,19 +58,29 @@ class FallbackNode(LLMNodeExecutor):
             self.human_sla_service is not None
             and context.current_node_run_id is not None
         ):
-            (
-                await self.human_sla_service.get_or_create_open_case_for_fallback(
-                    tenant_id=context.tenant_id,
-                    session_id=context.session_id,
-                    flow_run_id=context.flow_run_id,
-                    node_run_id=context.current_node_run_id,
-                    interaction_id=context.interaction_id,
-                    user_id=context.user_id,
-                    fallback_reason=SLAFallbackReason.LOW_CONFIDENCE,
-                    priority=SeverityLevel.LOW,
-                    opened_at=datetime.now(timezone.utc),
-                    # sla_target_at=
-                )
+            metadata = context.metadata or {}
+            node = metadata.get("fallback_source_node") or metadata.get(
+                "current_node_type", ""
+            )
+            raw_reason = metadata.get("fallback_reason")
+            if isinstance(raw_reason, SLAFallbackReason):
+                fallback_reason = raw_reason
+            elif isinstance(raw_reason, str) and raw_reason in (
+                e.value for e in SLAFallbackReason
+            ):
+                fallback_reason = SLAFallbackReason(raw_reason)
+            else:
+                fallback_reason = SLAFallbackReason.LOW_CONFIDENCE
+            await self.human_sla_service.get_or_create_open_case_for_fallback(
+                tenant_id=context.tenant_id,
+                session_id=context.session_id,
+                flow_run_id=context.flow_run_id,
+                node_run_id=context.current_node_run_id,
+                interaction_id=context.interaction_id,
+                user_id=context.user_id,
+                node=node if isinstance(node, str) else str(node or ""),
+                fallback_reason=fallback_reason,
+                opened_at=datetime.now(timezone.utc),
             )
 
-        return await super().execute(context)
+        return await super().execute(context, config)

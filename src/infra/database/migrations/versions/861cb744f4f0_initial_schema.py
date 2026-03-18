@@ -143,9 +143,6 @@ def upgrade() -> None:
         sa.Column("node_type", sa.String(length=64), nullable=False),
         sa.Column("template_text", sa.Text(), nullable=False),
         sa.Column(
-            "input_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=True
-        ),
-        sa.Column(
             "output_schema", postgresql.JSONB(astext_type=sa.Text()), nullable=True
         ),
         sa.Column("version", sa.Integer(), nullable=False),
@@ -301,6 +298,13 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("session_id", name=op.f("pk_session")),
     )
+    op.create_index("ix_session_tenant_id", "session", ["tenant_id"], unique=False)
+    op.create_index(
+        "ix_session_tenant_id_user_id",
+        "session",
+        ["tenant_id", "user_id"],
+        unique=False,
+    )
     op.create_table(
         "user_preference",
         sa.Column("user_preference_id", sa.UUID(), nullable=False),
@@ -395,7 +399,8 @@ def upgrade() -> None:
     op.create_table(
         "vector_store",
         sa.Column("vector_store_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=True),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -408,7 +413,22 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_vector_store_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint("vector_store_id", name=op.f("pk_vector_store")),
+        sa.UniqueConstraint(
+            "tenant_id", "name", name=op.f("uq_vector_store_tenant_name")
+        ),
+    )
+    op.create_index(
+        op.f("ix_vector_store_tenant_id"),
+        "vector_store",
+        ["tenant_id"],
+        unique=False,
     )
     op.create_table(
         "access_policy",
@@ -525,6 +545,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("authoring_event_id", name=op.f("pk_authoring_event")),
     )
+    op.create_index(
+        "ix_authoring_event_tenant_resource_type_occurred_at",
+        "authoring_event",
+        ["tenant_id", "resource_type", "occurred_at"],
+        unique=False,
+    )
     op.create_table(
         "billing_policy",
         sa.Column("billing_policy_id", sa.UUID(), nullable=False),
@@ -601,34 +627,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("rag_policy_id", name=op.f("pk_rag_policy")),
     )
     op.create_table(
-        "escalation_policy",
-        sa.Column("escalation_policy_id", sa.UUID(), nullable=False),
-        sa.Column("condition_expression_id", sa.UUID(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["condition_expression_id"],
-            ["condition_expression.condition_expression_id"],
-            name=op.f(
-                "fk_escalation_policy_condition_expression_id_condition_expression"
-            ),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint(
-            "escalation_policy_id", name=op.f("pk_escalation_policy")
-        ),
-    )
-    op.create_table(
         "execution_limit_policy",
         sa.Column("execution_limit_policy_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
@@ -687,6 +685,7 @@ def upgrade() -> None:
         "llm_model_mapping",
         sa.Column("llm_model_mapping_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("model_id", sa.UUID(), nullable=False),
         sa.Column("provider", sa.String(length=32), nullable=False),
         sa.Column("model_alias", sa.String(length=64), nullable=False),
         sa.Column("provider_model", sa.String(length=128), nullable=False),
@@ -712,6 +711,12 @@ def upgrade() -> None:
             name=op.f("fk_llm_model_mapping_tenant_id_tenant"),
             ondelete="CASCADE",
         ),
+        sa.ForeignKeyConstraint(
+            ["model_id"],
+            ["model.model_id"],
+            name=op.f("fk_llm_model_mapping_model_id_model"),
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint(
             "llm_model_mapping_id", name=op.f("pk_llm_model_mapping")
         ),
@@ -724,8 +729,8 @@ def upgrade() -> None:
         sa.Column(
             "status", sa.String(length=16), server_default="INACTIVE", nullable=False
         ),
-        sa.Column("base_url", sa.String(length=255), nullable=True),
-        sa.Column("credential_secret_ref", sa.String(length=255), nullable=True),
+        sa.Column("base_url", sa.Text(), nullable=True),
+        sa.Column("credential_secret_ref", sa.Text(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -852,6 +857,11 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column(
+            "rag_config_id",
+            sa.UUID(),
+            nullable=True,
+        ),
+        sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
@@ -869,12 +879,24 @@ def upgrade() -> None:
             name=op.f("fk_rag_document_tenant_id_tenant"),
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["rag_config_id"],
+            ["rag_config.rag_config_id"],
+            name=op.f("fk_rag_document_rag_config_id_rag_config"),
+            ondelete="SET NULL",
+        ),
         sa.PrimaryKeyConstraint("document_id", name=op.f("pk_rag_document")),
         sa.UniqueConstraint(
             "tenant_id",
             "content_hash",
             name=op.f("uq_rag_document_tenant_id_content_hash"),
         ),
+    )
+    op.create_index(
+        "ix_rag_document_rag_config_id",
+        "rag_document",
+        ["rag_config_id"],
+        unique=False,
     )
     op.create_table(
         "rag_chunk",
@@ -1275,15 +1297,38 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column("tenant_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=True),
+        sa.Column("justification", sa.String(length=512), nullable=True),
         sa.ForeignKeyConstraint(
             ["billing_policy_id"],
             ["billing_policy.billing_policy_id"],
             name=op.f("fk_billing_policy_version_billing_policy_id_billing_policy"),
             ondelete="CASCADE",
         ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_billing_policy_version_tenant_id_tenant"),
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint(
             "billing_policy_version_id", name=op.f("pk_billing_policy_version")
         ),
+    )
+    op.create_index(
+        "ix_billing_policy_version_active_per_tenant",
+        "billing_policy_version",
+        ["tenant_id"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_table(
         "execution_limit_policy_version",
@@ -1414,10 +1459,26 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column("tenant_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=True),
+        sa.Column("justification", sa.String(length=512), nullable=True),
         sa.ForeignKeyConstraint(
             ["memory_policy_id"],
             ["memory_policy.memory_policy_id"],
             name=op.f("fk_memory_policy_version_memory_policy_id_memory_policy"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_memory_policy_version_tenant_id_tenant"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint(
@@ -1436,6 +1497,13 @@ def upgrade() -> None:
         "memory_policy_version",
         ["status"],
         unique=False,
+    )
+    op.create_index(
+        "ix_memory_policy_version_active_per_tenant",
+        "memory_policy_version",
+        ["tenant_id"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_table(
         "rag_policy_version",
@@ -1466,10 +1534,26 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column("tenant_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=True),
+        sa.Column("justification", sa.String(length=512), nullable=True),
         sa.ForeignKeyConstraint(
             ["rag_policy_id"],
             ["rag_policy.rag_policy_id"],
             name=op.f("fk_rag_policy_version_rag_policy_id_rag_policy"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_rag_policy_version_tenant_id_tenant"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint(
@@ -1488,6 +1572,13 @@ def upgrade() -> None:
         "rag_policy_version",
         ["status"],
         unique=False,
+    )
+    op.create_index(
+        "ix_rag_policy_version_active_per_tenant",
+        "rag_policy_version",
+        ["tenant_id"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_table(
         "flow_version",
@@ -1515,6 +1606,15 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=True),
+        sa.Column("justification", sa.String(length=512), nullable=True),
         sa.ForeignKeyConstraint(
             ["flow_id"],
             ["flow.flow_id"],
@@ -1531,6 +1631,13 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_flow_version_status", "flow_version", ["status"], unique=False)
+    op.create_index(
+        "ix_flow_version_active_per_flow",
+        "flow_version",
+        ["flow_id"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
+    )
     op.create_table(
         "flow_graph_snapshot",
         sa.Column("flow_graph_snapshot_id", sa.UUID(), nullable=False),
@@ -1614,6 +1721,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -1633,6 +1741,12 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("interaction_id", name=op.f("pk_interaction")),
+    )
+    op.create_index(
+        "ix_interaction_session_id_received_at",
+        "interaction",
+        ["session_id", "received_at"],
+        unique=False,
     )
     op.create_table(
         "flow_run",
@@ -1800,37 +1914,6 @@ def upgrade() -> None:
         ),
     )
     op.create_table(
-        "escalation",
-        sa.Column("escalation_id", sa.UUID(), nullable=False),
-        sa.Column("flow_run_id", sa.UUID(), nullable=False),
-        sa.Column("escalation_policy_id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["escalation_policy_id"],
-            ["escalation_policy.escalation_policy_id"],
-            name=op.f("fk_escalation_escalation_policy_id_escalation_policy"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["flow_run_id"],
-            ["flow_run.flow_run_id"],
-            name=op.f("fk_escalation_flow_run_id_flow_run"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("escalation_id", name=op.f("pk_escalation")),
-    )
-    op.create_table(
         "execution_event",
         sa.Column("execution_event_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
@@ -1847,7 +1930,7 @@ def upgrade() -> None:
         ),
         sa.Column("event_sequence", sa.BigInteger(), nullable=False),
         sa.Column("schema_version", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("type", sa.String(length=64), nullable=False),
+        sa.Column("type", sa.Text(), nullable=False),
         sa.Column(
             "payload",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -1892,6 +1975,18 @@ def upgrade() -> None:
         "ix_execution_event_tenant_user_occurred_at",
         "execution_event",
         ["tenant_id", "user_id", "occurred_at"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_execution_event_tenant_flow_run_occurred_at",
+        "execution_event",
+        ["tenant_id", "flow_run_id", "occurred_at"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_execution_event_tenant_session_occurred_at",
+        "execution_event",
+        ["tenant_id", "session_id", "occurred_at"],
         unique=False,
     )
     op.create_table(
@@ -2035,118 +2130,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("runtime_policy_id", name=op.f("pk_runtime_policy")),
     )
     op.create_table(
-        "active_billing_policy_version",
-        sa.Column("tenant_id", sa.UUID(), nullable=False),
-        sa.Column("billing_policy_version_id", sa.UUID(), nullable=False),
-        sa.Column(
-            "activated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
-        sa.Column("justification", sa.String(length=512), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["billing_policy_version_id"],
-            ["billing_policy_version.billing_policy_version_id"],
-            name=op.f(
-                "fk_active_billing_policy_version_billing_policy_version_id_billing_policy_version"
-            ),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["tenant_id"],
-            ["tenant.tenant_id"],
-            name=op.f("fk_active_billing_policy_version_tenant_id_tenant"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint(
-            "tenant_id", name=op.f("pk_active_billing_policy_version")
-        ),
-    )
-    op.create_table(
-        "active_memory_policy_version",
-        sa.Column("tenant_id", sa.UUID(), nullable=False),
-        sa.Column("memory_policy_version_id", sa.UUID(), nullable=False),
-        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
-        sa.Column("justification", sa.String(length=512), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["memory_policy_version_id"],
-            ["memory_policy_version.memory_policy_version_id"],
-            name=op.f(
-                "fk_active_memory_policy_version_memory_policy_version_id_memory_policy_version"
-            ),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["tenant_id"],
-            ["tenant.tenant_id"],
-            name=op.f("fk_active_memory_policy_version_tenant_id_tenant"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint(
-            "tenant_id", name=op.f("pk_active_memory_policy_version")
-        ),
-    )
-    op.create_table(
-        "active_rag_policy_version",
-        sa.Column("tenant_id", sa.UUID(), nullable=False),
-        sa.Column("rag_policy_version_id", sa.UUID(), nullable=False),
-        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
-        sa.Column("justification", sa.String(length=512), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["rag_policy_version_id"],
-            ["rag_policy_version.rag_policy_version_id"],
-            name=op.f(
-                "fk_active_rag_policy_version_rag_policy_version_id_rag_policy_version"
-            ),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["tenant_id"],
-            ["tenant.tenant_id"],
-            name=op.f("fk_active_rag_policy_version_tenant_id_tenant"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("tenant_id", name=op.f("pk_active_rag_policy_version")),
-    )
-    op.create_table(
         "agent_version",
         sa.Column("agent_version_id", sa.UUID(), nullable=False),
         sa.Column("agent_id", sa.UUID(), nullable=False),
@@ -2180,6 +2163,15 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=True),
+        sa.Column("justification", sa.String(length=512), nullable=True),
         sa.ForeignKeyConstraint(
             ["agent_id"],
             ["agent.agent_id"],
@@ -2211,6 +2203,13 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_agent_version_status", "agent_version", ["status"], unique=False
+    )
+    op.create_index(
+        "ix_agent_version_active_per_agent",
+        "agent_version",
+        ["agent_id"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_table(
         "flow_graph",
@@ -2282,10 +2281,53 @@ def upgrade() -> None:
         ),
     )
     op.create_table(
+        "node_template",
+        sa.Column("node_template_id", sa.UUID(), nullable=False),
+        sa.Column("code", sa.String(length=128), nullable=False),
+        sa.Column("node_type", sa.String(length=128), nullable=False),
+        sa.Column(
+            "default_config",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+        ),
+        sa.Column(
+            "scope", sa.String(length=32), nullable=False, server_default="system"
+        ),
+        sa.Column("owner_tenant_id", sa.UUID(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["owner_tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_node_template_owner_tenant_id_tenant"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("node_template_id", name=op.f("pk_node_template")),
+        sa.UniqueConstraint("code", name=op.f("uq_node_template_code")),
+    )
+    op.create_table(
         "node",
         sa.Column("node_id", sa.UUID(), nullable=False),
         sa.Column("flow_version_id", sa.UUID(), nullable=False),
         sa.Column("ai_task_id", sa.UUID(), nullable=True),
+        sa.Column("node_type", sa.String(length=128), nullable=True),
+        sa.Column(
+            "config",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+        ),
+        sa.Column("source_node_template_id", sa.UUID(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -2309,6 +2351,12 @@ def upgrade() -> None:
             ["flow_version.flow_version_id"],
             name=op.f("fk_node_flow_version_id_flow_version"),
             ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_node_template_id"],
+            ["node_template.node_template_id"],
+            name=op.f("fk_node_source_node_template_id_node_template"),
+            ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("node_id", name=op.f("pk_node")),
     )
@@ -2361,91 +2409,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("onboarding_step_id", name=op.f("pk_onboarding_step")),
     )
     op.create_table(
-        "active_agent_version",
-        sa.Column("agent_id", sa.UUID(), nullable=False),
-        sa.Column("agent_version_id", sa.UUID(), nullable=False),
-        sa.Column(
-            "activated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
-        sa.Column("justification", sa.String(length=512), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["agent_id"],
-            ["agent.agent_id"],
-            name=op.f("fk_active_agent_version_agent_id_agent"),
-            ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["agent_version_id"],
-            ["agent_version.agent_version_id"],
-            name=op.f("fk_active_agent_version_agent_version_id_agent_version"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("agent_id", name=op.f("pk_active_agent_version")),
-    )
-    op.create_table(
-        "active_flow_version",
-        sa.Column("flow_id", sa.UUID(), nullable=False),
-        sa.Column("flow_version_id", sa.UUID(), nullable=False),
-        sa.Column("flow_graph_snapshot_id", sa.UUID(), nullable=True),
-        sa.Column(
-            "activated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("activated_by_principal_id", sa.String(length=128), nullable=False),
-        sa.Column("justification", sa.String(length=512), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["flow_graph_snapshot_id"],
-            ["flow_graph_snapshot.flow_graph_snapshot_id"],
-            name=op.f(
-                "fk_active_flow_version_flow_graph_snapshot_id_flow_graph_snapshot"
-            ),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["flow_id"],
-            ["flow.flow_id"],
-            name=op.f("fk_active_flow_version_flow_id_flow"),
-            ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["flow_version_id"],
-            ["flow_version.flow_version_id"],
-            name=op.f("fk_active_flow_version_flow_version_id_flow_version"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("flow_id", name=op.f("pk_active_flow_version")),
-    )
-    op.create_table(
         "agent_version_tool_binding",
         sa.Column("agent_version_tool_binding_id", sa.UUID(), nullable=False),
         sa.Column("agent_version_id", sa.UUID(), nullable=False),
@@ -2477,6 +2440,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint(
             "agent_version_tool_binding_id", name=op.f("pk_agent_version_tool_binding")
         ),
+    )
+    op.create_index(
+        "ix_agent_version_tool_binding_agent_version_id",
+        "agent_version_tool_binding",
+        ["agent_version_id"],
+        unique=False,
     )
     op.create_table(
         "node_agent_binding",
@@ -2510,6 +2479,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint(
             "node_agent_binding_id", name=op.f("pk_node_agent_binding")
         ),
+    )
+    op.create_index(
+        "ix_node_agent_binding_node_id",
+        "node_agent_binding",
+        ["node_id"],
+        unique=False,
     )
     op.create_table(
         "node_ai_execution_policy_binding",
@@ -2546,6 +2521,11 @@ def upgrade() -> None:
             "node_ai_execution_policy_binding_id",
             name=op.f("pk_node_ai_execution_policy_binding"),
         ),
+    )
+    op.create_unique_constraint(
+        op.f("uq_node_ai_execution_policy_binding_node_id"),
+        "node_ai_execution_policy_binding",
+        ["node_id"],
     )
     op.create_table(
         "node_run",
@@ -2617,6 +2597,103 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
     op.create_table(
+        "human_sla_policy",
+        sa.Column("human_sla_policy_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("node", sa.String(length=64), nullable=False),
+        sa.Column("fallback_reason", sa.String(length=64), nullable=False),
+        sa.Column("initial_priority", sa.String(length=32), nullable=False),
+        sa.Column("target_response_hours", sa.Integer(), nullable=True),
+        sa.Column("target_resolution_hours", sa.Integer(), nullable=True),
+        sa.Column(
+            "active",
+            sa.Boolean(),
+            server_default=sa.text("true"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_human_sla_policy_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint(
+            "human_sla_policy_id", name=op.f("pk_human_sla_policy")
+        ),
+        sa.CheckConstraint(
+            "target_response_hours IS NULL OR target_response_hours > 0",
+            name="ck_human_sla_policy_target_response_hours_positive",
+        ),
+        sa.CheckConstraint(
+            "target_resolution_hours IS NULL OR target_resolution_hours > 0",
+            name="ck_human_sla_policy_target_resolution_hours_positive",
+        ),
+    )
+    op.create_index(
+        "ix_human_sla_policy_tenant_node_reason",
+        "human_sla_policy",
+        ["tenant_id", "node", "fallback_reason"],
+        unique=False,
+    )
+    op.create_table(
+        "human_sla_escalation_rule",
+        sa.Column("human_sla_escalation_rule_id", sa.UUID(), nullable=False),
+        sa.Column("human_sla_policy_id", sa.UUID(), nullable=False),
+        sa.Column("level", sa.Integer(), nullable=False),
+        sa.Column("trigger_after_hours", sa.Integer(), nullable=False),
+        sa.Column("new_priority", sa.String(length=32), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["human_sla_policy_id"],
+            ["human_sla_policy.human_sla_policy_id"],
+            name=op.f(
+                "fk_human_sla_escalation_rule_human_sla_policy_id_human_sla_policy"
+            ),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint(
+            "human_sla_escalation_rule_id",
+            name=op.f("pk_human_sla_escalation_rule"),
+        ),
+        sa.UniqueConstraint(
+            "human_sla_policy_id",
+            "level",
+            name="uq_human_sla_escalation_rule_policy_level",
+        ),
+        sa.CheckConstraint(
+            "level >= 0",
+            name="ck_human_sla_escalation_rule_level_non_neg",
+        ),
+        sa.CheckConstraint(
+            "trigger_after_hours >= 0",
+            name="ck_human_sla_escalation_rule_trigger_non_neg",
+        ),
+    )
+    op.create_table(
         "sla_case",
         sa.Column("sla_case_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
@@ -2632,10 +2709,17 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("priority", sa.String(length=32), nullable=True),
-        sa.Column("fallback_reason", sa.String(length=64), nullable=False),
+        sa.Column("fallback_reason", sa.Text(), nullable=False),
         sa.Column("human_agent_id", sa.String(length=128), nullable=True),
         sa.Column("resolution_status", sa.String(length=32), nullable=True),
-        sa.Column("resolution_summary", sa.String(length=1024), nullable=True),
+        sa.Column("resolution_summary", sa.Text(), nullable=True),
+        sa.Column("human_sla_policy_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "current_escalation_level",
+            sa.Integer(),
+            server_default=sa.text("0"),
+            nullable=False,
+        ),
         sa.Column("opened_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("assigned_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
@@ -2688,12 +2772,28 @@ def upgrade() -> None:
             name="fk_sla_case_tenant_id_tenant",
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["human_sla_policy_id"],
+            ["human_sla_policy.human_sla_policy_id"],
+            name=op.f("fk_sla_case_human_sla_policy_id_human_sla_policy"),
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint("sla_case_id", name="pk_sla_case"),
         sa.UniqueConstraint(
             "flow_run_id",
             "node_run_id",
             name="uq_sla_case_flow_run_node_run",
         ),
+        sa.CheckConstraint(
+            "current_escalation_level >= 0",
+            name="ck_sla_case_current_escalation_level_non_neg",
+        ),
+    )
+    op.create_index(
+        op.f("ix_sla_case_human_sla_policy_id"),
+        "sla_case",
+        ["human_sla_policy_id"],
+        unique=False,
     )
     op.create_index(
         "ix_sla_case_tenant_status",
@@ -3141,8 +3241,15 @@ def downgrade() -> None:
     op.drop_index("ix_sla_case_opened_at", table_name="sla_case")
     op.drop_index("ix_sla_case_flow_run", table_name="sla_case")
     op.drop_index("ix_sla_case_session", table_name="sla_case")
+    op.drop_index(op.f("ix_sla_case_human_sla_policy_id"), table_name="sla_case")
     op.drop_index("ix_sla_case_tenant_status", table_name="sla_case")
     op.drop_table("sla_case")
+    op.drop_table("human_sla_escalation_rule")
+    op.drop_index(
+        "ix_human_sla_policy_tenant_node_reason",
+        table_name="human_sla_policy",
+    )
+    op.drop_table("human_sla_policy")
     op.drop_index("ix_step_run_status", table_name="step_run")
     op.drop_index("ix_step_run_onboarding_run_id", table_name="step_run")
     op.drop_table("step_run")
@@ -3153,25 +3260,48 @@ def downgrade() -> None:
         type_="foreignkey",
     )
     op.drop_table("node_run")
+    op.drop_constraint(
+        op.f("uq_node_ai_execution_policy_binding_node_id"),
+        "node_ai_execution_policy_binding",
+        type_="unique",
+    )
     op.drop_table("node_ai_execution_policy_binding")
+    op.drop_index(
+        "ix_node_agent_binding_node_id",
+        table_name="node_agent_binding",
+    )
     op.drop_table("node_agent_binding")
+    op.drop_index(
+        "ix_agent_version_tool_binding_agent_version_id",
+        table_name="agent_version_tool_binding",
+    )
     op.drop_table("agent_version_tool_binding")
-    op.drop_table("active_flow_version")
-    op.drop_table("active_agent_version")
     op.drop_table("onboarding_step")
     op.drop_table("onboarding_run")
     op.drop_table("node")
     op.drop_table("flow_graph_snapshot")
     op.drop_table("flow_graph_draft")
     op.drop_table("flow_graph")
+    op.drop_index(
+        "ix_agent_version_active_per_agent",
+        table_name="agent_version",
+        postgresql_where=sa.text("is_active = true"),
+    )
     op.drop_index("ix_agent_version_status", table_name="agent_version")
     op.drop_table("agent_version")
-    op.drop_table("active_rag_policy_version")
-    op.drop_table("active_memory_policy_version")
-    op.drop_table("active_billing_policy_version")
     op.drop_table("runtime_policy")
+    op.drop_index(
+        "ix_rag_policy_version_active_per_tenant",
+        table_name="rag_policy_version",
+        postgresql_where=sa.text("is_active = true"),
+    )
     op.drop_index("ix_rag_policy_version_status", table_name="rag_policy_version")
     op.drop_table("rag_policy_version")
+    op.drop_index(
+        "ix_memory_policy_version_active_per_tenant",
+        table_name="memory_policy_version",
+        postgresql_where=sa.text("is_active = true"),
+    )
     op.drop_index("ix_memory_policy_version_status", table_name="memory_policy_version")
     op.drop_table("memory_policy_version")
     op.drop_index(
@@ -3183,6 +3313,11 @@ def downgrade() -> None:
     op.drop_table("rate_limit_policy_version")
     op.drop_index("ix_onboarding_version_status", table_name="onboarding_version")
     op.drop_table("onboarding_version")
+    op.drop_index(
+        "ix_flow_version_active_per_flow",
+        table_name="flow_version",
+        postgresql_where=sa.text("is_active = true"),
+    )
     op.drop_index("ix_flow_version_status", table_name="flow_version")
     op.drop_table("flow_version")
     op.drop_index(
@@ -3191,10 +3326,22 @@ def downgrade() -> None:
     )
     op.drop_table("execution_limit_policy_version")
     op.drop_index(
+        "ix_execution_event_tenant_session_occurred_at",
+        table_name="execution_event",
+    )
+    op.drop_index(
+        "ix_execution_event_tenant_flow_run_occurred_at",
+        table_name="execution_event",
+    )
+    op.drop_index(
         "ix_execution_event_tenant_user_occurred_at", table_name="execution_event"
     )
     op.drop_table("execution_event")
-    op.drop_table("escalation")
+    op.drop_index(
+        "ix_billing_policy_version_active_per_tenant",
+        table_name="billing_policy_version",
+        postgresql_where=sa.text("is_active = true"),
+    )
     op.drop_table("billing_policy_version")
     op.drop_index(
         "ix_ai_policy_version_status", table_name="ai_execution_policy_version"
@@ -3202,10 +3349,16 @@ def downgrade() -> None:
     op.drop_table("ai_execution_policy_version")
     op.drop_index("ix_access_policy_version_status", table_name="access_policy_version")
     op.drop_table("access_policy_version")
+    op.drop_index(
+        "ix_authoring_event_tenant_resource_type_occurred_at",
+        table_name="authoring_event",
+    )
     op.drop_index("ix_tool_config_status", table_name="tool_config")
     op.drop_table("tool_config")
     op.drop_table("user_memory_profile")
     op.drop_table("user_preference")
+    op.drop_index("ix_session_tenant_id_user_id", table_name="session")
+    op.drop_index("ix_session_tenant_id", table_name="session")
     op.drop_table("session")
     op.drop_table("end_user")
     op.drop_table("response_artifact")
@@ -3231,7 +3384,6 @@ def downgrade() -> None:
     op.drop_table("execution_limit_policy")
     op.drop_table("rag_policy")
     op.drop_table("memory_policy")
-    op.drop_table("escalation_policy")
     op.drop_table("billing_policy")
     op.drop_table("authoring_event")
     op.drop_table("ai_execution_policy")
@@ -3250,6 +3402,7 @@ def downgrade() -> None:
     op.drop_table("node_prompt")
     op.drop_table("model")
     op.drop_table("llm_pricing")
+    op.drop_index("ix_interaction_session_id_received_at", table_name="interaction")
     op.drop_table("interaction")
     op.drop_table("flow_run")
     op.drop_table("condition_expression")

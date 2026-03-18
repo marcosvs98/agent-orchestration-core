@@ -77,18 +77,19 @@ class RuntimeExecutor:
         initial_memory: list[dict[str, object]] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
+        definition_dump = (
+            runtime_policy.definition.model_dump(mode="json") if runtime_policy else {}
+        )
         loop_limit = (
-            runtime_policy.definition.limits.get(
+            definition_dump.get("limits", {}).get(
                 "max_loop_iterations", self._default_loop_limit
             )
-            if runtime_policy and runtime_policy.definition.limits
+            if definition_dump
             else self._default_loop_limit
         )
         metadata = {}
-        if runtime_policy:
-            metadata["runtime_policy"] = runtime_policy.definition.model_dump(
-                mode="json"
-            )
+        if definition_dump:
+            metadata["runtime_policy"] = definition_dump
         trace_user_id = trace_context.user_id if trace_context is not None else None
         if trace_user_id is None:
             raise DomainValidationException(message="user_id_required")
@@ -111,11 +112,7 @@ class RuntimeExecutor:
             memory=initial_memory or [],
             on_content_delta=on_content_delta,
         )
-        user_context_policy = (
-            runtime_policy.definition.user_context_enrichment
-            if runtime_policy is not None
-            else {}
-        )
+        user_context_policy = definition_dump.get("user_context_enrichment", {})
         if isinstance(user_context_policy, dict) and bool(
             user_context_policy.get("enabled")
         ):
@@ -471,14 +468,22 @@ class RuntimeExecutor:
                 )
                 return
 
-            context = context.model_copy(
-                update={
-                    "current_node_id": matching[0],
-                    "state": new_state,
-                    "memory": new_memory,
-                    "node_output": node_result.data,
-                }
-            )
+            next_node_id = matching[0]
+            update_payload: Dict[str, Any] = {
+                "current_node_id": next_node_id,
+                "state": new_state,
+                "memory": new_memory,
+                "node_output": node_result.data,
+            }
+            next_spec = node_specs.get(next_node_id)
+            if (
+                next_spec is not None
+                and next_spec.get("type") == NodeType.FallbackNodeSLA.value
+            ):
+                new_metadata = dict(context.metadata or {})
+                new_metadata["fallback_source_node"] = context.current_node_id
+                update_payload["metadata"] = new_metadata
+            context = context.model_copy(update=update_payload)
         await self._fail_flow(
             tenant_id=tenant_id,
             user_id=context.user_id,

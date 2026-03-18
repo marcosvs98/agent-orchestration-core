@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from domain.execution.services.graph_runtime.types import OperationStatus
+
+
+class ToolExecutionMode(StrEnum):
+    IMMEDIATE = "immediate"
+    SCHEDULED = "scheduled"
 
 
 class ToolRunInput(BaseModel):
@@ -17,7 +23,7 @@ class ToolRunInput(BaseModel):
 class ToolRunResult(BaseModel):
     operation_id: str
     tool_name: str
-    execution_mode: Literal["immediate", "scheduled"] = "immediate"
+    execution_mode: ToolExecutionMode = ToolExecutionMode.IMMEDIATE
     status: OperationStatus
     result: dict[str, Any]
     schedule_id: str | None = None

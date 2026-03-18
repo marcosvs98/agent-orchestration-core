@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 
-from infra.database.models.flow.active_flow_version import ActiveFlowVersion
+from infra.database.models.flow.flow_version import FlowVersion
 from infra.database.models.governance.access_policy_version import AccessPolicyVersion
 from infra.database.models.governance.execution_limit_policy_version import ExecutionLimitPolicyVersion
 from infra.database.models.governance.rate_limit_policy_version import RateLimitPolicyVersion
@@ -20,7 +20,10 @@ pytestmark = [pytest.mark.validation_integration, pytest.mark.asyncio]
 
 async def test_fail_closed_and_limits_present(db_session) -> None:
     result = await db_session.execute(
-        sa.select(ActiveFlowVersion).where(ActiveFlowVersion.flow_id == DRAFT_FLOW_ID)
+        sa.select(FlowVersion).where(
+            FlowVersion.flow_id == DRAFT_FLOW_ID,
+            FlowVersion.is_active.is_(True),
+        )
     )
     assert result.scalar_one_or_none() is None
 

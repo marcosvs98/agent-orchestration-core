@@ -1,4 +1,13 @@
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -23,6 +32,10 @@ class FlowVersion(ORMBaseModel):
     min_agent_version_major = Column(Integer, nullable=True)
     min_agent_version_minor = Column(Integer, nullable=True)
     min_agent_version_patch = Column(Integer, nullable=True)
+    is_active = Column(Boolean(), nullable=False, server_default="false")
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    activated_by_principal_id = Column(String(length=128), nullable=True)
+    justification = Column(String(length=512), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

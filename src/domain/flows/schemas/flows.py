@@ -1,3 +1,4 @@
+from typing import Any, Dict
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -82,3 +83,25 @@ class RoutingRuleCreate(BaseModel):
     condition_expression_id: UUID
     from_node_id: UUID
     to_node_id: UUID
+
+
+class NodeTemplateCatalogItem(BaseModel):
+    id: UUID
+    code: str
+    node_type: str
+    default_config: Dict[str, Any] | None = None
+
+
+class NodeTemplateCopyRequest(BaseModel):
+    flow_id: UUID
+    flow_version_id: UUID
+    node_template_id: UUID | None = None
+    code: str | None = None
+    overrides: Dict[str, Any] | None = None
+
+
+class CustomNodeCreate(BaseModel):
+    flow_id: UUID
+    flow_version_id: UUID
+    node_type: str
+    config: Dict[str, Any] | None = None

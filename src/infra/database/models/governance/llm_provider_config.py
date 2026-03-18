@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -16,8 +16,8 @@ class LLMProviderConfig(ORMBaseModel):
     )
     provider = Column(String(length=32), nullable=False)
     status = Column(String(length=16), nullable=False, server_default="INACTIVE")
-    base_url = Column(String(length=255), nullable=True)
-    credential_secret_ref = Column(String(length=255), nullable=True)
+    base_url = Column(Text(), nullable=True)
+    credential_secret_ref = Column(Text(), nullable=True)
     created_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

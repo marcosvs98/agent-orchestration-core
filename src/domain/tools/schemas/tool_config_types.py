@@ -1,5 +1,7 @@
 from typing import TypedDict
 
+from pydantic import BaseModel
+
 
 class ToolConfigRagScopeActivation(TypedDict, total=False):
     enabled: bool
@@ -22,3 +24,32 @@ class ToolConfigConfig(TypedDict, total=False):
     description: str
     examples: list[str]
     rag_activation: ToolConfigRagActivation
+
+
+class ToolConfigRagScopeActivationSchema(BaseModel):
+    """Pydantic schema for RAG scope activation at API boundary."""
+
+    enabled: bool | None = None
+    filters_override: dict[str, object] | None = None
+
+
+class ToolConfigRagActivationSchema(BaseModel):
+    """Pydantic schema for RAG activation at API boundary."""
+
+    tenant_knowledge: ToolConfigRagScopeActivationSchema | None = None
+    user_memory_vector: ToolConfigRagScopeActivationSchema | None = None
+
+
+class ToolConfigConfigSchema(BaseModel):
+    """Pydantic schema for tool config at API boundary. Used in POST /tool-configs."""
+
+    url: str | None = None
+    path: str | None = None
+    method: str | None = None
+    request_schema: dict[str, object] | None = None
+    response_schema: dict[str, object] | None = None
+    operation_id: str | None = None
+    summary: str | None = None
+    description: str | None = None
+    examples: list[str] | None = None
+    rag_activation: ToolConfigRagActivationSchema | None = None

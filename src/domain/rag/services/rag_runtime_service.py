@@ -66,6 +66,7 @@ class RagRuntimeService:
                 content_hash=prepared.content_hash,
                 metadata=prepared.metadata,
                 embedding_status=prepared.embedding_status,
+                rag_config_id=document.rag_config_id,
             )
         return await self.embed_document_by_id(
             tenant_id=tenant_id,
@@ -112,6 +113,11 @@ class RagRuntimeService:
                     metadata=existing.doc_metadata,
                     embedding_status=status,
                 )
+            doc_rag_config_id = (
+                document.rag_config_id
+                if document.rag_config_id is not None
+                else rag_config_id
+            )
             created = await self.repository.create_document(
                 tenant_id=tenant_id,
                 source=document.source,
@@ -121,6 +127,7 @@ class RagRuntimeService:
                 version=document.version,
                 metadata=document.metadata,
                 embedding_status=EmbeddingStatus.PENDING,
+                rag_config_id=doc_rag_config_id,
             )
             return RagPreparedDocument(
                 id=created.document_id,
@@ -170,6 +177,7 @@ class RagRuntimeService:
                     content_hash=document.content_hash,
                     metadata=document.doc_metadata,
                     embedding_status=EmbeddingStatus.COMPLETED,
+                    rag_config_id=document.rag_config_id,
                 )
             if not isinstance(document.content, str) or not document.content:
                 embedder_handle.error(
@@ -253,11 +261,20 @@ class RagRuntimeService:
                 content_hash=document.content_hash,
                 metadata=document.doc_metadata,
                 embedding_status=EmbeddingStatus.COMPLETED,
+                rag_config_id=document.rag_config_id,
             )
 
-    async def list_documents(self, *, tenant_id: UUID, limit: int) -> list[RagDocument]:
-        """List documents available for a tenant."""
-        items = await self.repository.list_documents(tenant_id=tenant_id, limit=limit)
+    async def list_documents(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int,
+        rag_config_id: UUID | None = None,
+    ) -> list[RagDocument]:
+        """List documents available for a tenant, optionally filtered by rag_config_id."""
+        items = await self.repository.list_documents(
+            tenant_id=tenant_id, limit=limit, rag_config_id=rag_config_id
+        )
         return [
             RagDocument(
                 id=item.document_id,
@@ -266,6 +283,7 @@ class RagRuntimeService:
                 content_hash=item.content_hash,
                 metadata=item.doc_metadata,
                 embedding_status=self._as_embedding_status(item.embedding_status),
+                rag_config_id=item.rag_config_id,
             )
             for item in items
         ]

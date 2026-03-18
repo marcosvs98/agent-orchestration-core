@@ -2,6 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from domain.tools.schemas.tool_config_types import ToolConfigConfigSchema
+
 
 class Tool(BaseModel):
     id: UUID
@@ -49,7 +51,7 @@ class ToolConfig(BaseModel):
 class ToolConfigCreate(BaseModel):
     tool_id: UUID
     source_config_id: UUID | None = None
-    config: dict[str, object] | None = None
+    config: ToolConfigConfigSchema | None = None
     version_major: int | None = None
     version_minor: int | None = None
     version_patch: int | None = None

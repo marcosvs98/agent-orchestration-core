@@ -35,3 +35,4 @@ class Interaction(ORMBaseModel):
     received_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    completed_at = Column(DateTime(timezone=True), nullable=True)

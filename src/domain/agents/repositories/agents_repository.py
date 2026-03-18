@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
@@ -10,9 +10,6 @@ from exceptions.service_exceptions import (
     NotFoundServiceException,
 )
 from infra.database import DatabaseConnection
-from infra.database.models.agent.active_agent_version import (
-    ActiveAgentVersion as ActiveAgentVersionModel,
-)
 from infra.database.models.agent.agent import Agent as AgentModel
 from infra.database.models.agent.agent_version import AgentVersion as AgentVersionModel
 from infra.database.models.agent.node_agent_binding import (
@@ -140,8 +137,9 @@ class AgentsRepository:
 
     async def get_active_agent_version_id(self, agent_id: UUID) -> UUID | None:
         async with self.db.get_session() as session:
-            stmt = select(ActiveAgentVersionModel).where(
-                ActiveAgentVersionModel.agent_id == agent_id
+            stmt = select(AgentVersionModel.agent_version_id).where(
+                AgentVersionModel.agent_id == agent_id,
+                AgentVersionModel.is_active.is_(True),
             )
             query_sql = compile_query(stmt)
 
@@ -155,17 +153,17 @@ class AgentsRepository:
                 metadata={"retriever_name": "get_active_agent_version_id"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                row = result.scalar_one_or_none()
+                version_id = result.scalar_one_or_none()
 
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if row else 0,
-                            "found": row is not None,
+                            "result_count": 1 if version_id else 0,
+                            "found": version_id is not None,
                         }
                     )
 
-                return row.agent_version_id if row else None
+                return version_id
 
     async def upsert_active_agent_version(
         self,
@@ -175,53 +173,44 @@ class AgentsRepository:
         activated_by_principal_id: str,
         justification: str,
     ) -> None:
+        from datetime import datetime, timezone
+
         async with self.db.get_session() as session:
-            stmt = select(ActiveAgentVersionModel).where(
-                ActiveAgentVersionModel.agent_id == agent_id
+            deactivate = select(AgentVersionModel).where(
+                AgentVersionModel.agent_id == agent_id,
+                AgentVersionModel.is_active.is_(True),
+            )
+            result = await session.execute(deactivate)
+            for row in result.scalars().all():
+                row.is_active = False
+
+            stmt = select(AgentVersionModel).where(
+                AgentVersionModel.agent_version_id == agent_version_id,
+                AgentVersionModel.agent_id == agent_id,
             )
             query_sql = compile_query(stmt)
-
             with self.tracer.observe(
                 as_type="retriever",
                 name="domain.agents.agents_repository.get_existing_active_version",
-                input={
-                    "query": query_sql,
-                    "params": {"agent_id": str(agent_id)},
-                },
+                input={"query": query_sql, "params": {"agent_id": str(agent_id)}},
                 metadata={"retriever_name": "get_existing_active_version"},
             ) as retriever_handle:
-                result = await session.execute(stmt)
-                existing = result.scalar_one_or_none()
-
+                res = await session.execute(stmt)
+                target = res.scalar_one_or_none()
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if existing else 0,
-                            "found": existing is not None,
+                            "result_count": 1 if target else 0,
+                            "found": target is not None,
                         }
                     )
 
-            if existing is None:
-                with self.tracer.observe(
-                    as_type="tool",
-                    name="domain.agents.agents_repository.create_active_version",
-                    input={
-                        "agent_id": str(agent_id),
-                        "agent_version_id": str(agent_version_id),
-                    },
-                ):
-                    session.add(
-                        ActiveAgentVersionModel(
-                            agent_id=agent_id,
-                            agent_version_id=agent_version_id,
-                            activated_by_principal_id=activated_by_principal_id,
-                            justification=justification,
-                        )
-                    )
-            else:
-                existing.agent_version_id = agent_version_id
-                existing.activated_by_principal_id = activated_by_principal_id
-                existing.justification = justification
+            if target is None:
+                raise NotFoundServiceException(message="agent_version_not_found")
+            target.is_active = True
+            target.activated_at = datetime.now(timezone.utc)
+            target.activated_by_principal_id = activated_by_principal_id
+            target.justification = justification
             with self.tracer.observe(
                 as_type="tool",
                 name="domain.agents.agents_repository.upsert_active_agent_version",
@@ -262,6 +251,20 @@ class AgentsRepository:
                     )
 
                 return items
+
+    async def count_active_agent_versions(self, tenant_id: UUID) -> int:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(func.count(AgentVersionModel.agent_version_id))
+                .join(AgentModel, AgentVersionModel.agent_id == AgentModel.agent_id)
+                .where(
+                    AgentModel.tenant_id == tenant_id,
+                    AgentVersionModel.is_active.is_(True),
+                )
+            )
+            result = await session.execute(stmt)
+            value = result.scalar()
+            return int(value) if value is not None else 0
 
     async def create_agent(
         self, *, tenant_id: UUID, name: str | None, created_by: str

@@ -34,20 +34,11 @@ from infra.database.models.governance.billing_policy_version import (
 from infra.database.models.governance.billing_policy import (
     BillingPolicy as BillingPolicy,
 )
-from infra.database.models.governance.active_billing_policy_version import (
-    ActiveBillingPolicyVersion as ActiveBillingPolicyVersion,
-)
 from infra.database.models.governance.memory_policy import MemoryPolicy as MemoryPolicy
 from infra.database.models.governance.memory_policy_version import (
     MemoryPolicyVersion as MemoryPolicyVersion,
 )
-from infra.database.models.governance.active_memory_policy_version import (
-    ActiveMemoryPolicyVersion as ActiveMemoryPolicyVersion,
-)
 from infra.database.models.governance.rag_policy import RagPolicy as RagPolicy
 from infra.database.models.governance.rag_policy_version import (
     RagPolicyVersion as RagPolicyVersion,
-)
-from infra.database.models.governance.active_rag_policy_version import (
-    ActiveRagPolicyVersion as ActiveRagPolicyVersion,
 )

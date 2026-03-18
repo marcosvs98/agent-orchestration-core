@@ -4,17 +4,18 @@ import sqlalchemy as sa
 from sqlalchemy import select
 
 from domain.common.schemas.versioning import VersionStatus
+from domain.flows.schemas.node_template_scope import NodeTemplateScope
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
 )
 from infra.database import DatabaseConnection
-from infra.database.models.flow.active_flow_version import (
-    ActiveFlowVersion as ActiveFlowVersionModel,
-)
 from infra.database.models.flow.flow import Flow as FlowModel
 from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
 from infra.database.models.flow.node import Node as NodeModel
+from infra.database.models.flow.node_template import (
+    NodeTemplate as NodeTemplateModel,
+)
 from infra.database.models.flow.router import Router as RouterModel
 from infra.database.models.flow.flow_graph import FlowGraph as FlowGraphModel
 from infra.database.models.flow.flow_graph_draft import (
@@ -70,6 +71,43 @@ class FlowsRepository:
                 select(NodeModel).where(NodeModel.node_id == node_id)
             )
             return result.scalar_one_or_none()
+
+    async def get_node_template(
+        self, node_template_id: UUID
+    ) -> NodeTemplateModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(NodeTemplateModel).where(
+                    NodeTemplateModel.node_template_id == node_template_id
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_active_system_node_template_by_code(
+        self, *, code: str
+    ) -> NodeTemplateModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(NodeTemplateModel).where(
+                    NodeTemplateModel.code == code,
+                    NodeTemplateModel.scope == NodeTemplateScope.SYSTEM,
+                    NodeTemplateModel.owner_tenant_id.is_(None),
+                    NodeTemplateModel.is_active.is_(True),
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def list_active_system_node_templates(
+        self,
+    ) -> list[NodeTemplateModel]:
+        async with self.db.get_session() as session:
+            stmt = select(NodeTemplateModel).where(
+                NodeTemplateModel.scope == NodeTemplateScope.SYSTEM,
+                NodeTemplateModel.owner_tenant_id.is_(None),
+                NodeTemplateModel.is_active.is_(True),
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
     async def list_nodes_for_flow_version(
         self, flow_version_id: UUID
@@ -127,12 +165,12 @@ class FlowsRepository:
     async def get_active_flow_version_id(self, flow_id: UUID) -> UUID | None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(ActiveFlowVersionModel).where(
-                    ActiveFlowVersionModel.flow_id == flow_id
+                select(FlowVersionModel.flow_version_id).where(
+                    FlowVersionModel.flow_id == flow_id,
+                    FlowVersionModel.is_active.is_(True),
                 )
             )
-            row = result.scalar_one_or_none()
-            return row.flow_version_id if row else None
+            return result.scalar_one_or_none()
 
     async def upsert_active_flow_version(
         self,
@@ -143,28 +181,31 @@ class FlowsRepository:
         justification: str,
         flow_graph_snapshot_id: UUID | None = None,
     ) -> None:
+        from datetime import datetime, timezone
+
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(ActiveFlowVersionModel).where(
-                    ActiveFlowVersionModel.flow_id == flow_id
+                select(FlowVersionModel).where(
+                    FlowVersionModel.flow_id == flow_id,
+                    FlowVersionModel.is_active.is_(True),
                 )
             )
-            existing = result.scalar_one_or_none()
-            if existing is None:
-                session.add(
-                    ActiveFlowVersionModel(
-                        flow_id=flow_id,
-                        flow_version_id=flow_version_id,
-                        activated_by_principal_id=activated_by_principal_id,
-                        justification=justification,
-                        flow_graph_snapshot_id=flow_graph_snapshot_id,
-                    )
+            for row in result.scalars().all():
+                row.is_active = False
+
+            target_result = await session.execute(
+                select(FlowVersionModel).where(
+                    FlowVersionModel.flow_version_id == flow_version_id,
+                    FlowVersionModel.flow_id == flow_id,
                 )
-            else:
-                existing.flow_version_id = flow_version_id
-                existing.activated_by_principal_id = activated_by_principal_id
-                existing.justification = justification
-                existing.flow_graph_snapshot_id = flow_graph_snapshot_id
+            )
+            target = target_result.scalar_one_or_none()
+            if target is None:
+                raise NotFoundServiceException(message="flow_version_not_found")
+            target.is_active = True
+            target.activated_at = datetime.now(timezone.utc)
+            target.activated_by_principal_id = activated_by_principal_id
+            target.justification = justification
             await session.commit()
 
     async def get_flow_graph_draft(
@@ -397,6 +438,65 @@ class FlowsRepository:
             if version.scalar_one_or_none() is None:
                 raise NotFoundServiceException(message="flow_version_not_found")
             instance = NodeModel(flow_version_id=flow_version_id, ai_task_id=ai_task_id)
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def create_node_from_template(
+        self,
+        *,
+        flow_version_id: UUID,
+        node_type: str,
+        config: dict | None,
+        source_node_template_id: UUID,
+        ai_task_id: UUID | None,
+        created_by: str,
+    ) -> NodeModel:
+        async with self.db.get_session() as session:
+            version = await session.execute(
+                select(FlowVersionModel).where(
+                    FlowVersionModel.flow_version_id == flow_version_id
+                )
+            )
+            if version.scalar_one_or_none() is None:
+                raise NotFoundServiceException(message="flow_version_not_found")
+            instance = NodeModel(
+                flow_version_id=flow_version_id,
+                ai_task_id=ai_task_id,
+                node_type=node_type,
+                config=config,
+                source_node_template_id=source_node_template_id,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def create_custom_node(
+        self,
+        *,
+        flow_version_id: UUID,
+        node_type: str,
+        config: dict | None,
+        ai_task_id: UUID | None,
+        created_by: str,
+    ) -> NodeModel:
+        async with self.db.get_session() as session:
+            version = await session.execute(
+                select(FlowVersionModel).where(
+                    FlowVersionModel.flow_version_id == flow_version_id
+                )
+            )
+            if version.scalar_one_or_none() is None:
+                raise NotFoundServiceException(message="flow_version_not_found")
+            instance = NodeModel(
+                flow_version_id=flow_version_id,
+                ai_task_id=ai_task_id,
+                node_type=node_type,
+                config=config,
+                source_node_template_id=None,
+            )
             session.add(instance)
             await session.commit()
             await session.refresh(instance)

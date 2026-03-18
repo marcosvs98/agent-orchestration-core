@@ -155,3 +155,37 @@ class HumanSLARepository:
             )
             result = await session.execute(query)
             return result.scalar_one_or_none()
+
+    async def update_case_escalation(
+        self,
+        sla_case_id: UUID,
+        tenant_id: UUID,
+        priority: str,
+        level: int,
+    ) -> None:
+        async with self.db.get_session() as session:
+            stmt = (
+                update(SLACase)
+                .where(
+                    SLACase.sla_case_id == sla_case_id,
+                    SLACase.tenant_id == tenant_id,
+                )
+                .values(priority=priority, current_escalation_level=level)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def update_case_sla_breached(
+        self, sla_case_id: UUID, tenant_id: UUID
+    ) -> None:
+        async with self.db.get_session() as session:
+            stmt = (
+                update(SLACase)
+                .where(
+                    SLACase.sla_case_id == sla_case_id,
+                    SLACase.tenant_id == tenant_id,
+                )
+                .values(sla_breached=True)
+            )
+            await session.execute(stmt)
+            await session.commit()

@@ -23,10 +23,12 @@ from domain.governance.schemas.memory_policy import MemoryPolicyDefinition
 from domain.governance.schemas.policy_admin import (
     AccessPolicyCreate,
     AccessPolicyResponse,
+    AccessPolicyRules,
     AccessPolicyVersionCreate,
     AccessPolicyVersionResponse,
     BillingPolicyCreate,
     BillingPolicyResponse,
+    BillingPolicyRulesSchema,
     BillingPolicyVersionCreate,
     BillingPolicyVersionResponse,
     MemoryPolicyCreate,
@@ -96,7 +98,9 @@ class GovernancePoliciesService:
             flow_id=created.flow_id,
             version=created.version,
             status=created.status,
-            policy_definition=created.policy_definition or {},
+            policy_definition=RuntimePolicyDefinition.model_validate(
+                created.policy_definition or {}
+            ),
         )
 
     async def list_runtime_policies(
@@ -111,7 +115,9 @@ class GovernancePoliciesService:
                 flow_id=row.flow_id,
                 version=row.version,
                 status=row.status,
-                policy_definition=row.policy_definition or {},
+                policy_definition=RuntimePolicyDefinition.model_validate(
+                    row.policy_definition or {}
+                ),
             )
             for row in rows
         ]
@@ -129,7 +135,9 @@ class GovernancePoliciesService:
             flow_id=policy.flow_id,
             version=policy.version,
             status=policy.status,
-            policy_definition=policy.policy_definition or {},
+            policy_definition=RuntimePolicyDefinition.model_validate(
+                policy.policy_definition or {}
+            ),
         )
 
     async def update_runtime_policy(
@@ -163,7 +171,9 @@ class GovernancePoliciesService:
             flow_id=updated.flow_id,
             version=updated.version,
             status=updated.status,
-            policy_definition=updated.policy_definition or {},
+            policy_definition=RuntimePolicyDefinition.model_validate(
+                updated.policy_definition or {}
+            ),
         )
 
     async def activate_runtime_policy(
@@ -190,7 +200,9 @@ class GovernancePoliciesService:
             flow_id=active.flow_id,
             version=active.version,
             status=active.status,
-            policy_definition=active.policy_definition or {},
+            policy_definition=RuntimePolicyDefinition.model_validate(
+                active.policy_definition or {}
+            ),
         )
 
     async def create_access_policy(
@@ -239,9 +251,10 @@ class GovernancePoliciesService:
         )
         if policy is None:
             raise NotFoundServiceException(message="access_policy_not_found")
+        rules_dict = payload.rules.model_dump(mode="json", exclude_none=True)
         created = await self.access_repository.create_version(
             access_policy_id=access_policy_id,
-            rules=payload.rules,
+            rules=rules_dict,
             status=payload.status,
             version_major=payload.version_major,
             version_minor=payload.version_minor,
@@ -254,7 +267,7 @@ class GovernancePoliciesService:
             version_major=created.version_major,
             version_minor=created.version_minor,
             version_patch=created.version_patch,
-            rules=created.rules or {},
+            rules=AccessPolicyRules.model_validate(created.rules or {}),
         )
 
     async def publish_access_policy_version(
@@ -280,7 +293,7 @@ class GovernancePoliciesService:
             version_major=version.version_major,
             version_minor=version.version_minor,
             version_patch=version.version_patch,
-            rules=version.rules or {},
+            rules=AccessPolicyRules.model_validate(version.rules or {}),
         )
 
     async def create_rate_limit_policy(
@@ -443,7 +456,7 @@ class GovernancePoliciesService:
             version_major=payload.version_major,
             version_minor=payload.version_minor,
             version_patch=payload.version_patch,
-            rules=payload.rules,
+            rules=payload.rules.model_dump(mode="json", exclude_none=True),
         )
         return BillingPolicyVersionResponse(
             id=created.billing_policy_version_id,
@@ -452,7 +465,7 @@ class GovernancePoliciesService:
             version_major=created.version_major,
             version_minor=created.version_minor,
             version_patch=created.version_patch,
-            rules=created.rules or {},
+            rules=BillingPolicyRulesSchema.model_validate(created.rules or {}),
         )
 
     async def publish_billing_policy_version(
@@ -479,7 +492,7 @@ class GovernancePoliciesService:
             version_major=version.version_major,
             version_minor=version.version_minor,
             version_patch=version.version_patch,
-            rules=version.rules or {},
+            rules=BillingPolicyRulesSchema.model_validate(version.rules or {}),
         )
 
     async def activate_billing_policy_version(
@@ -510,7 +523,7 @@ class GovernancePoliciesService:
             version_major=version.version_major,
             version_minor=version.version_minor,
             version_patch=version.version_patch,
-            rules=version.rules or {},
+            rules=BillingPolicyRulesSchema.model_validate(version.rules or {}),
         )
 
     async def create_memory_policy(

@@ -1,4 +1,13 @@
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.sql import func
 
@@ -32,7 +41,7 @@ class ExecutionEvent(ORMBaseModel):
     )
     event_sequence = Column(BigInteger, nullable=False)
     schema_version = Column(Integer, nullable=False, server_default="1")
-    type = Column(String(length=64), nullable=False)
+    type = Column(Text(), nullable=False)
     payload = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     node_id = Column(PG_UUID(as_uuid=True), nullable=True)
     edge_id = Column(String(length=128), nullable=True)

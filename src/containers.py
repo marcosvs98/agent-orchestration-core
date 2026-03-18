@@ -15,9 +15,15 @@ from domain.llm.services.moderation_orchestration_service import (
 )
 from infra.database import DatabaseConnection, async_session, engine
 
+from domain.auth.controllers.auth_controller import AuthController
+from domain.auth.services.auth_service import AuthService
 from domain.tenants.controllers.tenants_controller import TenantsController
-from domain.tenants.services.tenants_service import TenantsService
+from domain.tenants.repositories.tenant_summary_repository import (
+    TenantSummaryRepository,
+)
 from domain.tenants.repositories.tenants_repository import TenantsRepository
+from domain.tenants.services.tenant_summary_service import TenantSummaryService
+from domain.tenants.services.tenants_service import TenantsService
 from domain.flows.controllers.flows_controller import FlowsController
 from domain.flows.services.flows_service import FlowsService
 from domain.flows.repositories.flows_repository import FlowsRepository
@@ -99,8 +105,20 @@ from domain.user_prompts.services.user_prompts_service import UserPromptsService
 from domain.conversation.controllers.conversation_controller import (
     ConversationController,
 )
+from domain.conversation.controllers.conversation_read_controller import (
+    ConversationReadController,
+)
+from domain.conversation.repositories.conversation_read_repository import (
+    ConversationReadRepository,
+)
+from domain.conversation.services.conversation_read_service import (
+    ConversationReadService,
+)
 from domain.conversation.services.conversation_service import ConversationService
 from domain.human_sla.controllers.human_sla_controller import HumanSLAController
+from domain.human_sla.repositories.human_sla_policy_repository import (
+    HumanSLAPolicyRepository,
+)
 from domain.human_sla.repositories.human_sla_repository import HumanSLARepository
 from domain.human_sla.services.human_sla_service import HumanSLAService
 from services.conversation_boundary import ConversationBoundary
@@ -138,8 +156,43 @@ class AdaptersContainer(containers.DeclarativeContainer):
     )
 
 
+class TenantSummaryContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+    agents = providers.DependenciesContainer()
+    flows = providers.DependenciesContainer()
+    governance = providers.DependenciesContainer()
+    tools = providers.DependenciesContainer()
+    rag = providers.DependenciesContainer()
+    ai_policy = providers.DependenciesContainer()
+    human_sla = providers.DependenciesContainer()
+
+    tenants_repository = providers.Factory(
+        TenantsRepository,
+        database_connection=core.database_connection,
+    )
+    tenant_summary_repository = providers.Factory(
+        TenantSummaryRepository,
+        database_connection=core.database_connection,
+    )
+    tenant_summary_service = providers.Factory(
+        TenantSummaryService,
+        tenants_repository=tenants_repository,
+        agents_repository=agents.agents_repository,
+        governance_policies_service=governance.governance_policies_service,
+        tenant_summary_repository=tenant_summary_repository,
+        tools_repository=tools.tools_repository,
+        rag_repository=rag.rag_repository,
+        human_sla_policy_repository=human_sla.human_sla_policy_repository,
+        ai_service=ai_policy.ai_service,
+        ai_repository=ai_policy.ai_repository,
+        execution_limit_policy_repository=flows.execution_limit_policy_repository,
+    )
+
+
 class TenantsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
+    summary_service = providers.Dependency()
 
     tenants_repository = providers.Factory(
         TenantsRepository,
@@ -148,13 +201,39 @@ class TenantsContainer(containers.DeclarativeContainer):
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     tenants_service = providers.Factory(
         TenantsService,
         repository=tenants_repository,
         authoring_events=authoring_event_repository,
     )
-    tenants_controller = providers.Factory(TenantsController, service=tenants_service)
+    tenants_controller = providers.Factory(
+        TenantsController,
+        service=tenants_service,
+        summary_service=summary_service,
+    )
+
+
+class AuthContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
+
+    tenants_repository = providers.Factory(
+        TenantsRepository,
+        database_connection=core.database_connection,
+    )
+    authoring_event_repository = providers.Factory(
+        AuthoringEventRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    auth_service = providers.Factory(
+        AuthService,
+        tenants_repository=tenants_repository,
+        authoring_event_repository=authoring_event_repository,
+    )
+    auth_controller = providers.Factory(AuthController, service=auth_service)
 
 
 class FlowsContainer(containers.DeclarativeContainer):
@@ -173,6 +252,7 @@ class FlowsContainer(containers.DeclarativeContainer):
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     flows_service = providers.Factory(
         FlowsService,
@@ -248,6 +328,7 @@ class AIPolicyContainer(containers.DeclarativeContainer):
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     ai_service = providers.Factory(
         AIService,
@@ -270,6 +351,7 @@ class RAGContainer(containers.DeclarativeContainer):
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     rag_service = providers.Factory(
         RagService,
@@ -302,9 +384,14 @@ class HumanSLAContainer(containers.DeclarativeContainer):
         HumanSLARepository,
         database_connection=core.database_connection,
     )
+    human_sla_policy_repository = providers.Factory(
+        HumanSLAPolicyRepository,
+        database_connection=core.database_connection,
+    )
     human_sla_service = providers.Factory(
         HumanSLAService,
         repository=human_sla_repository,
+        policy_repository=human_sla_policy_repository,
     )
     human_sla_controller = providers.Factory(
         HumanSLAController,
@@ -463,6 +550,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
 
 class OnboardingContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
+    adapters = providers.DependenciesContainer()
 
     onboarding_repository = providers.Factory(
         OnboardingRepository,
@@ -471,6 +559,7 @@ class OnboardingContainer(containers.DeclarativeContainer):
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
         database_connection=core.database_connection,
+        tracer=adapters.tracer,
     )
     onboarding_service = providers.Factory(
         OnboardingService,
@@ -521,9 +610,24 @@ class UserPromptsContainer(containers.DeclarativeContainer):
 
 
 class ConversationContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
     execution = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
     user_prompts = providers.DependenciesContainer()
+
+    conversation_read_repository = providers.Factory(
+        ConversationReadRepository,
+        database_connection=core.database_connection,
+    )
+    conversation_read_service = providers.Factory(
+        ConversationReadService,
+        read_repository=conversation_read_repository,
+        execution_repository=execution.execution_repository,
+    )
+    conversation_read_controller = providers.Factory(
+        ConversationReadController,
+        service=conversation_read_service,
+    )
 
     conversation_service = providers.Factory(
         ConversationService,
@@ -565,8 +669,14 @@ class GovernanceContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         cache_adapter=adapters.redis_adapter,
     )
+    ai_repository = providers.Factory(
+        AIRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
     llm_admin_service = providers.Factory(
         LLMAdminService,
+        ai_repository=ai_repository,
         provider_repository=llm_provider_repository,
         mapping_repository=llm_model_mapping_repository,
         pricing_repository=llm_pricing_repository,
@@ -626,7 +736,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     core = providers.Container(CoreContainer)
     adapters = providers.Container(AdaptersContainer)
 
-    tenants = providers.Container(TenantsContainer, core=core)
+    auth = providers.Container(AuthContainer, core=core, adapters=adapters)
     flows = providers.Container(FlowsContainer, core=core, adapters=adapters)
     agents = providers.Container(AgentsContainer, core=core, adapters=adapters)
     tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
@@ -640,7 +750,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tools=tools,
         human_sla=human_sla,
     )
-    onboarding = providers.Container(OnboardingContainer, core=core)
+    onboarding = providers.Container(OnboardingContainer, core=core, adapters=adapters)
     prompts = providers.Container(
         PromptsContainer, core=core, adapters=adapters, execution=execution
     )
@@ -649,8 +759,26 @@ class ApplicationContainer(containers.DeclarativeContainer):
     )
     conversation = providers.Container(
         ConversationContainer,
+        core=core,
         execution=execution,
         adapters=adapters,
         user_prompts=user_prompts,
     )
     governance = providers.Container(GovernanceContainer, core=core, adapters=adapters)
+    summary = providers.Container(
+        TenantSummaryContainer,
+        core=core,
+        agents=agents,
+        flows=flows,
+        governance=governance,
+        tools=tools,
+        rag=rag,
+        ai_policy=ai_policy,
+        human_sla=human_sla,
+    )
+    tenants = providers.Container(
+        TenantsContainer,
+        core=core,
+        adapters=adapters,
+        summary_service=summary.tenant_summary_service,
+    )

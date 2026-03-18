@@ -42,6 +42,7 @@ from seeds.demo.seed_21_rag import seed_rag
 from seeds.demo.seed_22_tool_catalog_rag import seed_tool_catalog_rag
 from seeds.demo.seed_22_memory_policy import seed_memory_policy
 from seeds.demo.seed_23_rag_policy import seed_rag_policy
+from seeds.demo.seed_24_user_prompt import seed_user_prompt
 
 
 async def main() -> None:
@@ -63,6 +64,7 @@ async def main() -> None:
             ("Flow", seed_flow),
             ("Nodes", seed_nodes),
             ("Prompts", seed_prompts),
+            ("User prompt", seed_user_prompt),
             ("Bindings", seed_bindings),
             ("Graph", seed_graph),
             ("Runtime Policy", seed_runtime_policy),

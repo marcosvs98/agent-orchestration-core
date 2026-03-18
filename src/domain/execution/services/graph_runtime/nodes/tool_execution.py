@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.schemas.tool_execution import (
+    ToolExecutionMode,
     ToolExecutionNodeOutput,
     ToolRunInput,
     ToolRunResult,
@@ -147,7 +148,7 @@ class ToolExecutionNode(NodeExecutor):
                         tool_run_result = ToolRunResult(
                             operation_id=tool_run.operation_id,
                             tool_name=tool_run.tool_name,
-                            execution_mode="immediate",  # Todo: Needs StrEnum Here
+                            execution_mode=ToolExecutionMode.IMMEDIATE,
                             status=OperationStatus.SUCCESS,
                             result=result,
                         )
@@ -157,7 +158,7 @@ class ToolExecutionNode(NodeExecutor):
                         tool_run_result = ToolRunResult(
                             operation_id=tool_run.operation_id,
                             tool_name=tool_run.tool_name,
-                            execution_mode="immediate",
+                            execution_mode=ToolExecutionMode.IMMEDIATE,
                             status=OperationStatus.ERROR,
                             result=self._error_payload(
                                 exc=exc,
@@ -171,7 +172,7 @@ class ToolExecutionNode(NodeExecutor):
                 return ToolRunResult(
                     operation_id=tool_run.operation_id,
                     tool_name=tool_run.tool_name,
-                    execution_mode="immediate",
+                    execution_mode=ToolExecutionMode.IMMEDIATE,
                     status=OperationStatus.ERROR,
                     result=self._error_payload(
                         exc=exc,
@@ -257,7 +258,7 @@ class ToolExecutionNode(NodeExecutor):
                     ToolRunResult(
                         operation_id=operation.operation_id,
                         tool_name=operation.tool_name,
-                        execution_mode="immediate",
+                        execution_mode=ToolExecutionMode.IMMEDIATE,
                         status=OperationStatus.ERROR,
                         result={
                             "message": "ready_operation_tool_config_unresolved",
@@ -280,7 +281,7 @@ class ToolExecutionNode(NodeExecutor):
                     ToolRunResult(
                         operation_id=operation.operation_id,
                         tool_name=operation.tool_name,
-                        execution_mode="immediate",
+                        execution_mode=ToolExecutionMode.IMMEDIATE,
                         status=OperationStatus.ERROR,
                         result={
                             "message": "ready_operation_tool_config_ambiguous",

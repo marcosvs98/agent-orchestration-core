@@ -16,7 +16,7 @@ class AuthoringEventRepository:
     def __init__(
         self,
         database_connection: DatabaseConnection,
-        tracer: RuntimeTracerPort | None = None,
+        tracer: RuntimeTracerPort,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer

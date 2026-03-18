@@ -1,5 +1,7 @@
 from sqlalchemy import (
+    Boolean,
     Column,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -45,6 +47,10 @@ class AgentVersion(ORMBaseModel):
     supported_tool_config_hash_prefix = Column(String(length=128), nullable=True)
     persona_config = Column(JSONB, nullable=True)
     system_prompt = Column(Text(), nullable=True)
+    is_active = Column(Boolean(), nullable=False, server_default="false")
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    activated_by_principal_id = Column(String(length=128), nullable=True)
+    justification = Column(String(length=512), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

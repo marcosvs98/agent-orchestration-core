@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from domain.governance.schemas.memory_policy import MemoryPolicyDefinition
 from domain.governance.schemas.rag_policy import RagPolicyDefinition
@@ -23,7 +23,7 @@ class RuntimePolicyResponse(BaseModel):
     flow_id: UUID | None
     version: str
     status: str
-    policy_definition: dict[str, object]
+    policy_definition: RuntimePolicyDefinition
 
 
 class RuntimePolicyUpdate(BaseModel):
@@ -35,12 +35,17 @@ class AccessPolicyCreate(BaseModel):
     name: str
 
 
+class AccessPolicyRules(BaseModel):
+    allow: list[str] = Field(default_factory=list)
+    deny: list[str] | None = None
+
+
 class AccessPolicyVersionCreate(BaseModel):
     status: str = "DRAFT"
     version_major: int = 1
     version_minor: int = 0
     version_patch: int = 0
-    rules: dict[str, object] = Field(default_factory=dict)
+    rules: AccessPolicyRules = Field(default_factory=lambda: AccessPolicyRules())
 
 
 class AccessPolicyResponse(BaseModel):
@@ -56,7 +61,7 @@ class AccessPolicyVersionResponse(BaseModel):
     version_major: int
     version_minor: int
     version_patch: int
-    rules: dict[str, object]
+    rules: AccessPolicyRules
 
 
 class RateLimitPolicyCreate(BaseModel):
@@ -97,12 +102,16 @@ class BillingPolicyCreate(BaseModel):
     name: str
 
 
+class BillingPolicyRulesSchema(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
 class BillingPolicyVersionCreate(BaseModel):
     status: str = "DRAFT"
     version_major: int = 1
     version_minor: int = 0
     version_patch: int = 0
-    rules: dict[str, object] = Field(default_factory=dict)
+    rules: BillingPolicyRulesSchema = Field(default_factory=BillingPolicyRulesSchema)
 
 
 class BillingPolicyResponse(BaseModel):
@@ -118,7 +127,7 @@ class BillingPolicyVersionResponse(BaseModel):
     version_major: int
     version_minor: int
     version_patch: int
-    rules: dict[str, object]
+    rules: BillingPolicyRulesSchema
 
 
 class MemoryPolicyCreate(BaseModel):

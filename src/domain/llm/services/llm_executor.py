@@ -125,7 +125,6 @@ class LLMExecutor(LLMExecutorPort):
             ) from validation_exc
 
     @staticmethod
-    # Todo: needs-clarification: moving policy enforcement out of LLMExecutor changes shared guardrail/policy boundaries and requires an architectural decision.
     def _enforce_policy(request: LLMRequest, result: LLMResult) -> None:
         if request.max_tokens is not None:
             token_usage = result.token_usage or {}

@@ -14,6 +14,11 @@ class LLMModelMapping(ORMBaseModel):
         ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
         nullable=False,
     )
+    model_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("model.model_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     provider = Column(String(length=32), nullable=False)
     model_alias = Column(String(length=64), nullable=False)
     provider_model = Column(String(length=128), nullable=False)

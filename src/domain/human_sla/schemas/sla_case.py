@@ -51,6 +51,8 @@ class SLACaseCreate(BaseModel):
     fallback_reason: SLAFallbackReason = SLAFallbackReason.UNKNOWN_INTENT
     opened_at: datetime
     sla_target_at: datetime | None = None
+    human_sla_policy_id: UUID | None = None
+    current_escalation_level: int = 0
 
 
 class SLACaseAssign(BaseModel):
@@ -91,5 +93,7 @@ class SLACaseResponse(BaseModel):
     resolved_at: datetime | None
     sla_target_at: datetime | None
     sla_breached: bool
+    human_sla_policy_id: UUID | None
+    current_escalation_level: int
     created_at: datetime
     updated_at: datetime

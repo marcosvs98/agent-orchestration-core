@@ -15,12 +15,15 @@ from domain.governance.repositories.authoring_event_repository import (
 from domain.flows.schemas.flows import (
     ConditionExpression,
     ConditionExpressionCreate,
+    CustomNodeCreate,
     Flow,
     FlowCreate,
     FlowVersion,
     FlowVersionCreate,
     Node,
     NodeCreate,
+    NodeTemplateCatalogItem,
+    NodeTemplateCopyRequest,
     Router,
     RouterCreate,
     RoutingRule,
@@ -30,7 +33,9 @@ from domain.flows.schemas.graph import (
     FlowGraphCompileRequest,
     FlowGraphDefinition,
     FlowGraphDraftCreate,
+    FlowGraphNodeSpec,
 )
+from domain.flows.schemas.graph_node_config import validate_node_config
 from domain.flows.services.flow_graph_compiler import FlowGraphCompiler
 from domain.flows.services.flow_graph_draft_validator import FlowGraphDraftValidator
 from domain.flows.services.flow_graph_validator import FlowGraphValidator
@@ -552,6 +557,142 @@ class FlowsService(FlowsServicePort):
             ai_task_id=model.ai_task_id,
         )
 
+    async def list_system_node_templates(
+        self,
+        *,
+        tenant_id: UUID,
+    ) -> list[NodeTemplateCatalogItem]:
+        templates = await self.repository.list_active_system_node_templates()
+        return [
+            NodeTemplateCatalogItem(
+                id=template.node_template_id,
+                code=template.code,
+                node_type=template.node_type,
+                default_config=template.default_config,
+            )
+            for template in templates
+        ]
+
+    async def copy_node_from_template(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_id: str,
+        flow_version_id: str,
+        node_template_id: UUID,
+        overrides: dict | None,
+        principal_id: str,
+    ) -> Node:
+        flow_uuid = UUID(flow_id)
+        version_uuid = UUID(flow_version_id)
+        flow = await self.repository.get_flow(flow_uuid)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        version = await self.repository.get_flow_version(version_uuid)
+        if version is None or version.flow_id != flow_uuid:
+            raise NotFoundServiceException(message="flow_version_not_found")
+
+        template = await self.repository.get_node_template(node_template_id)
+        if template is None:
+            raise NotFoundServiceException(message="node_template_not_found")
+        if not template.is_active:
+            raise ResourceBlockedServiceException(message="node_template_not_active")
+        if template.scope == "tenant" and template.owner_tenant_id != tenant_id:
+            raise ResourceBlockedServiceException(
+                message="node_template_not_available_for_tenant"
+            )
+
+        base_config = template.default_config or {}
+        effective_overrides = overrides or {}
+        effective_config = {**base_config, **effective_overrides}
+        validate_node_config(template.node_type, effective_config)
+
+        node_model = await self.repository.create_node_from_template(
+            flow_version_id=version_uuid,
+            node_type=template.node_type,
+            config=effective_config,
+            source_node_template_id=template.node_template_id,
+            ai_task_id=None,
+            created_by=principal_id,
+        )
+
+        draft = await self.repository.get_flow_graph_draft(version_uuid)
+        if draft is None:
+            definition = FlowGraphDefinition(
+                start_node=str(node_model.node_id),
+                nodes={
+                    str(node_model.node_id): FlowGraphNodeSpec(
+                        type=template.node_type,
+                        config=effective_config,
+                    )
+                },
+                edges=[],
+            )
+        else:
+            definition = FlowGraphDefinition.model_validate(draft.definition)
+            definition.nodes[str(node_model.node_id)] = FlowGraphNodeSpec(
+                type=template.node_type,
+                config=effective_config,
+            )
+
+        await self.repository.upsert_flow_graph_draft(
+            flow_version_id=version_uuid,
+            definition=definition.model_dump(),
+            principal_id=principal_id,
+        )
+
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="node",
+            resource_id=node_model.node_id,
+            version_id=version_uuid,
+            event_type="NODE_CREATED_FROM_TEMPLATE",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="copy node from template",
+            schema_version=1,
+        )
+
+        return Node(
+            id=node_model.node_id,
+            flow_version_id=node_model.flow_version_id,
+            ai_task_id=node_model.ai_task_id,
+        )
+
+    async def copy_node_from_template_request(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_id: str,
+        flow_version_id: str,
+        payload: NodeTemplateCopyRequest,
+        principal_id: str,
+    ) -> Node:
+        flow_uuid = UUID(flow_id)
+        version_uuid = UUID(flow_version_id)
+        if payload.flow_id != flow_uuid or payload.flow_version_id != version_uuid:
+            raise DomainValidationException(message="flow_id_or_version_mismatch")
+        if payload.node_template_id is None and not payload.code:
+            raise DomainValidationException(message="node_template_identifier_required")
+        template_id = payload.node_template_id
+        if template_id is None and payload.code:
+            template = await self.repository.get_active_system_node_template_by_code(
+                code=payload.code
+            )
+            if template is None:
+                raise NotFoundServiceException(message="node_template_not_found")
+            template_id = template.node_template_id
+        if template_id is None:
+            raise DomainValidationException(message="node_template_identifier_required")
+        return await self.copy_node_from_template(
+            tenant_id=tenant_id,
+            flow_id=flow_id,
+            flow_version_id=flow_version_id,
+            node_template_id=template_id,
+            overrides=payload.overrides,
+            principal_id=principal_id,
+        )
+
     async def list_routers(self, *, tenant_id: UUID, limit: int = 200) -> list[Router]:
         routers = await self.repository.list_routers(tenant_id=tenant_id, limit=limit)
         return [
@@ -654,4 +795,71 @@ class FlowsService(FlowsServicePort):
             condition_expression_id=model.condition_expression_id,
             from_node_id=model.from_node_id,
             to_node_id=model.to_node_id,
+        )
+
+    async def create_custom_node(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_id: str,
+        flow_version_id: str,
+        payload: CustomNodeCreate,
+        principal_id: str,
+    ) -> Node:
+        flow_uuid = UUID(flow_id)
+        version_uuid = UUID(flow_version_id)
+        if payload.flow_id != flow_uuid or payload.flow_version_id != version_uuid:
+            raise DomainValidationException(message="flow_id_or_version_mismatch")
+        flow = await self.repository.get_flow(flow_uuid)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        version = await self.repository.get_flow_version(version_uuid)
+        if version is None or version.flow_id != flow_uuid:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        validate_node_config(payload.node_type, payload.config or {})
+        node_model = await self.repository.create_custom_node(
+            flow_version_id=version_uuid,
+            node_type=payload.node_type,
+            config=payload.config or {},
+            ai_task_id=None,
+            created_by=principal_id,
+        )
+        draft = await self.repository.get_flow_graph_draft(version_uuid)
+        if draft is None:
+            definition = FlowGraphDefinition(
+                start_node=str(node_model.node_id),
+                nodes={
+                    str(node_model.node_id): FlowGraphNodeSpec(
+                        type=payload.node_type,
+                        config=payload.config or {},
+                    )
+                },
+                edges=[],
+            )
+        else:
+            definition = FlowGraphDefinition.model_validate(draft.definition)
+            definition.nodes[str(node_model.node_id)] = FlowGraphNodeSpec(
+                type=payload.node_type,
+                config=payload.config or {},
+            )
+        await self.repository.upsert_flow_graph_draft(
+            flow_version_id=version_uuid,
+            definition=definition.model_dump(),
+            principal_id=principal_id,
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="node",
+            resource_id=node_model.node_id,
+            version_id=version_uuid,
+            event_type="NODE_CREATED_CUSTOM",
+            change_type="CREATE",
+            principal_id=principal_id,
+            justification="create custom node",
+            schema_version=1,
+        )
+        return Node(
+            id=node_model.node_id,
+            flow_version_id=node_model.flow_version_id,
+            ai_task_id=node_model.ai_task_id,
         )

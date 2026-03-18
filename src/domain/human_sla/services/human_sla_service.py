@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from exceptions.service_exceptions import NotFoundServiceException
 
+from domain.human_sla.repositories.human_sla_policy_repository import (
+    HumanSLAPolicyRepository,
+)
 from domain.human_sla.repositories.human_sla_repository import HumanSLARepository
+from domain.human_sla.schemas.human_sla_policy import HumanSLAPolicy
 from domain.human_sla.schemas.sla_case import (
     SLACaseCreate,
     SLACaseResolve,
@@ -16,8 +20,25 @@ from domain.human_sla.schemas.sla_case import (
 
 
 class HumanSLAService:
-    def __init__(self, repository: HumanSLARepository) -> None:
+    def __init__(
+        self,
+        repository: HumanSLARepository,
+        policy_repository: HumanSLAPolicyRepository,
+    ) -> None:
         self.repository = repository
+        self.policy_repository = policy_repository
+
+    async def resolve_policy(
+        self,
+        tenant_id: UUID,
+        node: str,
+        fallback_reason: str,
+    ) -> HumanSLAPolicy | None:
+        return await self.policy_repository.resolve_policy(
+            tenant_id=tenant_id,
+            node=node,
+            fallback_reason=fallback_reason,
+        )
 
     async def create_case_for_fallback(
         self,
@@ -57,16 +78,38 @@ class HumanSLAService:
         node_run_id: UUID,
         interaction_id: UUID | None,
         user_id: str,
+        node: str,
         fallback_reason: SLAFallbackReason,
         opened_at: datetime,
-        priority: str | None = None,
-        sla_target_at: datetime | None = None,
     ) -> SLACaseResponse | None:
         existing = await self.repository.get_last_open_case_for_session(
             tenant_id=tenant_id, session_id=session_id
         )
         if existing is not None:
             return SLACaseResponse.model_validate(existing)
+        reason_str = (
+            fallback_reason.value
+            if isinstance(fallback_reason, SLAFallbackReason)
+            else str(fallback_reason)
+        )
+        policy = await self.policy_repository.resolve_policy(
+            tenant_id=tenant_id, node=node, fallback_reason=reason_str
+        )
+        if policy is not None:
+            priority = policy.initial_priority
+            sla_target_at = (
+                opened_at.replace(tzinfo=timezone.utc)
+                + timedelta(hours=policy.target_response_hours)
+                if policy.target_response_hours is not None
+                else None
+            )
+            human_sla_policy_id = policy.human_sla_policy_id
+            current_escalation_level = 0
+        else:
+            priority = None
+            sla_target_at = None
+            human_sla_policy_id = None
+            current_escalation_level = 0
         case_create = SLACaseCreate(
             tenant_id=tenant_id,
             session_id=session_id,
@@ -78,6 +121,8 @@ class HumanSLAService:
             fallback_reason=fallback_reason,
             opened_at=opened_at,
             sla_target_at=sla_target_at,
+            human_sla_policy_id=human_sla_policy_id,
+            current_escalation_level=current_escalation_level,
         )
         created_case = await self.repository.create_case(case_create)
         if created_case is None:
@@ -148,3 +193,43 @@ class HumanSLAService:
         if case is None:
             raise NotFoundServiceException(message="sla_case_not_found")
         return SLACaseResponse.model_validate(case)
+
+    async def evaluate_sla(self, case_id: UUID, tenant_id: UUID) -> None:
+        case = await self.repository.get_case(sla_case_id=case_id, tenant_id=tenant_id)
+        if case is None or case.human_sla_policy_id is None:
+            return
+        policy = await self.policy_repository.get_policy_with_rules(
+            case.human_sla_policy_id
+        )
+        if policy is None:
+            return
+        now = datetime.now(timezone.utc)
+        opened = (
+            case.opened_at.replace(tzinfo=timezone.utc)
+            if case.opened_at.tzinfo is None
+            else case.opened_at
+        )
+        elapsed_hours = (now - opened).total_seconds() / 3600.0
+        for r in policy.escalation_rules:
+            if (
+                elapsed_hours >= r.trigger_after_hours
+                and r.level > case.current_escalation_level
+            ):
+                await self.repository.update_case_escalation(
+                    sla_case_id=case_id,
+                    tenant_id=tenant_id,
+                    priority=r.new_priority,
+                    level=r.level,
+                )
+                case = await self.repository.get_case(
+                    sla_case_id=case_id, tenant_id=tenant_id
+                )
+                if case is None:
+                    return
+        if (
+            policy.target_resolution_hours is not None
+            and elapsed_hours >= policy.target_resolution_hours
+        ):
+            await self.repository.update_case_sla_breached(
+                sla_case_id=case_id, tenant_id=tenant_id
+            )

@@ -4,8 +4,11 @@ import ast
 from collections import defaultdict
 from typing import Dict, List
 
+from pydantic import ValidationError as PydanticValidationError
+
 from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
 from domain.flows.schemas.graph import FlowGraphDefinition, FlowGraphEdge
+from domain.flows.schemas.graph_node_config import validate_node_config
 from domain.flows.services.flow_graph_validator import FlowGraphValidator
 from exceptions.service_exceptions import DomainValidationException
 
@@ -16,9 +19,25 @@ class FlowGraphDraftValidator:
     @staticmethod
     def validate(definition: FlowGraphDefinition) -> None:
         FlowGraphValidator.validate(definition)
+        FlowGraphDraftValidator._validate_node_configs(definition)
         FlowGraphDraftValidator._validate_edge_syntax(definition.edges)
         FlowGraphDraftValidator._validate_mutual_exclusion(definition.edges)
         FlowGraphDraftValidator._validate_cycles(definition)
+
+    @staticmethod
+    def _validate_node_configs(definition: FlowGraphDefinition) -> None:
+        for node_id, spec in definition.nodes.items():
+            try:
+                validate_node_config(spec.type, spec.config)
+            except PydanticValidationError as exc:
+                raise DomainValidationException(
+                    message="node_config_invalid",
+                    detail={
+                        "node_id": node_id,
+                        "type": spec.type,
+                        "errors": exc.errors(),
+                    },
+                ) from exc
 
     @staticmethod
     def _validate_edge_syntax(edges: List[FlowGraphEdge]) -> None:

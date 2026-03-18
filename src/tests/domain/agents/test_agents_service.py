@@ -118,7 +118,7 @@ class TestAgentsService:
         repository.list_agent_versions = AsyncMock(return_value=[])
 
         result = await agents_service.list_agent_versions(
-            tenant_id=tenant_id, agent_id=str(agent_id), status_filter=None
+            tenant_id=tenant_id, agent_id=agent_id, status_filter=None
         )
 
         assert result == []
@@ -146,12 +146,14 @@ class TestAgentsService:
             config_hash=None,
             supported_tool_schema_version=None,
             supported_tool_config_hash_prefix=None,
+            persona_config=None,
+            system_prompt=None,
         )
         repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.list_agent_versions = AsyncMock(return_value=[mock_version])
 
         result = await agents_service.list_agent_versions(
-            tenant_id=tenant_id, agent_id=str(agent_id), status_filter=["PUBLISHED"]
+            tenant_id=tenant_id, agent_id=agent_id, status_filter=["PUBLISHED"]
         )
 
         assert len(result) == 1
@@ -180,6 +182,8 @@ class TestAgentsService:
             config_hash=None,
             supported_tool_schema_version=None,
             supported_tool_config_hash_prefix=None,
+            persona_config=None,
+            system_prompt=None,
         )
         repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.create_agent_version = AsyncMock(return_value=mock_version)
@@ -189,7 +193,7 @@ class TestAgentsService:
 
         result = await agents_service.create_agent_version(
             tenant_id=tenant_id,
-            agent_id=str(agent_id),
+            agent_id=agent_id,
             agent_version_create=agent_version_create,
             principal_id="user-123",
         )

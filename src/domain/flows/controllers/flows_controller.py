@@ -5,12 +5,15 @@ from domain.common.schemas.change import ChangeRequest
 from domain.flows.schemas.flows import (
     ConditionExpression,
     ConditionExpressionCreate,
+    CustomNodeCreate,
     Flow,
     FlowCreate,
     FlowVersion,
     FlowVersionCreate,
     Node,
     NodeCreate,
+    NodeTemplateCatalogItem,
+    NodeTemplateCopyRequest,
     Router,
     RouterCreate,
     RoutingRule,
@@ -57,6 +60,12 @@ class FlowsController:
             methods=["POST"],
             response_model=Flow,
             status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/node-templates:system",
+            self.list_system_node_templates,
+            methods=["GET"],
+            response_model=list[NodeTemplateCatalogItem],
         )
         r(
             "/flows/{flow_id}",
@@ -160,6 +169,20 @@ class FlowsController:
         r(
             "/nodes",
             self.create_node,
+            methods=["POST"],
+            response_model=Node,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/nodes:copy-from-template",
+            self.copy_node_from_template,
+            methods=["POST"],
+            response_model=Node,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/nodes:custom",
+            self.create_custom_node,
             methods=["POST"],
             response_model=Node,
             status_code=status.HTTP_201_CREATED,
@@ -438,6 +461,42 @@ class FlowsController:
         return await self.service.create_node(
             tenant_id=auth.tenant_id,
             node_create=node_create,
+            principal_id=auth.principal_id,
+        )
+
+    async def list_system_node_templates(
+        self,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[NodeTemplateCatalogItem]:
+        return await self.service.list_system_node_templates(tenant_id=auth.tenant_id)
+
+    async def copy_node_from_template(
+        self,
+        flow_id: str,
+        flow_version_id: str,
+        payload: NodeTemplateCopyRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> Node:
+        return await self.service.copy_node_from_template_request(
+            tenant_id=auth.tenant_id,
+            flow_id=flow_id,
+            flow_version_id=flow_version_id,
+            payload=payload,
+            principal_id=auth.principal_id,
+        )
+
+    async def create_custom_node(
+        self,
+        flow_id: str,
+        flow_version_id: str,
+        payload: CustomNodeCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> Node:
+        return await self.service.create_custom_node(
+            tenant_id=auth.tenant_id,
+            flow_id=flow_id,
+            flow_version_id=flow_version_id,
+            payload=payload,
             principal_id=auth.principal_id,
         )
 

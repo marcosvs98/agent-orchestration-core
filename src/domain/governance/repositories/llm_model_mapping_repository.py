@@ -87,6 +87,7 @@ class LLMModelMappingRepository:
         self,
         *,
         tenant_id: UUID,
+        model_id: UUID,
         provider: str,
         model_alias: str,
         provider_model: str,
@@ -145,7 +146,11 @@ class LLMModelMappingRepository:
                             LLMModelMappingModel.llm_model_mapping_id
                             == instance.llm_model_mapping_id
                         )
-                        .values(provider_model=provider_model, created_by=created_by)
+                        .values(
+                            model_id=model_id,
+                            provider_model=provider_model,
+                            created_by=created_by,
+                        )
                     )
                     await session.commit()
                     if self.cache_adapter:
@@ -166,6 +171,7 @@ class LLMModelMappingRepository:
             ):
                 instance = LLMModelMappingModel(
                     tenant_id=tenant_id,
+                    model_id=model_id,
                     provider=provider,
                     model_alias=model_alias,
                     provider_model=provider_model,

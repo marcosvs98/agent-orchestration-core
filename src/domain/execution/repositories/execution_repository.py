@@ -51,13 +51,7 @@ from infra.database.models.ai_policy.execution_policy_version import (
 )
 from infra.database.models.ai_policy.model import Model as ModelModel
 from infra.database.models.agent.agent_version import AgentVersion as AgentVersionModel
-from infra.database.models.agent.active_agent_version import (
-    ActiveAgentVersion as ActiveAgentVersionModel,
-)
 from infra.database.models.flow.flow import Flow as FlowModel
-from infra.database.models.flow.active_flow_version import (
-    ActiveFlowVersion as ActiveFlowVersionModel,
-)
 from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
 from infra.database.models.flow.flow_graph import FlowGraph as FlowGraphModel
 from infra.database.models.flow.flow_graph_snapshot import (
@@ -70,20 +64,11 @@ from infra.database.models.conversation.interaction import (
 from infra.database.models.conversation.response_artifact import (
     ResponseArtifact as ResponseArtifactModel,
 )
-from infra.database.models.governance.active_billing_policy_version import (
-    ActiveBillingPolicyVersion as ActiveBillingPolicyVersionModel,
-)
 from infra.database.models.governance.billing_policy_version import (
     BillingPolicyVersion as BillingPolicyVersionModel,
 )
-from infra.database.models.governance.active_memory_policy_version import (
-    ActiveMemoryPolicyVersion as ActiveMemoryPolicyVersionModel,
-)
 from infra.database.models.governance.memory_policy_version import (
     MemoryPolicyVersion as MemoryPolicyVersionModel,
-)
-from infra.database.models.governance.active_rag_policy_version import (
-    ActiveRagPolicyVersion as ActiveRagPolicyVersionModel,
 )
 from infra.database.models.governance.rag_policy_version import (
     RagPolicyVersion as RagPolicyVersionModel,
@@ -923,6 +908,7 @@ class ExecutionRepository:
                     .values(
                         output=output or {},
                         result_node_run_id=result_node_run_id,
+                        completed_at=sa.func.now(),
                     )
                 )
                 if tool_handle:
@@ -1054,9 +1040,10 @@ class ExecutionRepository:
             if isinstance(cached, dict) and cached.get("billing_policy_version_id"):
                 return UUID(cached["billing_policy_version_id"])
         async with self.db.get_session() as session:
-            stmt = select(
-                ActiveBillingPolicyVersionModel.billing_policy_version_id
-            ).where(ActiveBillingPolicyVersionModel.tenant_id == tenant_id)
+            stmt = select(BillingPolicyVersionModel.billing_policy_version_id).where(
+                BillingPolicyVersionModel.tenant_id == tenant_id,
+                BillingPolicyVersionModel.is_active.is_(True),
+            )
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -1134,9 +1121,10 @@ class ExecutionRepository:
             if isinstance(cached, dict) and cached.get("memory_policy_version_id"):
                 return UUID(cached["memory_policy_version_id"])
         async with self.db.get_session() as session:
-            stmt = select(
-                ActiveMemoryPolicyVersionModel.memory_policy_version_id
-            ).where(ActiveMemoryPolicyVersionModel.tenant_id == tenant_id)
+            stmt = select(MemoryPolicyVersionModel.memory_policy_version_id).where(
+                MemoryPolicyVersionModel.tenant_id == tenant_id,
+                MemoryPolicyVersionModel.is_active.is_(True),
+            )
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -1212,8 +1200,9 @@ class ExecutionRepository:
             if isinstance(cached, dict) and cached.get("rag_policy_version_id"):
                 return UUID(cached["rag_policy_version_id"])
         async with self.db.get_session() as session:
-            stmt = select(ActiveRagPolicyVersionModel.rag_policy_version_id).where(
-                ActiveRagPolicyVersionModel.tenant_id == tenant_id
+            stmt = select(RagPolicyVersionModel.rag_policy_version_id).where(
+                RagPolicyVersionModel.tenant_id == tenant_id,
+                RagPolicyVersionModel.is_active.is_(True),
             )
             query_sql = compile_query(stmt)
 
@@ -1999,8 +1988,9 @@ class ExecutionRepository:
             if isinstance(cached, dict) and cached.get("flow_version_id"):
                 return UUID(cached["flow_version_id"])
         async with self.db.get_session() as session:
-            stmt = select(ActiveFlowVersionModel).where(
-                ActiveFlowVersionModel.flow_id == flow_id
+            stmt = select(FlowVersionModel.flow_version_id).where(
+                FlowVersionModel.flow_id == flow_id,
+                FlowVersionModel.is_active.is_(True),
             )
             query_sql = compile_query(stmt)
 
@@ -2011,20 +2001,20 @@ class ExecutionRepository:
                 metadata={"retriever_name": "get_active_flow_version_id"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                row = result.scalar_one_or_none()
+                version_id = result.scalar_one_or_none()
 
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if row else 0,
-                            "found": row is not None,
+                            "result_count": 1 if version_id else 0,
+                            "found": version_id is not None,
                         }
                     )
 
-        if row is None:
+        if version_id is None:
             return None
-        await self.cache_adapter.set(key, {"flow_version_id": str(row.flow_version_id)})
-        return row.flow_version_id
+        await self.cache_adapter.set(key, {"flow_version_id": str(version_id)})
+        return version_id
 
     async def get_flow_graph_by_flow_version(
         self, flow_version_id: UUID
@@ -2252,8 +2242,9 @@ class ExecutionRepository:
             if isinstance(cached, dict) and cached.get("agent_version_id"):
                 return UUID(cached["agent_version_id"])
         async with self.db.get_session() as session:
-            stmt = select(ActiveAgentVersionModel).where(
-                ActiveAgentVersionModel.agent_id == agent_id
+            stmt = select(AgentVersionModel.agent_version_id).where(
+                AgentVersionModel.agent_id == agent_id,
+                AgentVersionModel.is_active.is_(True),
             )
             query_sql = compile_query(stmt)
 
@@ -2264,22 +2255,20 @@ class ExecutionRepository:
                 metadata={"retriever_name": "get_active_agent_version_id"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
-                row = result.scalar_one_or_none()
+                version_id = result.scalar_one_or_none()
 
                 if retriever_handle:
                     retriever_handle.success(
                         output={
-                            "result_count": 1 if row else 0,
-                            "found": row is not None,
+                            "result_count": 1 if version_id else 0,
+                            "found": version_id is not None,
                         }
                     )
 
-        if row is None:
+        if version_id is None:
             return None
-        await self.cache_adapter.set(
-            key, {"agent_version_id": str(row.agent_version_id)}
-        )
-        return row.agent_version_id
+        await self.cache_adapter.set(key, {"agent_version_id": str(version_id)})
+        return version_id
 
     async def get_ai_execution_policy_version(
         self, ai_execution_policy_version_id: UUID

@@ -1,3 +1,5 @@
-from infra.database.models.escalation.escalation_policy import EscalationPolicy
-from infra.database.models.escalation.escalation import Escalation
+from infra.database.models.escalation.human_sla_escalation_rule import (
+    HumanSLAEscalationRule,
+)
+from infra.database.models.escalation.human_sla_policy import HumanSLAPolicy
 from infra.database.models.escalation.sla_case import SLACase

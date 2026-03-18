@@ -218,7 +218,7 @@ source .venv/bin/activate  # ou uv shell
 - **Flows**: `GET /core/v1/flows`, `POST /core/v1/flows`, `GET /core/v1/flows/{id}`, `GET /core/v1/flows/{id}/versions`, `POST /core/v1/flows/{id}/versions`
 - **Nodes & Routing**: `GET /core/v1/flows/{id}/versions/{vid}/nodes`, `POST /core/v1/nodes`, `GET /core/v1/routers`, `POST /core/v1/routers`, `POST /core/v1/routing-rules`, `POST /core/v1/condition-expressions`
 - **Agents**: `GET /core/v1/agents`, `POST /core/v1/agents`, `GET /core/v1/agents/{id}/versions`, `POST /core/v1/agents/{id}/versions`, `POST /core/v1/node-agent-bindings`
-- **Tools**: `POST /core/v1/tools/import-openapi`, `GET /core/v1/tools`, `POST /core/v1/tool-configs`, `POST /core/v1/agent-version-tool-bindings`
+- **Tools**: `POST /core/v1/tools/import-tools`, `GET /core/v1/tools`, `POST /core/v1/tool-configs`, `POST /core/v1/agent-version-tool-bindings`
 - **AI Policy**: `GET /core/v1/ai-tasks`, `POST /core/v1/ai-execution-policies`, `POST /core/v1/ai-execution-policy-versions`, `GET /core/v1/models`
 - **RAG**: `GET /core/v1/rag-configs`, `POST /core/v1/rag-configs`, `GET /core/v1/vector-stores`
 - **Onboarding**: `GET /core/v1/onboardings`, `POST /core/v1/onboardings`, `POST /core/v1/onboarding-runs`, `GET /core/v1/onboarding-runs/{id}`, `GET /core/v1/onboardings/{id}/versions`

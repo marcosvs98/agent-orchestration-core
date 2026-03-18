@@ -1,16 +1,20 @@
+import json
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from fastapi.responses import JSONResponse
 
 from domain.tenants.controllers.tenants_controller import TenantsController
 from domain.tenants.schemas.tenants import TenantCreate, TenantResponse
 from domain.tenants.services.tenants_service import TenantsService
-from exceptions.service_exceptions import (
-    AuthorizationDeniedException,
-    DomainConflictException,
-)
+from exceptions.service_exceptions import AuthorizationDeniedException
 from utils.auth import AuthContext
+
+
+def _decode_create_result(result: JSONResponse) -> tuple[dict, int]:
+    body = json.loads(result.body.decode())
+    return body, result.status_code
 
 
 class TestTenantsController:
@@ -61,14 +65,16 @@ class TestTenantsController:
             contact_phone=None,
             settings=settings,
         )
-        service.create = AsyncMock(return_value=expected_response)
+        service.create = AsyncMock(return_value=(expected_response, True))
 
         result = await controller.create(tenant_create=tenant_create, auth=auth)
 
-        assert result.id == tenant_id
-        assert result.external_id == external_id
-        assert result.name == "Test Tenant"
-        assert result.settings == settings
+        body, status_code = _decode_create_result(result)
+        assert status_code == 201
+        assert body["id"] == str(tenant_id)
+        assert body["external_id"] == str(external_id)
+        assert body["name"] == "Test Tenant"
+        assert body["settings"] == settings
         service.create.assert_called_once_with(
             tenant_create=tenant_create, principal_id=principal_id
         )
@@ -122,21 +128,24 @@ class TestTenantsController:
             contact_phone=None,
             settings=None,
         )
-        service.create = AsyncMock(return_value=expected_response)
+        service.create = AsyncMock(return_value=(expected_response, True))
 
         result = await controller.create(tenant_create=tenant_create, auth=auth)
 
-        assert result is not None
-        assert result.name == "Test Tenant"
+        body, status_code = _decode_create_result(result)
+        assert status_code == 201
+        assert body is not None
+        assert body["name"] == "Test Tenant"
         service.create.assert_called_once_with(
             tenant_create=tenant_create, principal_id=principal_id
         )
 
     @pytest.mark.asyncio
-    async def test_create_raises_when_external_id_duplicate(
+    async def test_create_returns_200_with_existing_tenant_when_external_id_matches(
         self, controller, service
     ):
         external_id = uuid4()
+        tenant_id = uuid4()
         tenant_create = TenantCreate(name="Test Tenant", external_id=external_id)
         principal_id = "admin-123"
 
@@ -150,13 +159,28 @@ class TestTenantsController:
             expires_at=9999999999,
         )
 
-        service.create = AsyncMock(
-            side_effect=DomainConflictException(message="external_id_already_exists")
+        existing_response = TenantResponse(
+            id=tenant_id,
+            external_id=external_id,
+            name="Existing Tenant",
+            description=None,
+            timezone="America/Sao_Paulo",
+            is_active=True,
+            currency="BRL",
+            language="pt_BR",
+            contact_name=None,
+            contact_phone=None,
+            settings=None,
         )
+        service.create = AsyncMock(return_value=(existing_response, False))
 
-        with pytest.raises(DomainConflictException, match="external_id_already_exists"):
-            await controller.create(tenant_create=tenant_create, auth=auth)
+        result = await controller.create(tenant_create=tenant_create, auth=auth)
 
+        body, status_code = _decode_create_result(result)
+        assert status_code == 200
+        assert body["id"] == str(tenant_id)
+        assert body["external_id"] == str(external_id)
+        assert body["name"] == "Existing Tenant"
         service.create.assert_called_once_with(
             tenant_create=tenant_create, principal_id=principal_id
         )
@@ -204,15 +228,17 @@ class TestTenantsController:
             contact_phone="+5511999999999",
             settings={"feature_flag": True},
         )
-        service.create = AsyncMock(return_value=expected_response)
+        service.create = AsyncMock(return_value=(expected_response, True))
 
         result = await controller.create(tenant_create=tenant_create, auth=auth)
 
-        assert result.id == tenant_id
-        assert result.name == "Full Tenant"
-        assert result.description == "Full description"
-        assert result.contact_name == "John Doe"
-        assert result.contact_phone == "+5511999999999"
+        body, status_code = _decode_create_result(result)
+        assert status_code == 201
+        assert body["id"] == str(tenant_id)
+        assert body["name"] == "Full Tenant"
+        assert body["description"] == "Full description"
+        assert body["contact_name"] == "John Doe"
+        assert body["contact_phone"] == "+5511999999999"
         service.create.assert_called_once_with(
             tenant_create=tenant_create, principal_id=principal_id
         )

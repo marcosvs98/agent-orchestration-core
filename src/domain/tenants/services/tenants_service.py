@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from domain.governance.repositories.authoring_event_repository import (
@@ -11,10 +13,7 @@ from domain.tenants.schemas.tenants import (
     TenantResponse,
     TenantSettingsResponse,
 )
-from exceptions.service_exceptions import (
-    DomainConflictException,
-    NotFoundServiceException,
-)
+from exceptions.service_exceptions import NotFoundServiceException
 
 
 class TenantsService(TenantsServicePort):
@@ -28,13 +27,15 @@ class TenantsService(TenantsServicePort):
 
     async def create(
         self, *, tenant_create: TenantCreate, principal_id: str
-    ) -> TenantResponse:
+    ) -> tuple[TenantResponse, bool]:
         if tenant_create.external_id is not None:
             existing = await self.repository.get_tenant_by_external_id(
                 tenant_create.external_id
             )
             if existing is not None:
-                raise DomainConflictException(message="external_id_already_exists")
+                tenant_dict = existing.to_dict()
+                tenant_dict["id"] = tenant_dict.pop("tenant_id")
+                return TenantResponse.model_validate(tenant_dict), False
 
         model = await self.repository.create_tenant(
             tenant_data=tenant_create.model_dump(mode="json")
@@ -52,7 +53,7 @@ class TenantsService(TenantsServicePort):
         )
         tenant_dict = model.to_dict()
         tenant_dict["id"] = tenant_dict.pop("tenant_id")
-        return TenantResponse.model_validate(tenant_dict)
+        return TenantResponse.model_validate(tenant_dict), True
 
     async def get_current(self, *, tenant_id: UUID) -> TenantCurrentResponse:
         tenant = await self.repository.get_tenant(tenant_id)

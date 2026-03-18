@@ -509,20 +509,20 @@ Onde eu consiga ter métricas do tenant, quantos flows, quantos agents e etc ...
 
 ## 2. Endpoints de execução (flow-runs, node-runs, agent-runs, graph-state)
 
-- **Rotas antigas (deprecated):**  
-  `ExecutionController` com prefix `/core/v1`:  
+- **Rotas antigas (deprecated):**
+  `ExecutionController` com prefix `/core/v1`:
   - GET `/flow-runs/{id}`, `/flow-runs/{id}/graph-state`, `/node-runs`, `/agent-runs` **retornam 405** de propósito (`MethodNotAllowedPlaceholderException`).
   - POST (create flow-run, tool-run, execute) ainda funcionam, mas estão marcados como deprecated.
 
-- **Rotas canônicas:**  
+- **Rotas canônicas:**
   `ExecutionPlaneController` com prefix **`/core/v1/executions`**:
   - POST/GET flow-runs, tool-runs, node-runs, agent-runs, graph-state, execution-events.
   - O frontend deve usar **só** `/core/v1/executions/flow-runs`, `/core/v1/executions/node-runs`, etc.
 
-- **INTERNAL_ERROR em `/core/v1/executions/*`:**  
+- **INTERNAL_ERROR em `/core/v1/executions/*`:**
   Bug a corrigir no fluxo atual (boundary/service/repository): validação de tenant, tratamento de exceção ou uso de sessão. Não criar outro controller; corrigir e adicionar testes de integração para GET flow-run, graph-state, node-runs, agent-runs.
 
-- **Recomendação:**  
+- **Recomendação:**
   Manter as rotas deprecated **documentadas** (ex.: no OpenAPI: “Deprecated. Use /core/v1/executions/...”). Opcional: redirect 307/308 dos GET deprecated para `/core/v1/executions/...`. Remover os GET deprecated só após sunset definido e migração de clientes.
 
 ---
@@ -539,10 +539,10 @@ Onde eu consiga ter métricas do tenant, quantos flows, quantos agents e etc ...
 
 ### Node–agent e tool–agent (por agent_version)
 
-- **Listar nodes por agent_version:**  
+- **Listar nodes por agent_version:**
   Não existe. **Onde:** `AgentsRepository`: método tipo `list_node_ids_by_agent_version_id(agent_version_id)` (ou listar bindings); expor no controller, ex.: GET `/core/v1/agent-versions/{agent_version_id}/nodes` ou sob agents.
 
-- **Listar tools (ou bindings) por agent_version:**  
+- **Listar tools (ou bindings) por agent_version:**
   Não existe. **Onde:** `ToolsRepository`: método tipo `list_tool_bindings_by_agent_version_id(agent_version_id)`; expor ex.: GET `/core/v1/agent-versions/{agent_version_id}/tools` (ou equivalente sob agents/tools).
 
 ---
@@ -569,50 +569,50 @@ Onde eu consiga ter métricas do tenant, quantos flows, quantos agents e etc ...
 
 ## 5. Modelos não gerenciáveis via API / endpoints deprecated
 
-- **Modelos sem API de gestão (hoje):**  
-  flow_graph (só create), flow_graph_draft (só POST), flow_graph_snapshot, router (sem get por id), routing_rule (sem list), run_failure, interaction (sem get/list), response_artifact (sem list), end_user, user_preferences, user_memory_profile (sem API dedicada).  
+- **Modelos sem API de gestão (hoje):**
+  flow_graph (só create), flow_graph_draft (só POST), flow_graph_snapshot, router (sem get por id), routing_rule (sem list), run_failure, interaction (sem get/list), response_artifact (sem list), end_user, user_preferences, user_memory_profile (sem API dedicada).
   Priorizar conforme contrato do frontend; evitar endpoints “por speculação”.
 
-- **Deprecated e seguros de remover (no longo prazo):**  
-  Apenas os **GET/list** do `ExecutionController` em `/core/v1` (flow-runs, node-runs, agent-runs, graph-state), que já retornam 405. Remover só após sunset e migração para `/core/v1/executions`.  
+- **Deprecated e seguros de remover (no longo prazo):**
+  Apenas os **GET/list** do `ExecutionController` em `/core/v1` (flow-runs, node-runs, agent-runs, graph-state), que já retornam 405. Remover só após sunset e migração para `/core/v1/executions`.
   **Não** remover os POST deprecated em `/core/v1` antes de os clientes usarem POST em `/core/v1/executions`.
 
 ---
 
 ## 6. Tenant “dashboard” (GET `/core/v1/tenants/current` com métricas)
 
-- **Recomendação (governance + DB):**  
+- **Recomendação (governance + DB):**
   Um único modelo de leitura/DTO é aceitável (ex.: estender `TenantCurrentResponse` ou `GET /core/v1/tenants/current/dashboard`).
 
-- **Implementação sugerida (DB):**  
+- **Implementação sugerida (DB):**
   Uma única query com subqueries escalares (ex.: counts de flow, agent, etc. por `tenant_id`) para evitar N+1; garantir índice em `tenant_id` nas tabelas contadas.
 
-- **Escopo:**  
+- **Escopo:**
   Contagens sempre por `tenant_id` do auth; sem agregação cross-tenant.
 
 ---
 
 ## 7. Plano de ação sugerido (ordem prática)
 
-1. **Bugs**  
-   - Ajustar sessão/pool (rollback no `finally`, `pool_reset_on_return="rollback"`) para eliminar 500 em vector-stores.  
+1. **Bugs**
+   - Ajustar sessão/pool (rollback no `finally`, `pool_reset_on_return="rollback"`) para eliminar 500 em vector-stores.
    - Verificar migração e existência de `sla_case` no DB de runtime; corrigir e documentar processo de migração.
 
-2. **Execução**  
-   - Corrigir INTERNAL_ERROR nos GET de `/core/v1/executions/*` (flow-run, graph-state, node-runs, agent-runs).  
+2. **Execução**
+   - Corrigir INTERNAL_ERROR nos GET de `/core/v1/executions/*` (flow-run, graph-state, node-runs, agent-runs).
    - Documentar no OpenAPI que a API canônica de execução é `/core/v1/executions`.
 
-3. **Governance**  
+3. **Governance**
    - Expor LIST (e opcionalmente GET por id) para access, rate-limit, billing, memory e rag policies (service + controller), com limit/offset e índices adequados.
 
-4. **Bindings por agent_version**  
+4. **Bindings por agent_version**
    - Implementar list nodes por agent_version e list tools (ou bindings) por agent_version em repo + service + controller, reutilizando entidades existentes.
 
-5. **Tenant**  
-   - Opcional: PATCH tenant (repo update, service patch, PATCH `/core/v1/tenants/current`, schema TenantPatch).  
+5. **Tenant**
+   - Opcional: PATCH tenant (repo update, service patch, PATCH `/core/v1/tenants/current`, schema TenantPatch).
    - Opcional: dashboard em GET `/core/v1/tenants/current` (ou `/current/dashboard`) com contagens em uma query.
 
-6. **Demais recursos (end_user, interaction, flow_graph GET, etc.)**  
+6. **Demais recursos (end_user, interaction, flow_graph GET, etc.)**
    - Incluir conforme necessidade real do frontend/contrato; evitar expor tudo “por lista”.
 
 Com isso, o TODO fica classificado em: **bugs (fix imediato)**, **paridade mínima (execution + policies + bindings)**, **melhorias (tenant PATCH/dashboard)** e **demais itens sob demanda**.

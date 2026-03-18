@@ -10,10 +10,7 @@ from domain.governance.repositories.authoring_event_repository import (
 from domain.tenants.repositories.tenants_repository import TenantsRepository
 from domain.tenants.schemas.tenants import TenantCreate
 from domain.tenants.services.tenants_service import TenantsService
-from exceptions.service_exceptions import (
-    DomainConflictException,
-    NotFoundServiceException,
-)
+from exceptions.service_exceptions import NotFoundServiceException
 
 
 class TestTenantsService:
@@ -78,10 +75,11 @@ class TestTenantsService:
         repository.get_tenant_by_external_id = AsyncMock(return_value=None)
         repository.create_tenant = AsyncMock(return_value=mock_tenant)
 
-        result = await tenants_service.create(
+        result, created = await tenants_service.create(
             tenant_create=tenant_create, principal_id=principal_id
         )
 
+        assert created is True
         assert result.id == tenant_id
         assert result.external_id == external_id
         assert result.name == "Test Tenant"
@@ -136,10 +134,11 @@ class TestTenantsService:
         )
         repository.create_tenant = AsyncMock(return_value=mock_tenant)
 
-        result = await tenants_service.create(
+        result, created = await tenants_service.create(
             tenant_create=tenant_create, principal_id=principal_id
         )
 
+        assert created is True
         assert result.id == tenant_id
         assert result.external_id is None
         assert result.name == "Minimal Tenant"
@@ -148,23 +147,53 @@ class TestTenantsService:
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_raises_when_external_id_already_exists(
-        self, tenants_service, repository
+    async def test_create_returns_existing_tenant_when_external_id_matches(
+        self, tenants_service, repository, authoring_events
     ):
         external_id = uuid4()
+        tenant_id = uuid4()
         tenant_create = TenantCreate(name="Test Tenant", external_id=external_id)
         principal_id = "admin-123"
 
-        existing_tenant = SimpleNamespace(tenant_id=uuid4(), external_id=external_id)
+        existing_tenant = SimpleNamespace(
+            tenant_id=tenant_id,
+            external_id=external_id,
+            name="Existing Tenant",
+            description=None,
+            timezone="America/Sao_Paulo",
+            is_active=True,
+            currency="BRL",
+            language="pt_BR",
+            contact_name=None,
+            contact_phone=None,
+            settings=None,
+            to_dict=lambda: {
+                "tenant_id": tenant_id,
+                "external_id": external_id,
+                "name": "Existing Tenant",
+                "description": None,
+                "timezone": "America/Sao_Paulo",
+                "is_active": True,
+                "currency": "BRL",
+                "language": "pt_BR",
+                "contact_name": None,
+                "contact_phone": None,
+                "settings": None,
+            },
+        )
         repository.get_tenant_by_external_id = AsyncMock(return_value=existing_tenant)
 
-        with pytest.raises(DomainConflictException, match="external_id_already_exists"):
-            await tenants_service.create(
-                tenant_create=tenant_create, principal_id=principal_id
-            )
+        result, created = await tenants_service.create(
+            tenant_create=tenant_create, principal_id=principal_id
+        )
 
+        assert created is False
+        assert result.id == tenant_id
+        assert result.external_id == external_id
+        assert result.name == "Existing Tenant"
         repository.get_tenant_by_external_id.assert_called_once_with(external_id)
         repository.create_tenant.assert_not_called()
+        authoring_events.append_event.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_create_allows_duplicate_external_id_when_none(
@@ -202,10 +231,11 @@ class TestTenantsService:
         )
         repository.create_tenant = AsyncMock(return_value=mock_tenant)
 
-        result = await tenants_service.create(
+        result, created = await tenants_service.create(
             tenant_create=tenant_create, principal_id=principal_id
         )
 
+        assert created is True
         assert result.id == tenant_id
         repository.get_tenant_by_external_id.assert_not_called()
         repository.create_tenant.assert_called_once()

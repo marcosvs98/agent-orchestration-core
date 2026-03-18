@@ -55,14 +55,13 @@ class AgentsService(AgentsServicePort):
         return Agent(id=model.agent_id, name=model.name)
 
     async def list_agent_versions(
-        self, *, tenant_id: UUID, agent_id: str, status_filter: list[str] | None = None
+        self, *, tenant_id: UUID, agent_id: UUID, status_filter: list[str] | None = None
     ) -> list[AgentVersion]:
-        agent_uuid = UUID(agent_id)
-        agent = await self.repository.get_agent(agent_uuid)
+        agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
         versions = await self.repository.list_agent_versions(
-            agent_id=agent_uuid, status_filter=status_filter
+            agent_id=agent_id, status_filter=status_filter
         )
         result = []
         for version in versions:
@@ -91,12 +90,11 @@ class AgentsService(AgentsServicePort):
         self,
         *,
         tenant_id: UUID,
-        agent_id: str,
+        agent_id: UUID,
         agent_version_create: AgentVersionCreate,
         principal_id: str,
     ) -> AgentVersion:
-        agent_uuid = UUID(agent_id)
-        agent = await self.repository.get_agent(agent_uuid)
+        agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
         persona_config_dict = None
@@ -104,7 +102,7 @@ class AgentsService(AgentsServicePort):
             persona_config_dict = agent_version_create.persona_config.model_dump()
 
         model = await self.repository.create_agent_version(
-            agent_id=agent_uuid,
+            agent_id=agent_id,
             source_version_id=agent_version_create.source_version_id,
             version_major=agent_version_create.version_major,
             version_minor=agent_version_create.version_minor,
@@ -119,7 +117,7 @@ class AgentsService(AgentsServicePort):
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
             resource_type="agent",
-            resource_id=agent_uuid,
+            resource_id=agent_id,
             version_id=model.agent_version_id,
             event_type=AuthoringEventType.AGENT_VERSION_CREATED.value,
             change_type=ChangeType.CREATE.value,
@@ -199,22 +197,20 @@ class AgentsService(AgentsServicePort):
         ]
 
     async def validate_agent_version(
-        self, *, tenant_id: UUID, agent_id: str, agent_version_id: str
+        self, *, tenant_id: UUID, agent_id: UUID, agent_version_id: UUID
     ):
-        agent_uuid = UUID(agent_id)
-        version_uuid = UUID(agent_version_id)
-        agent = await self.repository.get_agent(agent_uuid)
+        agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
-        version = await self.repository.get_agent_version(version_uuid)
-        if version is None or version.agent_id != agent_uuid:
+        version = await self.repository.get_agent_version(agent_version_id)
+        if version is None or version.agent_id != agent_id:
             raise NotFoundServiceException(message="agent_version_not_found")
         if version.status != VersionStatus.DRAFT:
             raise ResourceBlockedServiceException(message="agent_version_not_draft")
         await self.repository.set_agent_version_status(
-            agent_version_id=version_uuid, status=VersionStatus.VALIDATED
+            agent_version_id=agent_version_id, status=VersionStatus.VALIDATED
         )
-        refreshed = await self.repository.get_agent_version(version_uuid)
+        refreshed = await self.repository.get_agent_version(agent_version_id)
         if refreshed is None:
             raise NotFoundServiceException(message="agent_version_not_found")
         return refreshed
@@ -223,38 +219,36 @@ class AgentsService(AgentsServicePort):
         self,
         *,
         tenant_id: UUID,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         principal_id: str,
         change_request: ChangeRequest,
     ):
-        agent_uuid = UUID(agent_id)
-        version_uuid = UUID(agent_version_id)
-        agent = await self.repository.get_agent(agent_uuid)
+        agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
-        version = await self.repository.get_agent_version(version_uuid)
-        if version is None or version.agent_id != agent_uuid:
+        version = await self.repository.get_agent_version(agent_version_id)
+        if version is None or version.agent_id != agent_id:
             raise NotFoundServiceException(message="agent_version_not_found")
         if version.status != VersionStatus.VALIDATED:
             raise ResourceBlockedServiceException(message="agent_version_not_validated")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
         await self.repository.set_agent_version_status(
-            agent_version_id=version_uuid, status=VersionStatus.PUBLISHED
+            agent_version_id=agent_version_id, status=VersionStatus.PUBLISHED
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
             resource_type="agent",
-            resource_id=agent_uuid,
-            version_id=version_uuid,
+            resource_id=agent_id,
+            version_id=agent_version_id,
             event_type=AuthoringEventType.VERSION_PUBLISHED.value,
             change_type=change_request.change_type,
             principal_id=principal_id,
             justification=change_request.justification,
             schema_version=1,
         )
-        refreshed = await self.repository.get_agent_version(version_uuid)
+        refreshed = await self.repository.get_agent_version(agent_version_id)
         if refreshed is None:
             raise NotFoundServiceException(message="agent_version_not_found")
         return refreshed
@@ -263,34 +257,32 @@ class AgentsService(AgentsServicePort):
         self,
         *,
         tenant_id: UUID,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         principal_id: str,
         change_request: ChangeRequest,
     ):
-        agent_uuid = UUID(agent_id)
-        version_uuid = UUID(agent_version_id)
-        agent = await self.repository.get_agent(agent_uuid)
+        agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
-        version = await self.repository.get_agent_version(version_uuid)
-        if version is None or version.agent_id != agent_uuid:
+        version = await self.repository.get_agent_version(agent_version_id)
+        if version is None or version.agent_id != agent_id:
             raise NotFoundServiceException(message="agent_version_not_found")
         if version.status != VersionStatus.PUBLISHED:
             raise ResourceBlockedServiceException(message="agent_version_not_published")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
         await self.repository.upsert_active_agent_version(
-            agent_id=agent_uuid,
-            agent_version_id=version_uuid,
+            agent_id=agent_id,
+            agent_version_id=agent_version_id,
             activated_by_principal_id=principal_id,
             justification=change_request.justification,
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
             resource_type="agent",
-            resource_id=agent_uuid,
-            version_id=version_uuid,
+            resource_id=agent_id,
+            version_id=agent_version_id,
             event_type=AuthoringEventType.VERSION_ACTIVATED.value,
             change_type=change_request.change_type,
             principal_id=principal_id,
@@ -303,34 +295,32 @@ class AgentsService(AgentsServicePort):
         self,
         *,
         tenant_id: UUID,
-        agent_id: str,
-        agent_version_id: str,
+        agent_id: UUID,
+        agent_version_id: UUID,
         principal_id: str,
         change_request: ChangeRequest,
     ):
-        agent_uuid = UUID(agent_id)
-        version_uuid = UUID(agent_version_id)
-        agent = await self.repository.get_agent(agent_uuid)
+        agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
-        version = await self.repository.get_agent_version(version_uuid)
-        if version is None or version.agent_id != agent_uuid:
+        version = await self.repository.get_agent_version(agent_version_id)
+        if version is None or version.agent_id != agent_id:
             raise NotFoundServiceException(message="agent_version_not_found")
         if version.status != VersionStatus.PUBLISHED:
             raise ResourceBlockedServiceException(message="agent_version_not_published")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
         await self.repository.upsert_active_agent_version(
-            agent_id=agent_uuid,
-            agent_version_id=version_uuid,
+            agent_id=agent_id,
+            agent_version_id=agent_version_id,
             activated_by_principal_id=principal_id,
             justification=change_request.justification,
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
             resource_type="agent",
-            resource_id=agent_uuid,
-            version_id=version_uuid,
+            resource_id=agent_id,
+            version_id=agent_version_id,
             event_type=AuthoringEventType.VERSION_ROLLED_BACK.value,
             change_type=change_request.change_type,
             principal_id=principal_id,

@@ -32,7 +32,7 @@ class ToolsController:
     def _bind_routes(self) -> None:
         r = self.router.add_api_route
         r(
-            "/tools/import-openapi",
+            "/tools/import-tools",
             self.import_tool,
             methods=["POST"],
             response_model=ToolImportResult,

@@ -131,6 +131,49 @@ class ToolsRepository:
 
                 return items
 
+    async def list_tool_capabilities_preview(
+        self, *, tenant_id: UUID, limit: int = 200
+    ) -> list[tuple[UUID, str | None, UUID, str]]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(
+                    ToolModel.tool_id,
+                    ToolModel.name,
+                    ToolConfigModel.tool_config_id,
+                    ToolConfigModel.status,
+                )
+                .join(
+                    ToolConfigModel,
+                    ToolModel.tool_id == ToolConfigModel.tool_id,
+                )
+                .where(
+                    ToolConfigModel.tenant_id == tenant_id,
+                    ToolConfigModel.status == VersionStatus.PUBLISHED.value,
+                )
+                .order_by(ToolModel.name.asc().nulls_last())
+                .limit(limit)
+            )
+            query_sql = compile_query(stmt)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.list_tool_capabilities_preview",
+                input={
+                    "query": query_sql,
+                    "params": {"tenant_id": str(tenant_id), "limit": limit},
+                },
+                metadata={"retriever_name": "list_tool_capabilities_preview"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                rows = list(result.all())
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(rows),
+                            "found": len(rows) > 0,
+                        }
+                    )
+                return [(tid, name, tcid, str(st)) for tid, name, tcid, st in rows]
+
     async def get_max_version_patch(
         self,
         *,

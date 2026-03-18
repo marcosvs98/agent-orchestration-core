@@ -234,7 +234,11 @@ class ToolsService(ToolsServicePort):
                 version_major=tool_config_create.version_major,
                 version_minor=tool_config_create.version_minor,
                 version_patch=tool_config_create.version_patch,
-                config=tool_config_create.config or {},
+                config=(
+                    tool_config_create.config.model_dump(mode="json", exclude_none=True)
+                    if tool_config_create.config is not None
+                    else {}
+                ),
                 schema_version=tool_config_create.schema_version,
                 created_by=principal_id,
             )

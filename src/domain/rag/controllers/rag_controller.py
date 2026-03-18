@@ -195,10 +195,13 @@ class RagController:
     async def list_documents(
         self,
         limit: int = Query(default=200, ge=1, le=1000),
+        rag_config_id: UUID | None = Query(default=None),
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[RagDocument]:
         return await self.runtime_service.list_documents(
-            tenant_id=auth.tenant_id, limit=limit
+            tenant_id=auth.tenant_id,
+            limit=limit,
+            rag_config_id=rag_config_id,
         )
 
     async def list_chunks(
