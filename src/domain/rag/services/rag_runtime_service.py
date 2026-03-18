@@ -31,6 +31,19 @@ from infra.database.models.rag.rag_chunk import RagChunk as RagChunkModel
 from infra.database.models.rag.rag_query_cache import (
     RagQueryCache as RagQueryCacheModel,
 )
+import numpy as np
+
+
+def _query_cache_embedding_to_list(raw: object | None) -> list[float]:
+    if raw is None:
+        return []
+    if isinstance(raw, np.ndarray):
+        return raw.tolist()
+    try:
+        return np.asarray(raw, dtype=float).tolist()
+    except Exception as e:
+        print(f"Error converting query cache embedding to list: {e}")
+        return []
 
 
 class RagRuntimeService:
@@ -346,11 +359,12 @@ class RagRuntimeService:
             and cached.embedding_model == options.embedding.model_alias
             and cached.embedding_dimension == options.embedding.dimension
         ):
-            embedding = (
-                (cached.embedding_512 or [])
+            raw_vec = (
+                cached.embedding_512
                 if dim == EMBEDDING_DIMENSION_REDUCED
-                else (cached.embedding or [])
+                else cached.embedding
             )
+            embedding = _query_cache_embedding_to_list(raw_vec)
             await self.repository.update_query_cache_usage(
                 cache_id=cached.query_cache_id
             )

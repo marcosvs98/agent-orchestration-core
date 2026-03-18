@@ -138,32 +138,32 @@ class RuntimePolicyMemoryRetrievalSchema(BaseModel):
 
 class RuntimePolicyDefinition(BaseModel):
     limits: RuntimePolicyLimitsSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyLimitsSchema()
+        default_factory=RuntimePolicyLimitsSchema
     )
     execution: RuntimePolicyExecutionSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyExecutionSchema()
+        default_factory=RuntimePolicyExecutionSchema
     )
     tools: RuntimePolicyToolsSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyToolsSchema()
+        default_factory=RuntimePolicyToolsSchema
     )
     llm: RuntimePolicyLlmSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyLlmSchema()
+        default_factory=RuntimePolicyLlmSchema
     )
     moderation: RuntimePolicyModerationSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyModerationSchema()
+        default_factory=RuntimePolicyModerationSchema
     )
     fallback_sla: RuntimePolicyFallbackSlaSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyFallbackSlaSchema()
+        default_factory=RuntimePolicyFallbackSlaSchema
     )
     memory_extraction: RuntimePolicyMemoryExtractionSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyMemoryExtractionSchema()
+        default_factory=RuntimePolicyMemoryExtractionSchema
     )
     memory_retrieval: RuntimePolicyMemoryRetrievalSchema | Dict[str, Any] = Field(
-        default_factory=lambda: RuntimePolicyMemoryRetrievalSchema()
+        default_factory=RuntimePolicyMemoryRetrievalSchema
     )
     user_context_enrichment: (
         RuntimePolicyUserContextEnrichmentSchema | Dict[str, Any]
-    ) = Field(default_factory=lambda: RuntimePolicyUserContextEnrichmentSchema())
+    ) = Field(default_factory=RuntimePolicyUserContextEnrichmentSchema)
 
 
 class ResolvedRuntimePolicy(BaseModel):

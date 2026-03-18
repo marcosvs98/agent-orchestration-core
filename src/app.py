@@ -1,12 +1,17 @@
 import sys
-from fastapi import FastAPI
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator
 
-from settings import APPLICATION_NAME, APPLICATION_VERSION, APPLICATION_DESCRIPTION
-from adapters.observability.logging import get_logger, configure_logger
-from rest import init_middlewares, init_routes
+from fastapi import FastAPI
+
+from adapters.mcp.tenant_mcp_gateway import (
+    TenantMcpAsgiMiddleware,
+    shutdown_tenant_mcp_lifespans,
+)
+from adapters.observability.logging import configure_logger, get_logger
 from containers import ApplicationContainer
+from rest import init_middlewares, init_routes
+from settings import APPLICATION_DESCRIPTION, APPLICATION_NAME, APPLICATION_VERSION
 
 configure_logger(is_async=False)
 
@@ -36,12 +41,22 @@ def create_app() -> FastAPI:
         yield
         logger.info("Agent Router shutdown")
         try:
+            await shutdown_tenant_mcp_lifespans()
+        except Exception as e:
+            logger.error(
+                "tenant_mcp_lifespan_shutdown_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+        try:
             tracer = container.adapters.tracer()
             if tracer:
                 tracer.shutdown()
         except Exception as e:
             logger.error(
-                "Failed to shutdown tracer", error=str(e), error_type=type(e).__name__
+                "Failed to shutdown tracer",
+                error=str(e),
+                error_type=type(e).__name__,
             )
         container.shutdown_resources()
         logger.debug("Service resources cleaned")
@@ -55,12 +70,14 @@ def create_app() -> FastAPI:
 
     app.state.container = container
     init_middlewares(app)
+    app.add_middleware(TenantMcpAsgiMiddleware, container=container)
 
     init_routes(
         app,
         [
             container.tenants.tenants_controller(),
             container.auth.auth_controller(),
+            container.mcp_registry.mcp_registry_controller(),
             container.flows.flows_controller(),
             container.agents.agents_controller(),
             container.tools.tools_controller(),

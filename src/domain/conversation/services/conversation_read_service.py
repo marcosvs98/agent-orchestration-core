@@ -117,7 +117,9 @@ class ConversationReadService:
             has_next=has_next,
         )
         return PaginatedSessionsResponse(
-            items=[SessionSummary(session_id=r.session_id, user_id=r.user_id) for r in rows],
+            items=[
+                SessionSummary(session_id=r.session_id, user_id=r.user_id) for r in rows
+            ],
             limit=limit,
             offset=offset,
             has_next=has_next,
@@ -137,7 +139,8 @@ class ConversationReadService:
         )
         return PaginatedEndUsersResponse(
             items=[
-                EndUserListItem(end_user_id=r.end_user_id, user_id=r.user_id) for r in rows
+                EndUserListItem(end_user_id=r.end_user_id, user_id=r.user_id)
+                for r in rows
             ],
             limit=limit,
             offset=offset,

@@ -286,10 +286,10 @@ class ExecutionPlaneController:
             try:
                 flow_uuid = UUID(flow_run_id) if flow_run_id else None
                 corr_uuid = UUID(correlation_id) if correlation_id else None
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
                 raise RouterValidationException(
                     message="Invalid flow_run_id or correlation_id format; expected UUID."
-                )
+                ) from e
             events = await self.boundary.list_execution_events(
                 flow_run_id=flow_uuid,
                 correlation_id=corr_uuid,

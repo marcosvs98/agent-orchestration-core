@@ -91,4 +91,5 @@ JWT_LEEWAY_SECONDS: int = config("JWT_LEEWAY_SECONDS", default=0, cast=int)
 JWT_TENANT_TOKEN_EXPIRES_SECONDS: int = config(
     "JWT_TENANT_TOKEN_EXPIRES_SECONDS", default=3600, cast=int
 )
+PUBLIC_BASE_URL: str = config("PUBLIC_BASE_URL", default="", cast=str)
 IDEMPOTENCY_TTL_SECONDS: int = config("IDEMPOTENCY_TTL_SECONDS", default=3600, cast=int)

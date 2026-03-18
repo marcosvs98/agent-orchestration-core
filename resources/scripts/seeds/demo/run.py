@@ -43,6 +43,7 @@ from seeds.demo.seed_22_tool_catalog_rag import seed_tool_catalog_rag
 from seeds.demo.seed_22_memory_policy import seed_memory_policy
 from seeds.demo.seed_23_rag_policy import seed_rag_policy
 from seeds.demo.seed_24_user_prompt import seed_user_prompt
+from seeds.demo.seed_25_mcp_server import seed_mcp_server
 
 
 async def main() -> None:
@@ -78,6 +79,7 @@ async def main() -> None:
             ("Billing Policy", seed_billing_policy),
             ("Memory Policy", seed_memory_policy),
             ("RAG Policy", seed_rag_policy),
+            ("MCP server", seed_mcp_server),
         ]
 
         try:

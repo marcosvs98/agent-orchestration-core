@@ -249,10 +249,10 @@ class ExecutionBoundary:
         )
         try:
             flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
             raise DomainValidationException(
                 message="Invalid flow_run_id format; expected UUID."
-            )
+            ) from e
         return await self.execution_service.list_node_runs(
             tenant_id=auth.tenant_id, flow_run_id=flow_run_uuid, limit=limit
         )
@@ -279,10 +279,10 @@ class ExecutionBoundary:
         )
         try:
             flow_run_uuid = UUID(flow_run_id) if flow_run_id else None
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
             raise DomainValidationException(
                 message="Invalid flow_run_id format; expected UUID."
-            )
+            ) from e
         return await self.execution_service.list_agent_runs(
             tenant_id=auth.tenant_id, flow_run_id=flow_run_uuid, limit=limit
         )

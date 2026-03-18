@@ -77,6 +77,13 @@ from infra.database.models.onboarding import (
     StepRun,
 )
 from infra.database.models.prompts import NodePrompt
+from infra.database.models.mcp_registry import (
+    McpServer,
+    McpServerCredential,
+    McpServerTool,
+    McpServerUserPrompt,
+    McpServerVectorStore,
+)
 
 __all__ = [
     "ORMBaseModel",
@@ -138,4 +145,9 @@ __all__ = [
     "OnboardingStep",
     "StepRun",
     "NodePrompt",
+    "McpServer",
+    "McpServerCredential",
+    "McpServerTool",
+    "McpServerUserPrompt",
+    "McpServerVectorStore",
 ]

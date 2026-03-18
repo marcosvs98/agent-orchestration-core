@@ -77,3 +77,47 @@ class TestRagRuntimeServiceEmbeddingDimension:
 
         assert result.eligible is False
         assert result.reason.value == "NO_MATCHES"
+
+    @pytest.mark.asyncio
+    async def test_get_context_query_cache_embedding_as_numpy_no_bool_eval(
+        self,
+        rag_runtime_service: RagRuntimeService,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+    ) -> None:
+        np = pytest.importorskip("numpy")
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+        config_options = {
+            "embedding": {
+                "provider": "OPENAI",
+                "model_alias": "text-embedding-3-small",
+                "dimension": DEFAULT_EMBEDDING_DIMENSION,
+            },
+            "chunking": {"target_tokens": 500, "overlap_tokens": 50},
+            "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
+            "generation_contract": {"allow_extrapolation": False},
+        }
+        repository.get_rag_config.return_value = SimpleNamespace(
+            tenant_id=tenant_id,
+            options=config_options,
+        )
+        repository.get_query_cache.return_value = SimpleNamespace(
+            query_cache_id=uuid4(),
+            embedding_model="text-embedding-3-small",
+            embedding_dimension=DEFAULT_EMBEDDING_DIMENSION,
+            embedding=np.ones(DEFAULT_EMBEDDING_DIMENSION, dtype=np.float64),
+            embedding_512=None,
+        )
+        repository.update_query_cache_usage = AsyncMock()
+
+        await rag_runtime_service.get_context(
+            tenant_id=tenant_id,
+            rag_config_id=rag_config_id,
+            user_input="same query hash path",
+        )
+
+        embedding_adapter.generate_embedding.assert_not_called()
+        call_kw = repository.search_similar_chunks.await_args.kwargs
+        assert len(call_kw["query_embedding"]) == DEFAULT_EMBEDDING_DIMENSION
+        assert call_kw["query_embedding"][0] == pytest.approx(1.0)

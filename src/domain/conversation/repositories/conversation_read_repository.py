@@ -10,7 +10,9 @@ from domain.conversation.schemas.conversation_read import (
     SessionReadRecord,
 )
 from infra.database import DatabaseConnection
-from infra.database.models.conversation.interaction import Interaction as InteractionModel
+from infra.database.models.conversation.interaction import (
+    Interaction as InteractionModel,
+)
 from infra.database.models.conversation.session import Session as SessionModel
 from infra.database.models.conversation.user import User as EndUserModel
 
@@ -159,8 +161,10 @@ class ConversationReadRepository:
             )
             if user_id is not None:
                 stmt = stmt.where(SessionModel.user_id == user_id)
-            stmt = stmt.order_by(SessionModel.session_id.desc()).limit(limit + 1).offset(
-                offset
+            stmt = (
+                stmt.order_by(SessionModel.session_id.desc())
+                .limit(limit + 1)
+                .offset(offset)
             )
             result = await session.execute(stmt)
             raw = result.all()
@@ -195,9 +199,7 @@ class ConversationReadRepository:
                 has_next,
             )
 
-    async def get_end_user_id(
-        self, *, tenant_id: UUID, user_id: str
-    ) -> UUID | None:
+    async def get_end_user_id(self, *, tenant_id: UUID, user_id: str) -> UUID | None:
         async with self.db.get_session() as session:
             stmt = select(EndUserModel.end_user_id).where(
                 EndUserModel.tenant_id == tenant_id,

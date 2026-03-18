@@ -97,3 +97,4 @@ class Scope(StrEnum):
     TenantsCreate = "tenants:create"
     TenantsCurrentGet = "tenants:current:get"
     TenantsSettingsGet = "tenants:settings:get"
+    McpServersCreate = "mcp_servers:create"

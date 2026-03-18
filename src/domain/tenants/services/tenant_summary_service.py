@@ -116,30 +116,18 @@ class TenantSummaryService:
         metrics_task = self.tenant_summary_repository.load_operational_metrics(
             tenant_id=tenant_id
         )
-        activation_task = (
-            self.tenant_summary_repository.load_policy_activation_sets(
-                tenant_id=tenant_id
-            )
+        activation_task = self.tenant_summary_repository.load_policy_activation_sets(
+            tenant_id=tenant_id
         )
         gov_gather = asyncio.gather(
-            self.governance_policies_service.list_runtime_policies(
-                tenant_id=tenant_id
-            ),
-            self.governance_policies_service.list_access_policies(
-                tenant_id=tenant_id
-            ),
+            self.governance_policies_service.list_runtime_policies(tenant_id=tenant_id),
+            self.governance_policies_service.list_access_policies(tenant_id=tenant_id),
             self.governance_policies_service.list_rate_limit_policies(
                 tenant_id=tenant_id
             ),
-            self.governance_policies_service.list_billing_policies(
-                tenant_id=tenant_id
-            ),
-            self.governance_policies_service.list_memory_policies(
-                tenant_id=tenant_id
-            ),
-            self.governance_policies_service.list_rag_policies(
-                tenant_id=tenant_id
-            ),
+            self.governance_policies_service.list_billing_policies(tenant_id=tenant_id),
+            self.governance_policies_service.list_memory_policies(tenant_id=tenant_id),
+            self.governance_policies_service.list_rag_policies(tenant_id=tenant_id),
         )
         snap, metrics_db, activation, gov_results = await asyncio.gather(
             snap_task, metrics_task, activation_task, gov_gather
@@ -293,17 +281,14 @@ class TenantSummaryService:
             resolved_block: ResolvedFlowVersionBlock | None = None
             if fv is not None:
                 pub_at = (
-                    fv.activated_at
-                    if kind == "active_flow_version"
-                    else fv.created_at
+                    fv.activated_at if kind == "active_flow_version" else fv.created_at
                 )
                 resolved_block = ResolvedFlowVersionBlock(
                     flow_version_id=fv.flow_version_id,
                     resolution=kind,
                     status=str(fv.status),
                     version=(
-                        f"{fv.version_major}.{fv.version_minor}."
-                        f"{fv.version_patch}"
+                        f"{fv.version_major}.{fv.version_minor}.{fv.version_patch}"
                     ),
                     published_at=pub_at,
                 )
@@ -314,25 +299,17 @@ class TenantSummaryService:
             if fv is not None:
                 graph_model = snap.graphs_by_flow_version.get(fv.flow_version_id)
                 draft_model = snap.drafts_by_flow_version.get(fv.flow_version_id)
-                snapshot_model = snap.snapshots_by_flow_version.get(
-                    fv.flow_version_id
-                )
+                snapshot_model = snap.snapshots_by_flow_version.get(fv.flow_version_id)
                 nodes_db = snap.nodes_by_flow_version.get(fv.flow_version_id, [])
 
             canon_def: dict = {}
-            if graph_model is not None and isinstance(
-                graph_model.definition, dict
-            ):
+            if graph_model is not None and isinstance(graph_model.definition, dict):
                 canon_def = graph_model.definition
             draft_def: dict = {}
-            if draft_model is not None and isinstance(
-                draft_model.definition, dict
-            ):
+            if draft_model is not None and isinstance(draft_model.definition, dict):
                 draft_def = draft_model.definition
             snap_def: dict = {}
-            if snapshot_model is not None and isinstance(
-                snapshot_model.snapshot, dict
-            ):
+            if snapshot_model is not None and isinstance(snapshot_model.snapshot, dict):
                 snap_def = snapshot_model.snapshot
 
             nc_canon, ec_canon = _node_edge_from_definition(canon_def)

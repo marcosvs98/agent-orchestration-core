@@ -65,8 +65,7 @@ class HumanSLAPolicyRepository:
             rules_stmt = (
                 select(HumanSLAEscalationRuleORM)
                 .where(
-                    HumanSLAEscalationRuleORM.human_sla_policy_id
-                    == human_sla_policy_id
+                    HumanSLAEscalationRuleORM.human_sla_policy_id == human_sla_policy_id
                 )
                 .order_by(HumanSLAEscalationRuleORM.level)
             )

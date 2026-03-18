@@ -3214,11 +3214,170 @@ def upgrade() -> None:
         ["flow_run_id"],
         unique=False,
     )
+    op.create_table(
+        "mcp_server",
+        sa.Column("mcp_server_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column(
+            "status",
+            sa.String(length=16),
+            server_default=sa.text("'ACTIVE'"),
+            nullable=False,
+        ),
+        sa.Column(
+            "config_version",
+            sa.Integer(),
+            server_default=sa.text("1"),
+            nullable=False,
+        ),
+        sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_mcp_server_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("mcp_server_id", name=op.f("pk_mcp_server")),
+    )
+    op.create_index(
+        "ix_mcp_server_tenant_id",
+        "mcp_server",
+        ["tenant_id"],
+        unique=False,
+    )
+    op.create_table(
+        "mcp_server_tool",
+        sa.Column("mcp_server_id", sa.UUID(), nullable=False),
+        sa.Column("tool_config_id", sa.UUID(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["mcp_server_id"],
+            ["mcp_server.mcp_server_id"],
+            name=op.f("fk_mcp_server_tool_mcp_server_id_mcp_server"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tool_config_id"],
+            ["tool_config.tool_config_id"],
+            name=op.f("fk_mcp_server_tool_tool_config_id_tool_config"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "mcp_server_id",
+            "tool_config_id",
+            name=op.f("pk_mcp_server_tool"),
+        ),
+    )
+    op.create_table(
+        "mcp_server_vector_store",
+        sa.Column("mcp_server_id", sa.UUID(), nullable=False),
+        sa.Column("vector_store_id", sa.UUID(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["mcp_server_id"],
+            ["mcp_server.mcp_server_id"],
+            name=op.f("fk_mcp_server_vector_store_mcp_server_id_mcp_server"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["vector_store_id"],
+            ["vector_store.vector_store_id"],
+            name=op.f("fk_mcp_server_vector_store_vector_store_id_vector_store"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "mcp_server_id",
+            "vector_store_id",
+            name=op.f("pk_mcp_server_vector_store"),
+        ),
+    )
+    op.create_table(
+        "mcp_server_user_prompt",
+        sa.Column("mcp_server_id", sa.UUID(), nullable=False),
+        sa.Column("user_prompt_id", sa.UUID(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["mcp_server_id"],
+            ["mcp_server.mcp_server_id"],
+            name=op.f("fk_mcp_server_user_prompt_mcp_server_id_mcp_server"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_prompt_id"],
+            ["user_prompt.user_prompt_id"],
+            name=op.f("fk_mcp_server_user_prompt_user_prompt_id_user_prompt"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "mcp_server_id",
+            "user_prompt_id",
+            name=op.f("pk_mcp_server_user_prompt"),
+        ),
+    )
+    op.create_table(
+        "mcp_server_credential",
+        sa.Column("credential_id", sa.UUID(), nullable=False),
+        sa.Column("mcp_server_id", sa.UUID(), nullable=False),
+        sa.Column("key_hash", sa.String(length=128), nullable=False),
+        sa.Column("key_prefix", sa.String(length=16), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["mcp_server_id"],
+            ["mcp_server.mcp_server_id"],
+            name=op.f("fk_mcp_server_credential_mcp_server_id_mcp_server"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("credential_id", name=op.f("pk_mcp_server_credential")),
+    )
+    op.create_index(
+        "ix_mcp_server_credential_mcp_server_id",
+        "mcp_server_credential",
+        ["mcp_server_id"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_mcp_credential_active_per_server",
+        "mcp_server_credential",
+        ["mcp_server_id"],
+        unique=True,
+        postgresql_where=sa.text("revoked_at IS NULL"),
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index(
+        "uq_mcp_credential_active_per_server",
+        table_name="mcp_server_credential",
+        postgresql_where=sa.text("revoked_at IS NULL"),
+    )
+    op.drop_index(
+        "ix_mcp_server_credential_mcp_server_id",
+        table_name="mcp_server_credential",
+    )
+    op.drop_table("mcp_server_credential")
+    op.drop_table("mcp_server_user_prompt")
+    op.drop_table("mcp_server_vector_store")
+    op.drop_table("mcp_server_tool")
+    op.drop_index("ix_mcp_server_tenant_id", table_name="mcp_server")
+    op.drop_table("mcp_server")
     op.drop_index("ix_graph_state_flow_run_id", table_name="graph_state")
     op.drop_index(
         "ix_llm_provider_config_tenant_provider_status",

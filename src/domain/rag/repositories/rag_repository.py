@@ -158,6 +158,27 @@ class RagRepository:
                 await self.cache_adapter.set(key, row.to_dict(), ttl=60)
             return row
 
+    async def get_published_rag_config_id_for_vector_store(
+        self, *, tenant_id: UUID, vector_store_id: UUID
+    ) -> UUID | None:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(RagConfigModel.rag_config_id)
+                .where(
+                    RagConfigModel.tenant_id == tenant_id,
+                    RagConfigModel.vector_store_id == vector_store_id,
+                    RagConfigModel.status == VersionStatus.PUBLISHED.value,
+                )
+                .order_by(
+                    RagConfigModel.version_major.desc(),
+                    RagConfigModel.version_minor.desc(),
+                    RagConfigModel.version_patch.desc(),
+                )
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
     async def list_rag_configs(
         self,
         *,

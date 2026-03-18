@@ -102,6 +102,13 @@ from domain.user_prompts.repositories.user_prompts_repository import (
     UserPromptsRepository,
 )
 from domain.user_prompts.services.user_prompts_service import UserPromptsService
+from domain.mcp_registry.repositories.mcp_registry_repository import (
+    McpRegistryRepository,
+)
+from domain.mcp_registry.services.mcp_registry_service import McpRegistryService
+from domain.mcp_registry.controllers.mcp_registry_controller import (
+    McpRegistryController,
+)
 from domain.conversation.controllers.conversation_controller import (
     ConversationController,
 )
@@ -647,6 +654,24 @@ class ConversationContainer(containers.DeclarativeContainer):
     )
 
 
+class McpRegistryContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+
+    mcp_registry_repository = providers.Factory(
+        McpRegistryRepository,
+        database_connection=core.database_connection,
+    )
+    mcp_registry_service = providers.Factory(
+        McpRegistryService,
+        repository=mcp_registry_repository,
+        public_base_url=providers.Object((settings.PUBLIC_BASE_URL or "").rstrip("/")),
+    )
+    mcp_registry_controller = providers.Factory(
+        McpRegistryController,
+        service=mcp_registry_service,
+    )
+
+
 class GovernanceContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
@@ -782,3 +807,4 @@ class ApplicationContainer(containers.DeclarativeContainer):
         adapters=adapters,
         summary_service=summary.tenant_summary_service,
     )
+    mcp_registry = providers.Container(McpRegistryContainer, core=core)

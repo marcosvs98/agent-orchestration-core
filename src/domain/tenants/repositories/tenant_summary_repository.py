@@ -34,7 +34,9 @@ from infra.database.models.flow.flow_graph_snapshot import (
 )
 from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
 from infra.database.models.flow.node import Node as NodeModel
-from infra.database.models.governance.access_policy import AccessPolicy as AccessPolicyModel
+from infra.database.models.governance.access_policy import (
+    AccessPolicy as AccessPolicyModel,
+)
 from infra.database.models.governance.access_policy_version import (
     AccessPolicyVersion as AccessPolicyVersionModel,
 )
@@ -185,8 +187,7 @@ class TenantSummaryRepository:
                 )
                 .where(
                     ExecutionLimitPolicyModel.tenant_id == tenant_id,
-                    ExecutionLimitPolicyVersionModel.status
-                    == VersionStatus.PUBLISHED,
+                    ExecutionLimitPolicyVersionModel.status == VersionStatus.PUBLISHED,
                 )
             )
             return PolicyActivationSets(
@@ -385,9 +386,7 @@ class TenantSummaryRepository:
                     flow_resolution_kind[fid] = "none"
 
             fv_ids = [
-                fv.flow_version_id
-                for fv in flow_resolved.values()
-                if fv is not None
+                fv.flow_version_id for fv in flow_resolved.values() if fv is not None
             ]
 
             graphs_by_fv: dict[UUID, FlowGraphModel] = {}
@@ -425,9 +424,7 @@ class TenantSummaryRepository:
                 for n in nres.scalars().all():
                     nodes_by_fv[n.flow_version_id].append(n)
 
-            all_node_ids = [
-                n.node_id for nodes in nodes_by_fv.values() for n in nodes
-            ]
+            all_node_ids = [n.node_id for nodes in nodes_by_fv.values() for n in nodes]
             binding_by_node: dict[UUID, NodeBindingRow] = {}
             av_ids_for_tools: set[UUID] = set()
             if all_node_ids:
@@ -457,9 +454,7 @@ class TenantSummaryRepository:
             ai_tasks_by_id: dict[UUID, AITaskModel] = {}
             if ai_task_ids:
                 at_res = await session.execute(
-                    select(AITaskModel).where(
-                        AITaskModel.ai_task_id.in_(ai_task_ids)
-                    )
+                    select(AITaskModel).where(AITaskModel.ai_task_id.in_(ai_task_ids))
                 )
                 for at in at_res.scalars().all():
                     ai_tasks_by_id[at.ai_task_id] = at
