@@ -13,6 +13,7 @@ from infra.database import DatabaseConnection
 from infra.database.models.flow.flow import Flow as FlowModel
 from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
 from infra.database.models.flow.node import Node as NodeModel
+from infra.database.models.prompts.node_prompt import NodePrompt as NodePromptModel
 from infra.database.models.flow.node_template import (
     NodeTemplate as NodeTemplateModel,
 )
@@ -80,6 +81,19 @@ class FlowsRepository:
                 select(NodeTemplateModel).where(
                     NodeTemplateModel.node_template_id == node_template_id
                 )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_active_prompt_id_by_node_type(self, node_type: str) -> UUID | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(NodePromptModel.prompt_id)
+                .where(
+                    NodePromptModel.node_type == node_type,
+                    NodePromptModel.is_active.is_(True),
+                )
+                .order_by(NodePromptModel.version.desc())
+                .limit(1)
             )
             return result.scalar_one_or_none()
 
@@ -427,30 +441,14 @@ class FlowsRepository:
             return instance
 
     async def create_node(
-        self, *, flow_version_id: UUID, ai_task_id: UUID | None, created_by: str
-    ) -> NodeModel:
-        async with self.db.get_session() as session:
-            version = await session.execute(
-                select(FlowVersionModel).where(
-                    FlowVersionModel.flow_version_id == flow_version_id
-                )
-            )
-            if version.scalar_one_or_none() is None:
-                raise NotFoundServiceException(message="flow_version_not_found")
-            instance = NodeModel(flow_version_id=flow_version_id, ai_task_id=ai_task_id)
-            session.add(instance)
-            await session.commit()
-            await session.refresh(instance)
-            return instance
-
-    async def create_node_from_template(
         self,
         *,
         flow_version_id: UUID,
-        node_type: str,
-        config: dict | None,
-        source_node_template_id: UUID,
-        ai_task_id: UUID | None,
+        node_prompt_id: UUID,
+        allow_rag_tenant: bool,
+        allow_user_memory: bool,
+        allow_session_context: bool,
+        allow_memory_write: bool,
         created_by: str,
     ) -> NodeModel:
         async with self.db.get_session() as session:
@@ -463,7 +461,46 @@ class FlowsRepository:
                 raise NotFoundServiceException(message="flow_version_not_found")
             instance = NodeModel(
                 flow_version_id=flow_version_id,
-                ai_task_id=ai_task_id,
+                node_prompt_id=node_prompt_id,
+                allow_rag_tenant=allow_rag_tenant,
+                allow_user_memory=allow_user_memory,
+                allow_session_context=allow_session_context,
+                allow_memory_write=allow_memory_write,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def create_node_from_template(
+        self,
+        *,
+        flow_version_id: UUID,
+        node_type: str,
+        config: dict | None,
+        source_node_template_id: UUID,
+        node_prompt_id: UUID,
+        allow_rag_tenant: bool,
+        allow_user_memory: bool,
+        allow_session_context: bool,
+        allow_memory_write: bool,
+        created_by: str,
+    ) -> NodeModel:
+        async with self.db.get_session() as session:
+            version = await session.execute(
+                select(FlowVersionModel).where(
+                    FlowVersionModel.flow_version_id == flow_version_id
+                )
+            )
+            if version.scalar_one_or_none() is None:
+                raise NotFoundServiceException(message="flow_version_not_found")
+            instance = NodeModel(
+                flow_version_id=flow_version_id,
+                node_prompt_id=node_prompt_id,
+                allow_rag_tenant=allow_rag_tenant,
+                allow_user_memory=allow_user_memory,
+                allow_session_context=allow_session_context,
+                allow_memory_write=allow_memory_write,
                 node_type=node_type,
                 config=config,
                 source_node_template_id=source_node_template_id,
@@ -479,7 +516,11 @@ class FlowsRepository:
         flow_version_id: UUID,
         node_type: str,
         config: dict | None,
-        ai_task_id: UUID | None,
+        node_prompt_id: UUID,
+        allow_rag_tenant: bool,
+        allow_user_memory: bool,
+        allow_session_context: bool,
+        allow_memory_write: bool,
         created_by: str,
     ) -> NodeModel:
         async with self.db.get_session() as session:
@@ -492,7 +533,11 @@ class FlowsRepository:
                 raise NotFoundServiceException(message="flow_version_not_found")
             instance = NodeModel(
                 flow_version_id=flow_version_id,
-                ai_task_id=ai_task_id,
+                node_prompt_id=node_prompt_id,
+                allow_rag_tenant=allow_rag_tenant,
+                allow_user_memory=allow_user_memory,
+                allow_session_context=allow_session_context,
+                allow_memory_write=allow_memory_write,
                 node_type=node_type,
                 config=config,
                 source_node_template_id=None,

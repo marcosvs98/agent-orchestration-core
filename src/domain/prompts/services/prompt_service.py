@@ -91,6 +91,9 @@ class PromptService:
             )
         return prompt
 
+    async def get_prompt_by_id(self, prompt_id: UUID) -> Optional[NodePrompt]:
+        return await self.repository.get_prompt_by_id(prompt_id)
+
     async def create_or_update_prompt(
         self, create: NodePromptCreate, tenant_id: UUID | None = None
     ) -> NodePrompt:

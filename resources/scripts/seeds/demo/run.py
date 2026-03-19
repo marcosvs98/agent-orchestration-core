@@ -17,7 +17,6 @@ if str(scripts_path) not in sys.path:
 
 from wait_for_db import wait_for_db
 from seeds.demo.seed_01_tenant import seed_tenant
-from seeds.demo.seed_02_ai_tasks import seed_ai_tasks
 from seeds.demo.seed_03_model import seed_model
 from seeds.demo.seed_04_policy import seed_policy
 from seeds.demo.seed_05_tool import seed_tool
@@ -55,7 +54,6 @@ async def main() -> None:
 
         seeds = [
             ("Tenant", seed_tenant),
-            ("AI Tasks", seed_ai_tasks),
             ("Model", seed_model),
             ("Policy", seed_policy),
             ("Tool", seed_tool),
@@ -63,8 +61,8 @@ async def main() -> None:
             ("Tool Catalog RAG", seed_tool_catalog_rag),
             ("Agent", seed_agent),
             ("Flow", seed_flow),
-            ("Nodes", seed_nodes),
             ("Prompts", seed_prompts),
+            ("Nodes", seed_nodes),
             ("User prompt", seed_user_prompt),
             ("Bindings", seed_bindings),
             ("Graph", seed_graph),

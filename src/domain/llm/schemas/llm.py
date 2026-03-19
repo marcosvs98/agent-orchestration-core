@@ -69,15 +69,13 @@ class LLMRequest(BaseModel):
 
     model_config = {"frozen": True}
 
-    @model_validator(mode="after")
-    def _default_max_latency_ms(self) -> Self:
-        if self.max_latency_ms is None:
+    @model_validator(mode="before")
+    @classmethod
+    def _default_max_latency_ms(cls, values: dict):
+        if values.get("max_latency_ms") is None:
             import settings as app_settings
-
-            return self.model_copy(
-                update={"max_latency_ms": app_settings.LLM_DEFAULT_MAX_LATENCY_MS}
-            )
-        return self
+            values["max_latency_ms"] = app_settings.LLM_DEFAULT_MAX_LATENCY_MS
+        return values
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.task_type})"

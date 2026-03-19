@@ -10,19 +10,6 @@ class AITaskContextFlags(BaseModel):
     allow_memory_write: bool = False
 
 
-class AITask(AITaskContextFlags):
-    id: UUID
-    name: str
-
-
-class AITaskCreate(BaseModel):
-    name: str
-    allow_rag_tenant: bool = False
-    allow_user_memory: bool = False
-    allow_session_context: bool = False
-    allow_memory_write: bool = False
-
-
 class Model(BaseModel):
     id: UUID
     name: str

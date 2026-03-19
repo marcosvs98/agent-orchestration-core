@@ -45,7 +45,6 @@ from infra.database.models.execution.execution_event import (
 from infra.database.models.execution.node_run import NodeRun as NodeRunModel
 from infra.database.models.execution.run_failure import RunFailure as RunFailureModel
 from infra.database.models.flow.node import Node as NodeModel
-from infra.database.models.ai_policy.ai_task import AITask as AITaskModel
 from infra.database.models.ai_policy.execution_policy_version import (
     AIExecutionPolicyVersion as AIExecutionPolicyVersionModel,
 )
@@ -2401,51 +2400,18 @@ class ExecutionRepository:
         await self.cache_adapter.set(key, node.to_dict())
         return node
 
-    async def get_ai_task(self, ai_task_id: UUID) -> AITaskModel | None:
-        key = f"ai_task:{ai_task_id}"
-        if cached := await self.cache_adapter.get(key):
-            return AITaskModel.from_dict(cached)
-        async with self.db.get_session() as session:
-            stmt = select(AITaskModel).where(AITaskModel.ai_task_id == ai_task_id)
-            query_sql = compile_query(stmt)
-
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.execution.repository.get_ai_task",
-                input={
-                    "query": query_sql,
-                    "params": {"ai_task_id": str(ai_task_id)},
-                },
-                metadata={"retriever_name": "get_ai_task"},
-            ) as retriever_handle:
-                result = await session.execute(stmt)
-                ai_task = result.scalar_one_or_none()
-
-                if retriever_handle:
-                    retriever_handle.success(
-                        output={
-                            "result_count": 1 if ai_task else 0,
-                            "found": ai_task is not None,
-                        }
-                    )
-
-        if ai_task is None:
-            return None
-        await self.cache_adapter.set(key, ai_task.to_dict())
-        return ai_task
-
     async def create_agent_run(
         self,
         *,
-        ai_task_id: UUID | None,
         node_run_id: UUID,
         agent_version_id: UUID,
-        ai_execution_policy_version_id: UUID,
         correlation_id: UUID,
         input_payload: dict,
         model: str | None,
         billing_policy_version_id: UUID | None = None,
         system_prompt_hash: str | None = None,
+        runtime_snapshot: dict[str, object] | None = None,
+        runtime_snapshot_hash: str | None = None,
     ) -> UUID:
         agent_run_id = uuid4()
         async with self.db.get_session() as session:
@@ -2461,15 +2427,15 @@ class ExecutionRepository:
                 session.add(
                     AgentRunModel(
                         agent_run_id=agent_run_id,
-                        ai_task_id=ai_task_id,
                         node_run_id=node_run_id,
                         agent_version_id=agent_version_id,
-                        ai_execution_policy_version_id=ai_execution_policy_version_id,
                         correlation_id=correlation_id,
                         input=input_payload,
                         model=model,
                         billing_policy_version_id=billing_policy_version_id,
                         system_prompt_hash=system_prompt_hash,
+                        runtime_snapshot=runtime_snapshot or {},
+                        runtime_snapshot_hash=runtime_snapshot_hash,
                     )
                 )
             await session.commit()

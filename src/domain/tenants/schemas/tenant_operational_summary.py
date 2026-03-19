@@ -47,8 +47,6 @@ class NodeAgentBindingSummary(BaseModel):
 
 
 class AiTaskOperationalSummary(BaseModel):
-    ai_task_id: UUID
-    name: str
     allow_rag_tenant: bool = False
     allow_user_memory: bool = False
     allow_session_context: bool = False

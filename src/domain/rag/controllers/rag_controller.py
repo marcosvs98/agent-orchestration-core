@@ -1,4 +1,5 @@
-from uuid import UUID
+import asyncio
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -9,14 +10,17 @@ from domain.rag.schemas.rag import (
     RagConfigCreate,
     RagDocument,
     RagDocumentCreate,
+    RagDocumentsIngestBatchAccepted,
     VectorStore,
     VectorStoreCreate,
 )
 from domain.rag.services.rag_service import RagService
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.schemas.scopes import Scope
-from exceptions.service_exceptions import AuthorizationDeniedException
+from exceptions.service_exceptions import AuthorizationDeniedException, DomainValidationException
 from utils.auth import AuthContext, get_auth_context
+
+MAX_RAG_DOCUMENTS_INGEST_BATCH = 10000
 
 
 class RagController:
@@ -82,8 +86,8 @@ class RagController:
             "/rag-configs/{rag_config_id}/documents:ingest",
             self.ingest_document,
             methods=["POST"],
-            response_model=RagDocument,
-            status_code=status.HTTP_201_CREATED,
+            response_model=RagDocumentsIngestBatchAccepted,
+            status_code=status.HTTP_202_ACCEPTED,
         )
         r(
             "/rag-documents",
@@ -183,14 +187,34 @@ class RagController:
     async def ingest_document(
         self,
         rag_config_id: str,
-        payload: RagDocumentCreate,
+        payload: list[RagDocumentCreate],
         auth: AuthContext = Depends(get_auth_context),
-    ) -> RagDocument:
-        return await self.runtime_service.ingest_document(
-            tenant_id=auth.tenant_id,
-            rag_config_id=UUID(rag_config_id),
-            document=payload,
+    ) -> RagDocumentsIngestBatchAccepted:
+        rag_config_uuid = UUID(rag_config_id)
+        if not payload:
+            raise DomainValidationException(message="rag_documents_required")
+        if len(payload) > MAX_RAG_DOCUMENTS_INGEST_BATCH:
+            raise DomainValidationException(message="rag_documents_batch_too_large")
+
+        job_id = uuid4()
+        accepted = RagDocumentsIngestBatchAccepted(
+            rag_config_id=rag_config_uuid,
+            job_id=job_id,
+            accepted_count=len(payload),
         )
+
+        async def _run_batch() -> None:
+            try:
+                await self.runtime_service.ingest_documents_batch(
+                    tenant_id=auth.tenant_id,
+                    rag_config_id=rag_config_uuid,
+                    documents=payload,
+                )
+            except Exception:
+                pass
+
+        asyncio.create_task(_run_batch())
+        return accepted
 
     async def list_documents(
         self,

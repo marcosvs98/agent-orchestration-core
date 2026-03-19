@@ -43,7 +43,6 @@ from infra.database.models.agent import (
     NodeAgentBinding,
 )
 from infra.database.models.ai_policy import (
-    AITask,
     AIExecutionPolicy,
     AIExecutionPolicyVersion,
     Model,
@@ -118,7 +117,6 @@ __all__ = [
     "Agent",
     "AgentVersion",
     "NodeAgentBinding",
-    "AITask",
     "Model",
     "AIExecutionPolicy",
     "AIExecutionPolicyVersion",

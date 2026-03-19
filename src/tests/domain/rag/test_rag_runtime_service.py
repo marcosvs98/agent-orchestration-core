@@ -5,7 +5,11 @@ from uuid import uuid4
 import pytest
 
 from domain.rag.repositories.rag_repository import RagRepository
-from domain.rag.schemas.rag import DEFAULT_EMBEDDING_DIMENSION, RagConfigOptions
+from domain.rag.schemas.rag import (
+    DEFAULT_EMBEDDING_DIMENSION,
+    RagConfigOptions,
+    RagDocumentCreate,
+)
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 
 
@@ -121,3 +125,52 @@ class TestRagRuntimeServiceEmbeddingDimension:
         call_kw = repository.search_similar_chunks.await_args.kwargs
         assert len(call_kw["query_embedding"]) == DEFAULT_EMBEDDING_DIMENSION
         assert call_kw["query_embedding"][0] == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_ingest_documents_batch_counts_failures_and_continues(
+        self,
+        rag_runtime_service: RagRuntimeService,
+    ) -> None:
+        """Verify batch ingest continues after per-document failures."""
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+
+        documents = [
+            RagDocumentCreate(
+                source="assistente-bolso",
+                doc_type="identity_proposito",
+                content="hello-1",
+                version="1",
+                metadata={"topic": "identity_proposito"},
+            ),
+            RagDocumentCreate(
+                source="assistente-bolso",
+                doc_type="escopo",
+                content="hello-2",
+                version="1",
+                metadata={"topic": "scope"},
+            ),
+            RagDocumentCreate(
+                source="assistente-bolso",
+                doc_type="faq_conexao_bancaria",
+                content="hello-3",
+                version="1",
+                metadata={"topic": "faq"},
+            ),
+        ]
+
+        rag_runtime_service.ingest_document = AsyncMock(
+            side_effect=[MagicMock(), Exception("boom"), MagicMock()]
+        )
+
+        succeeded_count, failed_count = (
+            await rag_runtime_service.ingest_documents_batch(
+                tenant_id=tenant_id,
+                rag_config_id=rag_config_id,
+                documents=documents,
+            )
+        )
+
+        assert succeeded_count == 2
+        assert failed_count == 1
+        assert rag_runtime_service.ingest_document.await_count == 3

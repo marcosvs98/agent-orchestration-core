@@ -149,9 +149,7 @@ class NodeRun(BaseModel):
 class AgentRun(BaseModel):
     id: UUID
     node_run_id: UUID
-    ai_task_id: UUID | None = None
     agent_version_id: UUID
-    ai_execution_policy_version_id: UUID
     billing_policy_version_id: UUID | None = None
     model: str | None = None
     input_tokens: int | None = None
@@ -166,12 +164,13 @@ class AgentRun(BaseModel):
     output: dict[str, object]
     error: dict[str, object]
     system_prompt_hash: str | None = None
+    runtime_snapshot: dict[str, object] = {}
+    runtime_snapshot_hash: str | None = None
 
 
 class AgentRunCreate(BaseModel):
     node_run_id: UUID
     agent_version_id: UUID
-    ai_execution_policy_version_id: UUID
     correlation_id: UUID | None = None
     input: dict[str, object] = {}
 

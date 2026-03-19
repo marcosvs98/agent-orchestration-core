@@ -65,13 +65,18 @@ class PromptResolver:
                 "node_type": node_type.value if node_type else None,
                 "prompt_id": str(prompt_id) if prompt_id else None,
             },
-        ):
+        ) as agent_span:
             resolved_node_type = self._resolve_node_type(intent, node_type)
             task_type = self._resolve_task_type(intent, resolved_node_type)
+            effective_prompt_id = prompt_id
+            if effective_prompt_id is None and node_id is not None:
+                node = await self.repository.get_node(node_id)
+                if node is not None:
+                    effective_prompt_id = node.node_prompt_id
 
             prompt = await self._load_prompt(
                 node_type=resolved_node_type,
-                prompt_id=prompt_id,
+                prompt_id=effective_prompt_id,
             )
 
             agent_version_id = await self._get_agent_version_id(node_id)
@@ -193,18 +198,14 @@ class PromptResolver:
             return None
 
         node = await self.repository.get_node(node_id)
-        if not node or not node.ai_task_id:
-            return None
-
-        ai_task = await self.repository.get_ai_task(node.ai_task_id)
-        if not ai_task:
+        if not node:
             return None
 
         return AITaskContextFlags(
-            allow_rag_tenant=bool(ai_task.allow_rag_tenant),
-            allow_user_memory=bool(ai_task.allow_user_memory),
-            allow_session_context=bool(ai_task.allow_session_context),
-            allow_memory_write=bool(ai_task.allow_memory_write),
+            allow_rag_tenant=bool(node.allow_rag_tenant),
+            allow_user_memory=bool(node.allow_user_memory),
+            allow_session_context=bool(node.allow_session_context),
+            allow_memory_write=bool(node.allow_memory_write),
         )
 
     def _build_input_payload(

@@ -359,17 +359,12 @@ class TenantSummaryService:
                     bindings = snap.tool_bindings_by_agent_version.get(
                         b.agent_version_id, []
                     )
-                at = None
-                if n.ai_task_id and n.ai_task_id in snap.ai_tasks_by_id:
-                    t = snap.ai_tasks_by_id[n.ai_task_id]
-                    at = AiTaskOperationalSummary(
-                        ai_task_id=t.ai_task_id,
-                        name=t.name,
-                        allow_rag_tenant=bool(t.allow_rag_tenant),
-                        allow_user_memory=bool(t.allow_user_memory),
-                        allow_session_context=bool(t.allow_session_context),
-                        allow_memory_write=bool(t.allow_memory_write),
-                    )
+                at = AiTaskOperationalSummary(
+                    allow_rag_tenant=bool(n.allow_rag_tenant),
+                    allow_user_memory=bool(n.allow_user_memory),
+                    allow_session_context=bool(n.allow_session_context),
+                    allow_memory_write=bool(n.allow_memory_write),
+                )
                 flow_nodes_ops.append(
                     FlowNodeOperational(
                         node_id=n.node_id,

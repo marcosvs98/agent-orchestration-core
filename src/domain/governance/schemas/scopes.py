@@ -41,8 +41,6 @@ class Scope(StrEnum):
     OnboardingRunsGet = "onboarding_runs:get"
     OnboardingStepsList = "onboarding_steps:list"
     OnboardingStepsAdvance = "onboarding_steps:advance"
-    AITasksList = "ai_tasks:list"
-    AITasksCreate = "ai_tasks:create"
     AIExecutionPoliciesCreate = "ai_execution_policies:create"
     AIExecutionPolicyVersionsList = "ai_execution_policy_versions:list"
     AIExecutionPolicyVersionsCreate = "ai_execution_policy_versions:create"

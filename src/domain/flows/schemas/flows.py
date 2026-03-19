@@ -44,12 +44,20 @@ class FlowVersionCreate(BaseModel):
 class Node(BaseModel):
     id: UUID
     flow_version_id: UUID
-    ai_task_id: UUID | None = None
+    node_prompt_id: UUID
+    allow_rag_tenant: bool = False
+    allow_user_memory: bool = False
+    allow_session_context: bool = False
+    allow_memory_write: bool = False
 
 
 class NodeCreate(BaseModel):
     flow_version_id: UUID
-    ai_task_id: UUID | None = None
+    node_prompt_id: UUID
+    allow_rag_tenant: bool = False
+    allow_user_memory: bool = False
+    allow_session_context: bool = False
+    allow_memory_write: bool = False
 
 
 class Router(BaseModel):
@@ -98,10 +106,19 @@ class NodeTemplateCopyRequest(BaseModel):
     node_template_id: UUID | None = None
     code: str | None = None
     overrides: Dict[str, Any] | None = None
+    allow_rag_tenant: bool = False
+    allow_user_memory: bool = False
+    allow_session_context: bool = False
+    allow_memory_write: bool = False
 
 
 class CustomNodeCreate(BaseModel):
     flow_id: UUID
     flow_version_id: UUID
     node_type: str
+    node_prompt_id: UUID
     config: Dict[str, Any] | None = None
+    allow_rag_tenant: bool = False
+    allow_user_memory: bool = False
+    allow_session_context: bool = False
+    allow_memory_write: bool = False

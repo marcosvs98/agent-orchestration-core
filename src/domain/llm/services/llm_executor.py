@@ -299,7 +299,7 @@ class LLMExecutor(LLMExecutorPort):
                 metadata=execution_metadata,
                 model=provider_model,
                 model_parameters=model_parameters or None,
-                completion_start_time=datetime.utcnow(),
+                completion_start_time=datetime.now(UTC),
             ) as chain_handler:
                 try:
                     self._validate_schema(

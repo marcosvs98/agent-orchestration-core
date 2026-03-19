@@ -52,6 +52,7 @@ from exceptions.service_exceptions import (
     AIOutputValidationException,
     DomainConflictException,
     DomainValidationException,
+    format_exception,
     HashIncompatibleException,
     IdempotencyInProgressException,
     LimitExceededException,
@@ -1045,12 +1046,8 @@ class ExecutionService(ExecutionServicePort):
             )
             raise
         node = await self.repository.get_node(node_run.node_id)
-        if node is None or node.ai_task_id is None:
-            raise DomainValidationException(message="ai_task_missing")
-
-        ai_task = await self.repository.get_ai_task(node.ai_task_id)
-        if ai_task is None:
-            raise NotFoundServiceException(message="ai_task_not_found")
+        if node is None:
+            raise NotFoundServiceException(message="node_not_found")
 
         agent_version = await self.repository.get_agent_version(
             agent_run.agent_version_id
@@ -1068,8 +1065,10 @@ class ExecutionService(ExecutionServicePort):
         ):
             raise ResourceBlockedServiceException(message="agent_version_not_active")
 
+        if agent_version.ai_execution_policy_version_id is None:
+            raise ResourceBlockedServiceException(message="ai_execution_policy_not_active")
         policy_version = await self.repository.get_ai_execution_policy_version(
-            agent_run.ai_execution_policy_version_id
+            agent_version.ai_execution_policy_version_id
         )
         if policy_version is None:
             raise NotFoundServiceException(
@@ -1077,16 +1076,10 @@ class ExecutionService(ExecutionServicePort):
             )
         if policy_version.status != VersionStatus.PUBLISHED:
             raise ResourceBlockedServiceException(message="ai_execution_policy_blocked")
-        if agent_version.ai_execution_policy_version_id and (
-            agent_version.ai_execution_policy_version_id
-            != agent_run.ai_execution_policy_version_id
-        ):
-            raise DomainConflictException(message="ai_execution_policy_mismatch")
-
         model_record = await self.repository.get_model(policy_version.model_id)
         model_name = model_record.name if model_record else None
 
-        if agent_version.rag_config_id and not bool(ai_task.allow_rag_tenant):
+        if agent_version.rag_config_id and not bool(node.allow_rag_tenant):
             raise RagNotAllowedException(message="rag_not_allowed_for_task")
 
         billing_policy_version_id = (
@@ -1099,6 +1092,20 @@ class ExecutionService(ExecutionServicePort):
         base_text = (agent_version.system_prompt or "").strip()
         if base_text:
             system_prompt_hash = hashlib.sha256(base_text.encode()).hexdigest()
+        runtime_snapshot = {
+            "node_id": str(node.node_id),
+            "node_prompt_id": str(node.node_prompt_id),
+            "allow_rag_tenant": bool(node.allow_rag_tenant),
+            "allow_user_memory": bool(node.allow_user_memory),
+            "allow_session_context": bool(node.allow_session_context),
+            "allow_memory_write": bool(node.allow_memory_write),
+            "agent_version_id": str(agent_run.agent_version_id),
+            "ai_execution_policy_version_id": str(
+                agent_version.ai_execution_policy_version_id
+            ),
+            "model_id": str(policy_version.model_id),
+        }
+        runtime_snapshot_hash = self._hash_dict(runtime_snapshot)
 
         key = self.idempotency.build_key(
             tenant_id=tenant_id, endpoint=endpoint, idempotency_key=idempotency_key
@@ -1112,15 +1119,15 @@ class ExecutionService(ExecutionServicePort):
 
         correlation_id = agent_run.correlation_id or uuid4()
         agent_run_id = await self.repository.create_agent_run(
-            ai_task_id=node.ai_task_id,
             node_run_id=agent_run.node_run_id,
             agent_version_id=agent_run.agent_version_id,
-            ai_execution_policy_version_id=agent_run.ai_execution_policy_version_id,
             correlation_id=correlation_id,
             input_payload=agent_run.input,
             model=model_name,
             billing_policy_version_id=billing_policy_version_id,
             system_prompt_hash=system_prompt_hash,
+            runtime_snapshot=runtime_snapshot,
+            runtime_snapshot_hash=runtime_snapshot_hash,
         )
         flow_run = await self.repository.get_flow_run(node_run.flow_run_id)
         if flow_run is None:
@@ -1133,11 +1140,11 @@ class ExecutionService(ExecutionServicePort):
             payload={
                 "agent_run_id": str(agent_run_id),
                 "node_run_id": str(agent_run.node_run_id),
-                "ai_task_id": str(node.ai_task_id),
                 "agent_version_id": str(agent_run.agent_version_id),
-                "policy_version_id": str(agent_run.ai_execution_policy_version_id),
+                "policy_version_id": str(agent_version.ai_execution_policy_version_id),
                 "billing_policy_version_id": str(billing_policy_version_id),
                 "model": model_name,
+                "runtime_snapshot_hash": runtime_snapshot_hash,
             },
             correlation_id=correlation_id,
             causation_id=None,
@@ -1147,9 +1154,7 @@ class ExecutionService(ExecutionServicePort):
         response = AgentRun(
             id=agent_run_id,
             node_run_id=agent_run.node_run_id,
-            ai_task_id=node.ai_task_id,
             agent_version_id=agent_run.agent_version_id,
-            ai_execution_policy_version_id=agent_run.ai_execution_policy_version_id,
             billing_policy_version_id=billing_policy_version_id,
             model=model_name,
             input_tokens=None,
@@ -1164,6 +1169,8 @@ class ExecutionService(ExecutionServicePort):
             output={},
             error={},
             system_prompt_hash=system_prompt_hash,
+            runtime_snapshot=runtime_snapshot,
+            runtime_snapshot_hash=runtime_snapshot_hash,
         )
         await self.idempotency.set_result(
             key,
@@ -1208,7 +1215,9 @@ class ExecutionService(ExecutionServicePort):
                 payload={
                     "agent_run_id": str(agent_run_id),
                     "policy_version_id": str(
-                        existing_agent_run.ai_execution_policy_version_id
+                        (existing_agent_run.runtime_snapshot or {}).get(
+                            "ai_execution_policy_version_id"
+                        )
                     ),
                     "tokens_input": None,
                     "tokens_output": None,
@@ -1266,15 +1275,15 @@ class ExecutionService(ExecutionServicePort):
                 "agent_run_id": str(agent_run_id),
                 "agent_version_id": str(existing_agent_run.agent_version_id),
                 "policy_version_id": str(
-                    existing_agent_run.ai_execution_policy_version_id
+                    (existing_agent_run.runtime_snapshot or {}).get(
+                        "ai_execution_policy_version_id"
+                    )
                 ),
-                "ai_task_id": str(existing_agent_run.ai_task_id)
-                if existing_agent_run.ai_task_id
-                else None,
                 "model": existing_agent_run.model,
                 "tokens_input": input_tokens,
                 "tokens_output": output_tokens,
                 "cost_estimated": estimated_cost,
+                "runtime_snapshot_hash": existing_agent_run.runtime_snapshot_hash,
             },
             correlation_id=existing_agent_run.correlation_id,
             causation_id=None,
@@ -1284,9 +1293,7 @@ class ExecutionService(ExecutionServicePort):
         return AgentRun(
             id=agent_run_id,
             node_run_id=existing_agent_run.node_run_id,
-            ai_task_id=existing_agent_run.ai_task_id,
             agent_version_id=existing_agent_run.agent_version_id,
-            ai_execution_policy_version_id=existing_agent_run.ai_execution_policy_version_id,
             model=existing_agent_run.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -1299,6 +1306,8 @@ class ExecutionService(ExecutionServicePort):
             input=existing_agent_run.input or {},
             output=normalized_output,
             error={},
+            runtime_snapshot=existing_agent_run.runtime_snapshot or {},
+            runtime_snapshot_hash=existing_agent_run.runtime_snapshot_hash,
         )
 
     async def create_tool_run(
@@ -1556,9 +1565,7 @@ class ExecutionService(ExecutionServicePort):
             AgentRun(
                 id=agent_run.agent_run_id,
                 node_run_id=agent_run.node_run_id,
-                ai_task_id=agent_run.ai_task_id,
                 agent_version_id=agent_run.agent_version_id,
-                ai_execution_policy_version_id=agent_run.ai_execution_policy_version_id,
                 billing_policy_version_id=agent_run.billing_policy_version_id,
                 model=agent_run.model,
                 input_tokens=agent_run.input_tokens,
@@ -1578,6 +1585,8 @@ class ExecutionService(ExecutionServicePort):
                 input=agent_run.input,
                 output=agent_run.output,
                 error=agent_run.error,
+                runtime_snapshot=agent_run.runtime_snapshot or {},
+                runtime_snapshot_hash=agent_run.runtime_snapshot_hash,
             )
             for agent_run in agent_runs
         ]

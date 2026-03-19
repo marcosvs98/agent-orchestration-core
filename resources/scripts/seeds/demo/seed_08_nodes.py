@@ -16,10 +16,6 @@ from infra.database.models.flow.node import Node
 from infra.database.models.flow.node_template import NodeTemplate
 
 from seeds.demo.ids import (
-    AI_TASK_CLARIFICATION_ID,
-    AI_TASK_INTENT_DETECTION_ID,
-    AI_TASK_RESPONSE_FORMATTING_ID,
-    AI_TASK_SLOT_FILLING_ID,
     FLOW_VERSION_V1_ID,
     NODE_CLARIFICATION_ID,
     NODE_CLARIFICATION_INTENT_ID,
@@ -33,6 +29,13 @@ from seeds.demo.ids import (
     NODE_TOOL_EXEC_ID,
     NODE_TOOL_SELECTION_ID,
     NODE_USER_CONTEXT_ENRICHMENT_ID,
+    PROMPT_CLARIFICATION_ID,
+    PROMPT_FALLBACK_SLA_ID,
+    PROMPT_INPUT_MODERATION_ID,
+    PROMPT_INTENT_ID,
+    PROMPT_RESPONSE_ID,
+    PROMPT_SLOT_ID,
+    PROMPT_TOOL_SELECTION_ID,
 )
 
 
@@ -442,19 +445,34 @@ async def seed_nodes() -> None:
             ),
         ]
 
-        node_ai_tasks: dict[object, object | None] = {
-            NODE_INPUT_MODERATION_ID: None,
-            NODE_USER_CONTEXT_ENRICHMENT_ID: None,
-            NODE_INTENT_ID: AI_TASK_INTENT_DETECTION_ID,
-            NODE_CLARIFICATION_INTENT_ID: AI_TASK_CLARIFICATION_ID,
-            NODE_TOOL_SELECTION_ID: None,
-            NODE_SLOT_ID: AI_TASK_SLOT_FILLING_ID,
-            NODE_PRE_EXEC_VALIDATION_ID: None,
-            NODE_TOOL_EXEC_ID: None,
-            NODE_TOOL_ERROR_HANDLER_ID: None,
-            NODE_RESPONSE_ID: AI_TASK_RESPONSE_FORMATTING_ID,
-            NODE_CLARIFICATION_ID: AI_TASK_CLARIFICATION_ID,
-            NODE_FALLBACK_SLA_ID: None,
+        node_prompt_map: dict[object, object] = {
+            NODE_INPUT_MODERATION_ID: PROMPT_INPUT_MODERATION_ID,
+            NODE_USER_CONTEXT_ENRICHMENT_ID: PROMPT_RESPONSE_ID,
+            NODE_INTENT_ID: PROMPT_INTENT_ID,
+            NODE_CLARIFICATION_INTENT_ID: PROMPT_CLARIFICATION_ID,
+            NODE_TOOL_SELECTION_ID: PROMPT_TOOL_SELECTION_ID,
+            NODE_SLOT_ID: PROMPT_SLOT_ID,
+            NODE_PRE_EXEC_VALIDATION_ID: PROMPT_RESPONSE_ID,
+            NODE_TOOL_EXEC_ID: PROMPT_RESPONSE_ID,
+            NODE_TOOL_ERROR_HANDLER_ID: PROMPT_RESPONSE_ID,
+            NODE_RESPONSE_ID: PROMPT_RESPONSE_ID,
+            NODE_CLARIFICATION_ID: PROMPT_CLARIFICATION_ID,
+            NODE_FALLBACK_SLA_ID: PROMPT_FALLBACK_SLA_ID,
+        }
+
+        node_flags: dict[object, tuple[bool, bool, bool, bool]] = {
+            NODE_INPUT_MODERATION_ID: (False, False, False, False),
+            NODE_USER_CONTEXT_ENRICHMENT_ID: (False, False, False, False),
+            NODE_INTENT_ID: (False, False, False, False),
+            NODE_CLARIFICATION_INTENT_ID: (False, False, False, False),
+            NODE_TOOL_SELECTION_ID: (False, False, False, False),
+            NODE_SLOT_ID: (False, False, False, False),
+            NODE_PRE_EXEC_VALIDATION_ID: (False, False, False, False),
+            NODE_TOOL_EXEC_ID: (False, False, False, False),
+            NODE_TOOL_ERROR_HANDLER_ID: (False, False, False, False),
+            NODE_RESPONSE_ID: (True, True, True, True),
+            NODE_CLARIFICATION_ID: (False, False, False, False),
+            NODE_FALLBACK_SLA_ID: (False, False, False, False),
         }
 
         for raw_node_id, template, override_config in node_templates:
@@ -465,34 +483,32 @@ async def seed_nodes() -> None:
             existing = result.scalar_one_or_none()
             if existing is not None:
                 continue
-            ai_task_id = node_ai_tasks.get(raw_node_id)
             node_type = template.node_type if template is not None else None
             base_config: dict[str, object] = (
                 template.default_config if template is not None else {}
             )
             overrides: dict[str, object] = override_config or {}
             effective_config = {**base_config, **overrides} if node_type else None
+            node_prompt_id = node_prompt_map[raw_node_id]
+            (
+                allow_rag_tenant,
+                allow_user_memory,
+                allow_session_context,
+                allow_memory_write,
+            ) = node_flags[raw_node_id]
             node = Node(
                 node_id=node_uuid,
                 flow_version_id=FLOW_VERSION_V1_ID,
-                ai_task_id=ai_task_id,
+                node_prompt_id=node_prompt_id,
+                allow_rag_tenant=allow_rag_tenant,
+                allow_user_memory=allow_user_memory,
+                allow_session_context=allow_session_context,
+                allow_memory_write=allow_memory_write,
                 node_type=node_type,
                 config=effective_config,
                 source_node_template_id=(
                     template.node_template_id if template is not None else None
                 ),
-            )
-            session.add(node)
-
-        result = await session.execute(
-            select(Node).where(Node.node_id == NODE_PRE_EXEC_VALIDATION_ID)
-        )
-        pre_exec_node = result.scalar_one_or_none()
-        if pre_exec_node is None:
-            node = Node(
-                node_id=NODE_PRE_EXEC_VALIDATION_ID,
-                flow_version_id=FLOW_VERSION_V1_ID,
-                ai_task_id=None,
             )
             session.add(node)
 

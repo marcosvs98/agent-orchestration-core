@@ -2,8 +2,6 @@ from fastapi import APIRouter, Depends, Query, status
 from uuid import UUID
 
 from domain.ai_policy.schemas.ai import (
-    AITask,
-    AITaskCreate,
     AIExecutionPolicy,
     AIExecutionPolicyCreate,
     AIExecutionPolicyVersion,
@@ -35,12 +33,6 @@ class AIController:
 
     def _bind_routes(self) -> None:
         r = self.router.add_api_route
-        r(
-            "/ai-tasks",
-            self.list_ai_tasks,
-            methods=["GET"],
-            response_model=list[AITask],
-        )
         r(
             "/ai-execution-policies",
             self.create_ai_execution_policy,
@@ -92,13 +84,6 @@ class AIController:
             response_model=list[Model],
         )
         r(
-            "/ai-tasks",
-            self.create_ai_task,
-            methods=["POST"],
-            response_model=AITask,
-            status_code=status.HTTP_201_CREATED,
-        )
-        r(
             "/models",
             self.create_model,
             methods=["POST"],
@@ -132,19 +117,6 @@ class AIController:
     def _ensure_scope(auth: AuthContext, scope: Scope) -> None:
         if scope.value not in auth.scopes:
             raise AuthorizationDeniedException(message="insufficient_scope")
-
-    async def list_ai_tasks(
-        self, auth: AuthContext = Depends(get_auth_context)
-    ) -> list[AITask]:
-        return await self.service.list_ai_tasks()
-
-    async def create_ai_task(
-        self,
-        ai_task_create: AITaskCreate,
-        auth: AuthContext = Depends(get_auth_context),
-    ) -> AITask:
-        self._ensure_scope(auth, Scope.AITasksCreate)
-        return await self.service.create_ai_task(ai_task_create=ai_task_create)
 
     async def create_ai_execution_policy(
         self,

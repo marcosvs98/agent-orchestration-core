@@ -12,7 +12,6 @@ from infra.database.models.agent.agent_version import AgentVersion as AgentVersi
 from infra.database.models.agent.node_agent_binding import (
     NodeAgentBinding as NodeAgentBindingModel,
 )
-from infra.database.models.ai_policy.ai_task import AITask as AITaskModel
 from infra.database.models.conversation.interaction import (
     Interaction as InteractionModel,
 )
@@ -445,20 +444,6 @@ class TenantSummaryRepository:
                     )
                     av_ids_for_tools.add(av.agent_version_id)
 
-            ai_task_ids = {
-                n.ai_task_id
-                for nodes in nodes_by_fv.values()
-                for n in nodes
-                if n.ai_task_id is not None
-            }
-            ai_tasks_by_id: dict[UUID, AITaskModel] = {}
-            if ai_task_ids:
-                at_res = await session.execute(
-                    select(AITaskModel).where(AITaskModel.ai_task_id.in_(ai_task_ids))
-                )
-                for at in at_res.scalars().all():
-                    ai_tasks_by_id[at.ai_task_id] = at
-
             tool_bindings_map: dict[UUID, list[ToolBindingDetail]] = defaultdict(list)
             if av_ids_for_tools:
                 tb_res = await session.execute(
@@ -525,7 +510,6 @@ class TenantSummaryRepository:
                 snapshots_by_flow_version=snapshots_by_fv,
                 nodes_by_flow_version=dict(nodes_by_fv),
                 binding_by_node_id=binding_by_node,
-                ai_tasks_by_id=ai_tasks_by_id,
                 tool_bindings_by_agent_version=dict(tool_bindings_map),
                 agents_with_active_version=agents_list,
                 published_flow_versions_count=int(pub_cnt.scalar() or 0),

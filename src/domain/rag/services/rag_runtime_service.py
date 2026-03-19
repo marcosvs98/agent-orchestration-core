@@ -23,6 +23,7 @@ from domain.rag.schemas.rag import (
     DEFAULT_EMBEDDING_DIMENSION,
     EMBEDDING_DIMENSION_REDUCED,
 )
+from adapters.observability.logging import get_logger
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
@@ -32,6 +33,8 @@ from infra.database.models.rag.rag_query_cache import (
     RagQueryCache as RagQueryCacheModel,
 )
 import numpy as np
+
+logger = get_logger(__name__)
 
 
 def _query_cache_embedding_to_list(raw: object | None) -> list[float]:
@@ -86,6 +89,43 @@ class RagRuntimeService:
             rag_config_id=rag_config_id,
             document_id=prepared.id,
         )
+
+    async def ingest_documents_batch(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_config_id: UUID,
+        documents: list[RagDocumentCreate],
+        max_failures_to_log: int = 20,
+    ) -> tuple[int, int]:
+        """Ingest multiple RAG documents sequentially."""
+        if not documents:
+            raise DomainValidationException(message="rag_documents_required")
+
+        succeeded_count = 0
+        failed_count = 0
+        failures_logged = 0
+
+        for document in documents:
+            try:
+                await self.ingest_document(
+                    tenant_id=tenant_id,
+                    rag_config_id=rag_config_id,
+                    document=document,
+                )
+                succeeded_count += 1
+            except Exception as exc:
+                failed_count += 1
+                if failures_logged < max_failures_to_log:
+                    failures_logged += 1
+                    logger.error(
+                        "RAG documents ingestion item failed",
+                        rag_config_id=str(rag_config_id),
+                        doc_type=str(getattr(document, "doc_type", "")),
+                        error_type=type(exc).__name__,
+                    )
+
+        return succeeded_count, failed_count
 
     async def prepare_document_for_embedding(
         self,

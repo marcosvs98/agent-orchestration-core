@@ -4,14 +4,6 @@ from exceptions.service_exceptions import NotImplementedServiceException
 
 class AIServicePort(ABC):
     @abstractmethod
-    async def list_ai_tasks(self):
-        raise NotImplementedServiceException()
-
-    @abstractmethod
-    async def create_ai_task(self, ai_task_create):
-        raise NotImplementedServiceException()
-
-    @abstractmethod
     async def create_ai_execution_policy(self, ai_execution_policy_create):
         raise NotImplementedServiceException()
 

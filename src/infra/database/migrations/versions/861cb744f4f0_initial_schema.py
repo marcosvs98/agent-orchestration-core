@@ -21,49 +21,6 @@ depends_on = None
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.create_table(
-        "ai_task",
-        sa.Column("ai_task_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column(
-            "allow_rag_tenant",
-            sa.Boolean(),
-            server_default=sa.text("false"),
-            nullable=False,
-        ),
-        sa.Column(
-            "allow_user_memory",
-            sa.Boolean(),
-            server_default=sa.text("false"),
-            nullable=False,
-        ),
-        sa.Column(
-            "allow_session_context",
-            sa.Boolean(),
-            server_default=sa.text("false"),
-            nullable=False,
-        ),
-        sa.Column(
-            "allow_memory_write",
-            sa.Boolean(),
-            server_default=sa.text("false"),
-            nullable=False,
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("ai_task_id", name=op.f("pk_ai_task")),
-        sa.UniqueConstraint("name", name=op.f("uq_ai_task_name")),
-    )
-    op.create_table(
         "condition_expression",
         sa.Column("condition_expression_id", sa.UUID(), nullable=False),
         sa.Column("expression", sa.Text(), nullable=True),
@@ -2320,7 +2277,13 @@ def upgrade() -> None:
         "node",
         sa.Column("node_id", sa.UUID(), nullable=False),
         sa.Column("flow_version_id", sa.UUID(), nullable=False),
-        sa.Column("ai_task_id", sa.UUID(), nullable=True),
+        sa.Column("node_prompt_id", sa.UUID(), nullable=False),
+        sa.Column("allow_rag_tenant", sa.Boolean(), server_default="false", nullable=False),
+        sa.Column("allow_user_memory", sa.Boolean(), server_default="false", nullable=False),
+        sa.Column(
+            "allow_session_context", sa.Boolean(), server_default="false", nullable=False
+        ),
+        sa.Column("allow_memory_write", sa.Boolean(), server_default="false", nullable=False),
         sa.Column("node_type", sa.String(length=128), nullable=True),
         sa.Column(
             "config",
@@ -2341,16 +2304,16 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["ai_task_id"],
-            ["ai_task.ai_task_id"],
-            name=op.f("fk_node_ai_task_id_ai_task"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
             ["flow_version_id"],
             ["flow_version.flow_version_id"],
             name=op.f("fk_node_flow_version_id_flow_version"),
             ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["node_prompt_id"],
+            ["node_prompt.prompt_id"],
+            name=op.f("fk_node_node_prompt_id_node_prompt"),
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["source_node_template_id"],
@@ -2889,10 +2852,8 @@ def upgrade() -> None:
     op.create_table(
         "agent_run",
         sa.Column("agent_run_id", sa.UUID(), nullable=False),
-        sa.Column("ai_task_id", sa.UUID(), nullable=True),
         sa.Column("node_run_id", sa.UUID(), nullable=False),
         sa.Column("agent_version_id", sa.UUID(), nullable=False),
-        sa.Column("ai_execution_policy_version_id", sa.UUID(), nullable=False),
         sa.Column("model", sa.String(length=128), nullable=True),
         sa.Column("input_tokens", sa.Integer(), nullable=True),
         sa.Column("output_tokens", sa.Integer(), nullable=True),
@@ -2930,6 +2891,13 @@ def upgrade() -> None:
         ),
         sa.Column("system_prompt_hash", sa.String(length=64), nullable=True),
         sa.Column(
+            "runtime_snapshot",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default="{}",
+            nullable=False,
+        ),
+        sa.Column("runtime_snapshot_hash", sa.String(length=64), nullable=True),
+        sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
@@ -2945,20 +2913,6 @@ def upgrade() -> None:
             ["agent_version_id"],
             ["agent_version.agent_version_id"],
             name=op.f("fk_agent_run_agent_version_id_agent_version"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["ai_execution_policy_version_id"],
-            ["ai_execution_policy_version.ai_execution_policy_version_id"],
-            name=op.f(
-                "fk_agent_run_ai_execution_policy_version_id_ai_execution_policy_version"
-            ),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["ai_task_id"],
-            ["ai_task.ai_task_id"],
-            name=op.f("fk_agent_run_ai_task_id_ai_task"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
@@ -3565,5 +3519,4 @@ def downgrade() -> None:
     op.drop_table("interaction")
     op.drop_table("flow_run")
     op.drop_table("condition_expression")
-    op.drop_table("ai_task")
     # ### end Alembic commands ###

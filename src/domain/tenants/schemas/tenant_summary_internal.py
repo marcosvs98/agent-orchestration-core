@@ -58,7 +58,6 @@ class TenantOperationalDbSnapshot(BaseModel):
     snapshots_by_flow_version: dict[UUID, Any] = Field(default_factory=dict)
     nodes_by_flow_version: dict[UUID, list[Any]] = Field(default_factory=dict)
     binding_by_node_id: dict[UUID, NodeBindingRow] = Field(default_factory=dict)
-    ai_tasks_by_id: dict[UUID, Any] = Field(default_factory=dict)
     tool_bindings_by_agent_version: dict[UUID, list[ToolBindingDetail]] = Field(
         default_factory=dict
     )

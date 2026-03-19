@@ -5,8 +5,6 @@ from sqlalchemy.exc import IntegrityError
 from domain.ai_policy.ports.service import AIServicePort
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.ai_policy.schemas.ai import (
-    AITask,
-    AITaskCreate,
     AIExecutionPolicy,
     AIExecutionPolicyCreate,
     AIExecutionPolicyVersion,
@@ -36,37 +34,6 @@ class AIService(AIServicePort):
     ) -> None:
         self.repository = repository
         self.authoring_events = authoring_events
-
-    async def list_ai_tasks(self) -> list[AITask]:
-        tasks = await self.repository.list_ai_tasks()
-        return [
-            AITask(
-                id=task.ai_task_id,
-                name=task.name,
-                allow_rag_tenant=bool(task.allow_rag_tenant),
-                allow_user_memory=bool(task.allow_user_memory),
-                allow_session_context=bool(task.allow_session_context),
-                allow_memory_write=bool(task.allow_memory_write),
-            )
-            for task in tasks
-        ]
-
-    async def create_ai_task(self, *, ai_task_create: AITaskCreate) -> AITask:
-        created = await self.repository.create_ai_task(
-            name=ai_task_create.name,
-            allow_rag_tenant=ai_task_create.allow_rag_tenant,
-            allow_user_memory=ai_task_create.allow_user_memory,
-            allow_session_context=ai_task_create.allow_session_context,
-            allow_memory_write=ai_task_create.allow_memory_write,
-        )
-        return AITask(
-            id=created.ai_task_id,
-            name=created.name,
-            allow_rag_tenant=bool(created.allow_rag_tenant),
-            allow_user_memory=bool(created.allow_user_memory),
-            allow_session_context=bool(created.allow_session_context),
-            allow_memory_write=bool(created.allow_memory_write),
-        )
 
     async def create_ai_execution_policy(
         self,

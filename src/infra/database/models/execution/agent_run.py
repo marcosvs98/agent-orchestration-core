@@ -8,11 +8,6 @@ class AgentRun(ORMBaseModel):
     __tablename__ = "agent_run"
 
     agent_run_id = uuid_pk()
-    ai_task_id = Column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("ai_task.ai_task_id", ondelete="RESTRICT"),
-        nullable=True,
-    )
     node_run_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("node_run.node_run_id", ondelete="CASCADE"),
@@ -21,14 +16,6 @@ class AgentRun(ORMBaseModel):
     agent_version_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("agent_version.agent_version_id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    ai_execution_policy_version_id = Column(
-        PG_UUID(as_uuid=True),
-        ForeignKey(
-            "ai_execution_policy_version.ai_execution_policy_version_id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
     model = Column(String(length=128), nullable=True)
@@ -53,3 +40,5 @@ class AgentRun(ORMBaseModel):
     output = Column(JSONB, nullable=False, server_default="{}")
     error = Column(JSONB, nullable=False, server_default="{}")
     system_prompt_hash = Column(String(length=64), nullable=True)
+    runtime_snapshot = Column(JSONB, nullable=False, server_default="{}")
+    runtime_snapshot_hash = Column(String(length=64), nullable=True)

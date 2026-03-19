@@ -253,7 +253,16 @@ class RuntimeExecutor:
                             error_message=str(exc),
                             output={"status": "failed"},
                         )
-                    raise exc from exc
+                    await self._fail_flow(
+                        tenant_id=tenant_id,
+                        user_id=context.user_id,
+                        session_id=session_id,
+                        flow_run_id=flow_run_id,
+                        correlation_id=correlation_id,
+                        reason=FlowFailureReason.STRUCTURAL_ERROR,
+                        exc=exc,
+                    )
+                    return
                 # self._validate_node_output(spec, node_result)
                 if node_handle:
                     node_handle.success(output=node_result.model_dump(mode="json"))
@@ -626,10 +635,9 @@ class RuntimeExecutor:
         except ValueError:
             return
         node = await self.repository.get_node(node_uuid)
-        if node is None or node.ai_task_id is None:
+        if node is None:
             return
-        ai_task = await self.repository.get_ai_task(node.ai_task_id)
-        if ai_task is None or not bool(ai_task.allow_memory_write):
+        if not bool(node.allow_memory_write):
             with self.tracer.observe(
                 as_type="event",
                 name="domain.context.memory_policy_decision",

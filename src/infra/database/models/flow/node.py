@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, String
+from sqlalchemy import Boolean, Column, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -13,11 +13,15 @@ class Node(ORMBaseModel):
         ForeignKey("flow_version.flow_version_id", ondelete="CASCADE"),
         nullable=False,
     )
-    ai_task_id = Column(
+    node_prompt_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey("ai_task.ai_task_id", ondelete="RESTRICT"),
-        nullable=True,
+        ForeignKey("node_prompt.prompt_id", ondelete="RESTRICT"),
+        nullable=False,
     )
+    allow_rag_tenant = Column(Boolean, nullable=False, server_default="false")
+    allow_user_memory = Column(Boolean, nullable=False, server_default="false")
+    allow_session_context = Column(Boolean, nullable=False, server_default="false")
+    allow_memory_write = Column(Boolean, nullable=False, server_default="false")
     node_type = Column(String(length=128), nullable=True)
     config = Column(JSONB, nullable=True)
     source_node_template_id = Column(

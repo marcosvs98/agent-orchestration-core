@@ -521,7 +521,11 @@ class FlowsService(FlowsServicePort):
             Node(
                 id=node.node_id,
                 flow_version_id=node.flow_version_id,
-                ai_task_id=node.ai_task_id,
+                node_prompt_id=node.node_prompt_id,
+                allow_rag_tenant=bool(node.allow_rag_tenant),
+                allow_user_memory=bool(node.allow_user_memory),
+                allow_session_context=bool(node.allow_session_context),
+                allow_memory_write=bool(node.allow_memory_write),
             )
             for node in nodes
         ]
@@ -537,7 +541,11 @@ class FlowsService(FlowsServicePort):
             raise NotFoundServiceException(message="flow_not_found")
         model = await self.repository.create_node(
             flow_version_id=node_create.flow_version_id,
-            ai_task_id=node_create.ai_task_id,
+            node_prompt_id=node_create.node_prompt_id,
+            allow_rag_tenant=node_create.allow_rag_tenant,
+            allow_user_memory=node_create.allow_user_memory,
+            allow_session_context=node_create.allow_session_context,
+            allow_memory_write=node_create.allow_memory_write,
             created_by=principal_id,
         )
         await self.authoring_events.append_event(
@@ -554,7 +562,11 @@ class FlowsService(FlowsServicePort):
         return Node(
             id=model.node_id,
             flow_version_id=model.flow_version_id,
-            ai_task_id=model.ai_task_id,
+            node_prompt_id=model.node_prompt_id,
+            allow_rag_tenant=bool(model.allow_rag_tenant),
+            allow_user_memory=bool(model.allow_user_memory),
+            allow_session_context=bool(model.allow_session_context),
+            allow_memory_write=bool(model.allow_memory_write),
         )
 
     async def list_system_node_templates(
@@ -581,6 +593,10 @@ class FlowsService(FlowsServicePort):
         flow_version_id: str,
         node_template_id: UUID,
         overrides: dict | None,
+        allow_rag_tenant: bool,
+        allow_user_memory: bool,
+        allow_session_context: bool,
+        allow_memory_write: bool,
         principal_id: str,
     ) -> Node:
         flow_uuid = UUID(flow_id)
@@ -606,13 +622,22 @@ class FlowsService(FlowsServicePort):
         effective_overrides = overrides or {}
         effective_config = {**base_config, **effective_overrides}
         validate_node_config(template.node_type, effective_config)
+        node_prompt_id = await self.repository.get_active_prompt_id_by_node_type(
+            template.node_type
+        )
+        if node_prompt_id is None:
+            raise NotFoundServiceException(message="node_prompt_not_found")
 
         node_model = await self.repository.create_node_from_template(
             flow_version_id=version_uuid,
             node_type=template.node_type,
             config=effective_config,
             source_node_template_id=template.node_template_id,
-            ai_task_id=None,
+            node_prompt_id=node_prompt_id,
+            allow_rag_tenant=allow_rag_tenant,
+            allow_user_memory=allow_user_memory,
+            allow_session_context=allow_session_context,
+            allow_memory_write=allow_memory_write,
             created_by=principal_id,
         )
 
@@ -656,7 +681,11 @@ class FlowsService(FlowsServicePort):
         return Node(
             id=node_model.node_id,
             flow_version_id=node_model.flow_version_id,
-            ai_task_id=node_model.ai_task_id,
+            node_prompt_id=node_model.node_prompt_id,
+            allow_rag_tenant=bool(node_model.allow_rag_tenant),
+            allow_user_memory=bool(node_model.allow_user_memory),
+            allow_session_context=bool(node_model.allow_session_context),
+            allow_memory_write=bool(node_model.allow_memory_write),
         )
 
     async def copy_node_from_template_request(
@@ -690,6 +719,10 @@ class FlowsService(FlowsServicePort):
             flow_version_id=flow_version_id,
             node_template_id=template_id,
             overrides=payload.overrides,
+            allow_rag_tenant=payload.allow_rag_tenant,
+            allow_user_memory=payload.allow_user_memory,
+            allow_session_context=payload.allow_session_context,
+            allow_memory_write=payload.allow_memory_write,
             principal_id=principal_id,
         )
 
@@ -821,7 +854,11 @@ class FlowsService(FlowsServicePort):
             flow_version_id=version_uuid,
             node_type=payload.node_type,
             config=payload.config or {},
-            ai_task_id=None,
+            node_prompt_id=payload.node_prompt_id,
+            allow_rag_tenant=payload.allow_rag_tenant,
+            allow_user_memory=payload.allow_user_memory,
+            allow_session_context=payload.allow_session_context,
+            allow_memory_write=payload.allow_memory_write,
             created_by=principal_id,
         )
         draft = await self.repository.get_flow_graph_draft(version_uuid)
@@ -861,5 +898,9 @@ class FlowsService(FlowsServicePort):
         return Node(
             id=node_model.node_id,
             flow_version_id=node_model.flow_version_id,
-            ai_task_id=node_model.ai_task_id,
+            node_prompt_id=node_model.node_prompt_id,
+            allow_rag_tenant=bool(node_model.allow_rag_tenant),
+            allow_user_memory=bool(node_model.allow_user_memory),
+            allow_session_context=bool(node_model.allow_session_context),
+            allow_memory_write=bool(node_model.allow_memory_write),
         )

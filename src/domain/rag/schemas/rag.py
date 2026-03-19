@@ -102,6 +102,21 @@ class RagDocumentCreate(BaseModel):
     rag_config_id: UUID | None = None
 
 
+class RagDocumentsIngestBatchStatus(StrEnum):
+    """Accepted batch ingestion status values."""
+
+    ACCEPTED = "ACCEPTED"
+
+
+class RagDocumentsIngestBatchAccepted(BaseModel):
+    """Represent an accepted batch ingestion request for RAG documents."""
+
+    rag_config_id: UUID
+    job_id: UUID
+    accepted_count: int
+    status: RagDocumentsIngestBatchStatus = RagDocumentsIngestBatchStatus.ACCEPTED
+
+
 class RagDocument(BaseModel):
     """Represent a document stored in the RAG repository."""
 

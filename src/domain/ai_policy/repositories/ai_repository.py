@@ -5,7 +5,6 @@ from sqlalchemy import delete, select
 from domain.common.schemas.versioning import VersionStatus
 from exceptions.service_exceptions import NotFoundServiceException
 from infra.database import DatabaseConnection
-from infra.database.models.ai_policy.ai_task import AITask as AITaskModel
 from infra.database.models.ai_policy.execution_policy import (
     AIExecutionPolicy as AIExecutionPolicyModel,
 )
@@ -27,79 +26,6 @@ class AIRepository:
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
-
-    async def get_ai_task(self, ai_task_id: UUID) -> AITaskModel | None:
-        async with self.db.get_session() as session:
-            stmt = select(AITaskModel).where(AITaskModel.ai_task_id == ai_task_id)
-            query_sql = compile_query(stmt)
-
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.ai_policy.repository.get_ai_task",
-                input={
-                    "query": query_sql,
-                    "params": {"ai_task_id": str(ai_task_id)},
-                },
-                metadata={"retriever_name": "get_ai_task"},
-            ) as retriever_handle:
-                result = await session.execute(stmt)
-                ai_task = result.scalar_one_or_none()
-
-                if retriever_handle:
-                    retriever_handle.success(
-                        output={
-                            "result_count": 1 if ai_task else 0,
-                            "found": ai_task is not None,
-                        }
-                    )
-
-                return ai_task
-
-    async def list_ai_tasks(self) -> list[AITaskModel]:
-        async with self.db.get_session() as session:
-            stmt = select(AITaskModel).order_by(AITaskModel.name.asc())
-            query_sql = compile_query(stmt)
-
-            with self.tracer.observe(
-                as_type="retriever",
-                name="domain.ai_policy.repository.list_ai_tasks",
-                input={"query": query_sql, "params": {}},
-                metadata={"retriever_name": "list_ai_tasks"},
-            ) as retriever_handle:
-                result = await session.execute(stmt)
-                items = list(result.scalars().all())
-
-                if retriever_handle:
-                    retriever_handle.success(
-                        output={
-                            "result_count": len(items),
-                            "found": len(items) > 0,
-                        }
-                    )
-
-                return items
-
-    async def create_ai_task(
-        self,
-        *,
-        name: str,
-        allow_rag_tenant: bool,
-        allow_user_memory: bool,
-        allow_session_context: bool,
-        allow_memory_write: bool,
-    ) -> AITaskModel:
-        async with self.db.get_session() as session:
-            instance = AITaskModel(
-                name=name,
-                allow_rag_tenant=allow_rag_tenant,
-                allow_user_memory=allow_user_memory,
-                allow_session_context=allow_session_context,
-                allow_memory_write=allow_memory_write,
-            )
-            session.add(instance)
-            await session.commit()
-            await session.refresh(instance)
-            return instance
 
     async def get_model_by_name(self, name: str) -> ModelModel | None:
         async with self.db.get_session() as session:

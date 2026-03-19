@@ -1,4 +1,3 @@
-from infra.database.models.ai_policy.ai_task import AITask
 from infra.database.models.ai_policy.model import Model
 from infra.database.models.ai_policy.execution_policy import AIExecutionPolicy
 from infra.database.models.ai_policy.execution_policy_version import (

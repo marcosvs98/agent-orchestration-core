@@ -106,6 +106,8 @@ class LLMNodeExecutor:
             input={"node_id": str(node_uuid) if node_uuid else None},
         ) as chain_handle:
             resolved_prompt = await self.prompt_resolver.resolve(**resolve_kw)
+            if resolved_prompt is None:
+                raise DomainValidationException(message="prompt_resolution_failed")
             if chain_handle:
                 chain_handle.success(output=resolved_prompt.model_dump(mode="json"))
         if self.agent_runtime_resolver and node_uuid:

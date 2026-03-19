@@ -24,7 +24,7 @@ run-seed:
 	@PYTHONPATH=src python3 resources/scripts/seeds/seed_main.py
 
 seed-demo:
-	@PYTHONPATH=src python resources/scripts/seeds/demo/run.py
+	@PYTHONPATH=src python3 resources/scripts/seeds/demo/run.py
 
 seed-demo2:
 	@PYTHONPATH=src uv run python resources/scripts/seeds/demo_2/run.py

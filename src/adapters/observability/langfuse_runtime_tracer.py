@@ -327,6 +327,7 @@ class LangfuseRuntimeTracer:
                 observation_type=as_type,
                 observation_name=name,
             )
+            raise e from e
 
     def flush(self) -> None:
         if not self._enabled or not self.langfuse:
