@@ -32,17 +32,17 @@ from seeds.demo.ids import (
     FLOW_GRAPH_SNAPSHOT_ID,
     FLOW_VERSION_V1_ID,
     NODE_CLARIFICATION_ID,
-    NODE_CLARIFICATION_INTENT_ID,
     NODE_FALLBACK_SLA_ID,
     NODE_INPUT_MODERATION_ID,
-    NODE_INTENT_ID,
+    NODE_MEMORY_COMMIT_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_ERROR_HANDLER_ID,
     NODE_TOOL_EXEC_ID,
     NODE_TOOL_SELECTION_ID,
-    NODE_USER_CONTEXT_ENRICHMENT_ID,
+    NODE_MEMORY_PAYLOAD_SUMMARIZE_ID,
     PRINCIPAL_SYSTEM,
+    RAG_CONFIG_DEMO_ID,
 )
 
 
@@ -68,21 +68,19 @@ class _ResumeConfigWithLlm(BaseModel):
     llm: _LlmNodeConfig
 
 
-class _UserContextLayersConfig(BaseModel):
-    allow_tenant_knowledge: bool
-    allow_user_memory_structured: bool
-    allow_user_memory_vector: bool
-
-
-class _UserContextNodeConfig(BaseModel):
-    publish: bool
-    layers: _UserContextLayersConfig
-
-
 class _ModerationProviderConfig(BaseModel):
     provider: str
     model_alias: str
     timeout_ms: int
+
+
+class _MemoryCommitNodeConfig(BaseModel):
+    schema_id: str
+    schema_version: int = 1
+    source: str = "explicit_user"
+    rag_config_id: str
+    data: dict[str, object] | None = None
+    data_merge: list[dict[str, object]] | None = None
 
 
 class _ModerationNodeConfig(BaseModel):
@@ -97,7 +95,7 @@ class _ModerationNodeConfig(BaseModel):
         timeout_ms=1000,
     )
     fallback_enabled: bool = True
-    prompt_key: str = "InputModerationNode"
+    prompt_key: str = "ContentModeration"
     temperature: float = 0.0
     max_tokens: int = 18
 
@@ -162,19 +160,81 @@ def _resume_llm_node_config(
     ).model_dump(mode="json")
 
 
-def _user_context_node_config() -> dict[str, object]:
-    return _UserContextNodeConfig(
-        publish=True,
-        layers=_UserContextLayersConfig(
-            allow_tenant_knowledge=True,
-            allow_user_memory_structured=True,
-            allow_user_memory_vector=True,
-        ),
-    ).model_dump(mode="json")
+def _memory_payload_summarize_node_config() -> dict[str, object]:
+    base = _llm_node_config(
+        task_type="MEMORY_CONTENT_SUMMARIZE",
+        provider="OPENAI",
+        model_alias="gpt-4.1-mini",
+        temperature=0.0,
+        top_p=0.0,
+        use_system_prompt=False,
+        use_system_context=False,
+        use_conversation_history=False,
+        completion_budget={
+            "schema_factor": 1.2,
+            "safety_margin": 16,
+            "floor": 48,
+        },
+    )
+    return {
+        "source_node_id": str(NODE_SLOT_ID),
+        "min_payload_bytes_to_run": 4096,
+        **base,
+    }
 
 
 def _moderation_node_config() -> dict[str, object]:
     return _ModerationNodeConfig().model_dump(mode="json")
+
+
+def _tool_resolver_demo_config() -> dict[str, object]:
+    base = _llm_node_config(
+        task_type="TOOL_SELECTION",
+        provider="OPENAI",
+        model_alias="gpt-4.1-mini",
+        temperature=0,
+        top_p=0.1,
+        use_system_prompt=False,
+        use_conversation_history=False,
+        completion_budget={
+            "schema_factor": 1.2,
+            "safety_margin": 16,
+            "floor": 48,
+        },
+    )
+    base["confidence_threshold"] = 0.78
+    base["top_k"] = 10
+    return base
+
+
+def _memory_commit_node_config() -> dict[str, object]:
+    return _MemoryCommitNodeConfig(
+        schema_id="user.preference.v1",
+        schema_version=1,
+        source="explicit_user",
+        rag_config_id=str(RAG_CONFIG_DEMO_ID),
+        data={
+            "preference_key": "demo.memory_commit",
+            "preference_value": "graph_seed",
+        },
+        data_merge=[
+            {
+                "from_node_id": str(NODE_SLOT_ID),
+                "path": "result.0.params.nickname",
+                "target_key": "nickname",
+            },
+            {
+                "from_node_id": str(NODE_SLOT_ID),
+                "path": "result.0.params.financial_goal",
+                "target_key": "financial_goal",
+            },
+            {
+                "from_node_id": str(NODE_MEMORY_PAYLOAD_SUMMARIZE_ID),
+                "path": "prepared_memory_data",
+                "target_key": "summarized_slot_snapshot",
+            },
+        ],
+    ).model_dump(mode="json")
 
 
 async def seed_graph() -> None:
@@ -194,49 +254,19 @@ async def seed_graph() -> None:
             start_node=str(NODE_INPUT_MODERATION_ID),
             nodes={
                 str(NODE_INPUT_MODERATION_ID): FlowGraphNodeSpec(
-                    type="InputModerationNode",
+                    type="ContentModeration",
                     config=_moderation_node_config(),
                 ),
-                str(NODE_USER_CONTEXT_ENRICHMENT_ID): FlowGraphNodeSpec(
-                    type="UserContextEnrichmentNode",
-                    config=_user_context_node_config(),
-                ),
-                str(NODE_INTENT_ID): FlowGraphNodeSpec(
-                    type="IntentDetectionNode",
-                    config=_llm_node_config(
-                        task_type="INTENT_SELECTION",
-                        provider="OPENAI",
-                        model_alias="gpt-4.1-mini",
-                        temperature=0,
-                        top_p=0.05,
-                        use_system_prompt=False,
-                        use_conversation_history=False,
-                        completion_budget={
-                            "schema_factor": 1.2,
-                            "safety_margin": 16,
-                            "floor": 32,
-                        },
-                    ),
+                str(NODE_MEMORY_PAYLOAD_SUMMARIZE_ID): FlowGraphNodeSpec(
+                    type="ContextSummarizer",
+                    config=_memory_payload_summarize_node_config(),
                 ),
                 str(NODE_TOOL_SELECTION_ID): FlowGraphNodeSpec(
-                    type="ToolSelectionNode",
-                    config=_llm_node_config(
-                        task_type="TOOL_SELECTION",
-                        provider="OPENAI",
-                        model_alias="gpt-4.1-mini",
-                        temperature=0,
-                        top_p=0.1,
-                        use_system_prompt=False,
-                        use_conversation_history=False,
-                        completion_budget={
-                            "schema_factor": 1.2,
-                            "safety_margin": 16,
-                            "floor": 48,
-                        },
-                    ),
+                    type="ToolResolver",
+                    config=_tool_resolver_demo_config(),
                 ),
                 str(NODE_SLOT_ID): FlowGraphNodeSpec(
-                    type="ParamExtractionNode",
+                    type="ToolInputFiller",
                     config=_llm_node_config(
                         task_type="SLOT_FILLING",
                         provider="OPENAI",
@@ -252,25 +282,8 @@ async def seed_graph() -> None:
                         },
                     ),
                 ),
-                str(NODE_CLARIFICATION_INTENT_ID): FlowGraphNodeSpec(
-                    type="ClarificationNode",
-                    config=_resume_llm_node_config(
-                        resume_to_node_id=str(NODE_INTENT_ID),
-                        task_type="CLARIFICATION",
-                        provider="OPENAI",
-                        model_alias="gpt-4o",
-                        temperature=0.3,
-                        top_p=0.4,
-                        use_conversation_history=True,
-                        completion_budget={
-                            "schema_factor": 1.7,
-                            "safety_margin": 24,
-                            "floor": 80,
-                        },
-                    ),
-                ),
                 str(NODE_CLARIFICATION_ID): FlowGraphNodeSpec(
-                    type="ClarificationNode",
+                    type="QueryClarifier",
                     config=_resume_llm_node_config(
                         resume_to_node_id=str(NODE_SLOT_ID),
                         task_type="CLARIFICATION",
@@ -287,7 +300,7 @@ async def seed_graph() -> None:
                     ),
                 ),
                 str(NODE_TOOL_EXEC_ID): FlowGraphNodeSpec(
-                    type="ToolExecutionNode",
+                    type="ToolExecutor",
                     config={},
                 ),
                 str(NODE_TOOL_ERROR_HANDLER_ID): FlowGraphNodeSpec(
@@ -295,7 +308,7 @@ async def seed_graph() -> None:
                     config={"max_retries": 1},
                 ),
                 str(NODE_FALLBACK_SLA_ID): FlowGraphNodeSpec(
-                    type="FallbackNodeSLA",
+                    type="HumanFallback",
                     config=_llm_node_config(
                         task_type="FALLBACK_SLA",
                         provider="OPENAI",
@@ -312,8 +325,12 @@ async def seed_graph() -> None:
                         },
                     )
                 ),
+                str(NODE_MEMORY_COMMIT_ID): FlowGraphNodeSpec(
+                    type="MemoryCommitNode",
+                    config=_memory_commit_node_config(),
+                ),
                 str(NODE_RESPONSE_ID): FlowGraphNodeSpec(
-                    type="ResponseComposer",
+                    type="ResponseBuilder",
                     config=_llm_node_config(
                         task_type="RESPONSE_RENDER",
                         provider="OPENAI",
@@ -332,7 +349,7 @@ async def seed_graph() -> None:
             edges=[
                 FlowGraphEdge(
                     from_node=str(NODE_INPUT_MODERATION_ID),
-                    to_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
+                    to_node=str(NODE_TOOL_SELECTION_ID),
                     condition="flagged == false",
                     edge_kind=EdgeKind.NORMAL,
                 ),
@@ -343,39 +360,15 @@ async def seed_graph() -> None:
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
-                    from_node=str(NODE_USER_CONTEXT_ENRICHMENT_ID),
-                    to_node=str(NODE_INTENT_ID),
-                    condition="1==1",
-                    edge_kind=EdgeKind.NORMAL,
-                ),
-                FlowGraphEdge(
-                    from_node=str(NODE_INTENT_ID),
-                    to_node=str(NODE_CLARIFICATION_INTENT_ID),
-                    condition="overall_confidence < 0.6",
-                    edge_kind=EdgeKind.NORMAL,
-                ),
-                FlowGraphEdge(
-                    from_node=str(NODE_INTENT_ID),
-                    to_node=str(NODE_TOOL_SELECTION_ID),
-                    condition="HasAny(result.intent_type, ['command']) and overall_confidence >= 0.8",
-                    edge_kind=EdgeKind.NORMAL,
-                ),
-                FlowGraphEdge(
-                    from_node=str(NODE_INTENT_ID),
-                    to_node=str(NODE_RESPONSE_ID),
-                    condition="overall_confidence >= 0.6 and (HasAny(result.intent_type, ['conversation']) or not HasAny(result.intent_type, ['command']))",
-                    edge_kind=EdgeKind.NORMAL,
-                ),
-                FlowGraphEdge(
-                    from_node=str(NODE_CLARIFICATION_INTENT_ID),
-                    to_node=str(NODE_RESPONSE_ID),
-                    condition="1==1",
+                    from_node=str(NODE_TOOL_SELECTION_ID),
+                    to_node=str(NODE_SLOT_ID),
+                    condition="len(result) >= 1",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_TOOL_SELECTION_ID),
-                    to_node=str(NODE_SLOT_ID),
-                    condition="len(result) >= 1",
+                    to_node=str(NODE_MEMORY_COMMIT_ID),
+                    condition="len(result) < 1",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
@@ -398,8 +391,14 @@ async def seed_graph() -> None:
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_TOOL_EXEC_ID),
-                    to_node=str(NODE_RESPONSE_ID),
+                    to_node=str(NODE_MEMORY_PAYLOAD_SUMMARIZE_ID),
                     condition="HasAll(result.status, ['success', 'scheduled'])",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_MEMORY_PAYLOAD_SUMMARIZE_ID),
+                    to_node=str(NODE_MEMORY_COMMIT_ID),
+                    condition="1==1",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
@@ -422,12 +421,18 @@ async def seed_graph() -> None:
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_TOOL_ERROR_HANDLER_ID),
-                    to_node=str(NODE_RESPONSE_ID),
+                    to_node=str(NODE_MEMORY_COMMIT_ID),
                     condition="retry_operation_ids_count == 0 and fallback_required == false",
                     edge_kind=EdgeKind.NORMAL,
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_FALLBACK_SLA_ID),
+                    to_node=str(NODE_MEMORY_COMMIT_ID),
+                    condition="1==1",
+                    edge_kind=EdgeKind.NORMAL,
+                ),
+                FlowGraphEdge(
+                    from_node=str(NODE_MEMORY_COMMIT_ID),
                     to_node=str(NODE_RESPONSE_ID),
                     condition="1==1",
                     edge_kind=EdgeKind.NORMAL,

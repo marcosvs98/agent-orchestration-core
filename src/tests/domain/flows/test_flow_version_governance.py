@@ -9,6 +9,15 @@ from domain.flows.services.flows_service import FlowsService
 from exceptions.service_exceptions import ResourceBlockedServiceException
 
 
+def _flows_idempotency(mocker):
+    service = mocker.Mock()
+    service.build_key = mocker.Mock(return_value="flows-idem-key")
+    service.try_acquire = mocker.AsyncMock(return_value=True)
+    service.get = mocker.AsyncMock(return_value=None)
+    service.set_result = mocker.AsyncMock()
+    return service
+
+
 @pytest.mark.asyncio
 async def test_validate_flow_version_sets_validated_status(mocker):
     tenant_id = uuid4()
@@ -35,7 +44,9 @@ async def test_validate_flow_version_sets_validated_status(mocker):
         ]
     )
     flows_repo.list_nodes_for_flow_version = mocker.AsyncMock(
-        return_value=[SimpleNamespace(node_id=uuid4())]
+        return_value=[
+            SimpleNamespace(node_id=uuid4(), allow_memory_write=False),
+        ]
     )
     flows_repo.list_routing_rules_for_flow_version = mocker.AsyncMock(return_value=[])
     flows_repo.set_flow_version_status = mocker.AsyncMock()
@@ -58,6 +69,7 @@ async def test_validate_flow_version_sets_validated_status(mocker):
         repository=flows_repo,
         limit_policy_repository=policy_repo,
         authoring_events=authoring_events,
+        idempotency=_flows_idempotency(mocker),
     )
 
     result = await service.validate_flow_version(
@@ -77,6 +89,7 @@ async def test_publish_flow_version_requires_validated(mocker):
 
     flows_repo = mocker.Mock()
     flows_repo.get_flow = mocker.AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
+    flows_repo.list_nodes_for_flow_version = mocker.AsyncMock(return_value=[])
     flows_repo.get_flow_version = mocker.AsyncMock(
         return_value=SimpleNamespace(flow_id=flow_id, status=VersionStatus.DRAFT)
     )
@@ -89,6 +102,7 @@ async def test_publish_flow_version_requires_validated(mocker):
         repository=flows_repo,
         limit_policy_repository=policy_repo,
         authoring_events=authoring_events,
+        idempotency=_flows_idempotency(mocker),
     )
 
     with pytest.raises(ResourceBlockedServiceException, match="flow_version_not_validated"):
@@ -114,8 +128,24 @@ async def test_activate_and_rollback_emit_authoring_events(mocker):
         return_value=SimpleNamespace(flow_id=flow_id, status=VersionStatus.PUBLISHED)
     )
     flows_repo.upsert_active_flow_version = mocker.AsyncMock()
+    flows_repo.list_nodes_for_flow_version = mocker.AsyncMock(return_value=[])
     flows_repo.get_flow_graph_snapshot_by_flow_version = mocker.AsyncMock(
-        return_value=SimpleNamespace(flow_graph_snapshot_id=uuid4())
+        return_value=SimpleNamespace(
+            flow_graph_snapshot_id=uuid4(),
+            graph_hash="gh",
+            snapshot={"start_node": "n1", "nodes": {"n1": {"type": "INPUT"}}, "edges": []},
+        )
+    )
+    flows_repo.upsert_flow_snapshot = mocker.AsyncMock(
+        return_value=SimpleNamespace(flow_snapshot_id=uuid4())
+    )
+    flows_repo.upsert_snapshot_effective_policy = mocker.AsyncMock()
+    flows_repo.replace_snapshot_bindings = mocker.AsyncMock()
+    flows_repo.upsert_flow_deployment = mocker.AsyncMock(
+        return_value=SimpleNamespace(
+            flow_deployment_id=uuid4(),
+            environment="default",
+        )
     )
 
     policy_repo = mocker.Mock()
@@ -127,6 +157,7 @@ async def test_activate_and_rollback_emit_authoring_events(mocker):
         repository=flows_repo,
         limit_policy_repository=policy_repo,
         authoring_events=authoring_events,
+        idempotency=_flows_idempotency(mocker),
     )
 
     await service.activate_flow_version(

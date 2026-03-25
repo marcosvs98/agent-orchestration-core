@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Literal
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LlmNodeConfigSchema(BaseModel):
@@ -20,14 +21,24 @@ class LlmNodeConfigSchema(BaseModel):
     use_conversation_history: bool | None = None
 
 
+class RagPipelineExtensionSchema(BaseModel):
+    retriever_profile_id: UUID | None = None
+    ingestor_profile_id: UUID | None = None
+    retriever_when: Literal["always", "on_flag", "never"] | None = None
+    ingestor_trigger: str | None = Field(default=None, max_length=256)
+
+
 class LlmNodeConfigWrapperSchema(BaseModel):
-    """Node config that contains an llm block (IntentDetection, ToolSelection, etc.)."""
+    """Node config that contains an llm block (IntentClassifier, ToolResolver, etc.)."""
 
     llm: LlmNodeConfigSchema | Dict[str, Any] | None = None
+    rag_pipeline: RagPipelineExtensionSchema | None = None
+    confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    top_k: int | None = Field(default=None, ge=1, le=64)
 
 
-class ClarificationNodeConfigSchema(BaseModel):
-    """ClarificationNode can have resume_to_node_id and llm."""
+class QueryClarifierNodeConfigSchema(BaseModel):
+    """QueryClarifier can have resume_to_node_id and llm."""
 
     resume_to_node_id: str | None = None
     llm: LlmNodeConfigSchema | Dict[str, Any] | None = None
@@ -42,7 +53,7 @@ class ModerationProviderSchema(BaseModel):
 
 
 class ModerationNodeConfigSchema(BaseModel):
-    """Config for InputModerationNode."""
+    """Config for ContentModeration."""
 
     primary: ModerationProviderSchema | Dict[str, Any] | None = None
     fallback: ModerationProviderSchema | Dict[str, Any] | None = None
@@ -52,19 +63,28 @@ class ModerationNodeConfigSchema(BaseModel):
     max_tokens: int | None = None
 
 
-class UserContextLayersSchema(BaseModel):
-    """Layers for UserContextEnrichmentNode."""
+class MemoryCommitDataMergeRuleSchema(BaseModel):
+    """Maps a prior node output field into the memory commit payload."""
 
-    allow_tenant_knowledge: bool | None = None
-    allow_user_memory_structured: bool | None = None
-    allow_user_memory_vector: bool | None = None
+    from_node_id: str
+    path: str = ""
+    target_key: str
 
 
-class UserContextEnrichmentNodeConfigSchema(BaseModel):
-    """Config for UserContextEnrichmentNode."""
+class MemoryCommitNodeConfigSchema(BaseModel):
+    schema_id: str
+    schema_version: int = 1
+    source: str = "explicit_user"
+    rag_config_id: str
+    data: Dict[str, Any] | None = None
+    data_merge: List[MemoryCommitDataMergeRuleSchema] | None = None
+    literal_overlay: Dict[str, Any] | None = None
 
-    publish: bool | None = None
-    layers: UserContextLayersSchema | Dict[str, Any] | None = None
+
+class ContextSummarizerNodeConfigSchema(BaseModel):
+    source_node_id: str
+    min_payload_bytes_to_run: int = Field(default=1, ge=0)
+    llm: LlmNodeConfigSchema | Dict[str, Any] | None = None
 
 
 def validate_node_config(node_type: str, config: Dict[str, Any] | None) -> None:
@@ -75,14 +95,15 @@ def validate_node_config(node_type: str, config: Dict[str, Any] | None) -> None:
     if config is None:
         return
     type_to_schema = {
-        "IntentDetectionNode": LlmNodeConfigWrapperSchema,
-        "ToolSelectionNode": LlmNodeConfigWrapperSchema,
-        "ParamExtractionNode": LlmNodeConfigWrapperSchema,
-        "ResponseComposer": LlmNodeConfigWrapperSchema,
-        "FallbackNodeSLA": LlmNodeConfigWrapperSchema,
-        "ClarificationNode": ClarificationNodeConfigSchema,
-        "InputModerationNode": ModerationNodeConfigSchema,
-        "UserContextEnrichmentNode": UserContextEnrichmentNodeConfigSchema,
+        "IntentClassifier": LlmNodeConfigWrapperSchema,
+        "ToolResolver": LlmNodeConfigWrapperSchema,
+        "ToolInputFiller": LlmNodeConfigWrapperSchema,
+        "ResponseBuilder": LlmNodeConfigWrapperSchema,
+        "HumanFallback": LlmNodeConfigWrapperSchema,
+        "QueryClarifier": QueryClarifierNodeConfigSchema,
+        "ContentModeration": ModerationNodeConfigSchema,
+        "MemoryCommitNode": MemoryCommitNodeConfigSchema,
+        "ContextSummarizer": ContextSummarizerNodeConfigSchema,
     }
     schema_class = type_to_schema.get(node_type)
     if schema_class is not None:

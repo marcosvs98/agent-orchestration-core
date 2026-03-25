@@ -20,7 +20,7 @@ class TestPromptRepository:
         session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
 
         repo = PromptRepository(db)
-        result = await repo.get_active_prompt(NodeType.IntentToolSelectionNode.value)
+        result = await repo.get_active_prompt(NodeType.ToolResolver.value)
 
         assert result is None
 
@@ -31,7 +31,7 @@ class TestPromptRepository:
         prompt_id = uuid4()
         model = NodePromptModel(
             prompt_id=prompt_id,
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Test prompt",
             input_schema=None,
             output_schema=None,
@@ -50,11 +50,11 @@ class TestPromptRepository:
         session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=model)))
 
         repo = PromptRepository(db)
-        result = await repo.get_active_prompt(NodeType.IntentToolSelectionNode.value)
+        result = await repo.get_active_prompt(NodeType.ToolResolver.value)
 
         assert result is not None
         assert result.prompt_id == prompt_id
-        assert result.node_type == NodeType.IntentToolSelectionNode.value
+        assert result.node_type == NodeType.ToolResolver.value
         assert result.template_text == "Test prompt"
         assert result.version == 1
         assert result.frozen_hash == "abc123"
@@ -65,7 +65,7 @@ class TestPromptRepository:
 
         prompt_id = uuid4()
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="New prompt",
             description="Test description",
             created_by="test_user",

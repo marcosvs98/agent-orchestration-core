@@ -361,7 +361,9 @@ class TenantSummaryService:
                     )
                 at = AiTaskOperationalSummary(
                     allow_rag_tenant=bool(n.allow_rag_tenant),
-                    allow_user_memory=bool(n.allow_user_memory),
+                    allow_user_memory_structured=bool(n.allow_user_memory_structured),
+                    allow_user_memory_vector=bool(n.allow_user_memory_vector),
+                    rag_config_id=n.rag_config_id,
                     allow_session_context=bool(n.allow_session_context),
                     allow_memory_write=bool(n.allow_memory_write),
                 )

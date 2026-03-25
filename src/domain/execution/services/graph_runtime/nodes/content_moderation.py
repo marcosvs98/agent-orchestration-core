@@ -13,8 +13,8 @@ from domain.llm.ports.moderation_provider import ModerationProviderPort
 from domain.prompts.schemas.prompt import NodeType
 
 
-class InputModerationNode(NodeExecutor):
-    node_type = NodeType.InputModerationNode
+class ContentModeration(NodeExecutor):
+    node_type = NodeType.ContentModeration
     side_effect = False
     deterministic = True
 

@@ -6,18 +6,26 @@ from fastapi import APIRouter, Depends, Query, status
 from domain.common.schemas.change import ChangeRequest
 from domain.rag.schemas.rag import (
     RagChunk,
+    RagChunkingRule,
+    RagChunkingRuleCreate,
+    RagChunkingRuleUpdateHttpBody,
     RagConfig,
     RagConfigCreate,
+    RagContext,
     RagDocument,
     RagDocumentCreate,
     RagDocumentsIngestBatchAccepted,
+    RagRetrievalPreviewRequest,
     VectorStore,
     VectorStoreCreate,
 )
 from domain.rag.services.rag_service import RagService
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.schemas.scopes import Scope
-from exceptions.service_exceptions import AuthorizationDeniedException, DomainValidationException
+from exceptions.service_exceptions import (
+    AuthorizationDeniedException,
+    DomainValidationException,
+)
 from utils.auth import AuthContext, get_auth_context
 
 MAX_RAG_DOCUMENTS_INGEST_BATCH = 10000
@@ -100,6 +108,31 @@ class RagController:
             self.list_chunks,
             methods=["GET"],
             response_model=list[RagChunk],
+        )
+        r(
+            "/rag-chunking-rules",
+            self.list_chunking_rules,
+            methods=["GET"],
+            response_model=list[RagChunkingRule],
+        )
+        r(
+            "/rag-chunking-rules",
+            self.create_chunking_rule,
+            methods=["POST"],
+            response_model=RagChunkingRule,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/rag-chunking-rules/{rag_chunking_rule_id}",
+            self.update_chunking_rule,
+            methods=["PATCH"],
+            response_model=RagChunkingRule,
+        )
+        r(
+            "/rag-retrieval:preview",
+            self.preview_rag_retrieval,
+            methods=["POST"],
+            response_model=RagContext,
         )
 
     @staticmethod
@@ -236,4 +269,56 @@ class RagController:
     ) -> list[RagChunk]:
         return await self.runtime_service.list_chunks(
             document_id=UUID(document_id), limit=limit
+        )
+
+    async def list_chunking_rules(
+        self,
+        limit: int = Query(default=200, ge=1, le=1000),
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> list[RagChunkingRule]:
+        self._ensure_scope(auth, Scope.RagConfigsList)
+        return await self.service.list_chunking_rules(
+            tenant_id=auth.tenant_id, limit=limit
+        )
+
+    async def create_chunking_rule(
+        self,
+        payload: RagChunkingRuleCreate,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagChunkingRule:
+        self._ensure_scope(auth, Scope.RagConfigsCreate)
+        return await self.service.create_chunking_rule(
+            tenant_id=auth.tenant_id,
+            payload=payload,
+            principal_id=auth.principal_id,
+        )
+
+    async def update_chunking_rule(
+        self,
+        rag_chunking_rule_id: str,
+        body: RagChunkingRuleUpdateHttpBody,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagChunkingRule:
+        self._ensure_scope(auth, Scope.RagConfigsCreate)
+        return await self.service.update_chunking_rule(
+            tenant_id=auth.tenant_id,
+            rag_chunking_rule_id=rag_chunking_rule_id,
+            payload=body.rule,
+            principal_id=auth.principal_id,
+            change_request=body.change,
+        )
+
+    async def preview_rag_retrieval(
+        self,
+        body: RagRetrievalPreviewRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagContext:
+        self._ensure_scope(auth, Scope.RagConfigsList)
+        return await self.runtime_service.get_context(
+            tenant_id=auth.tenant_id,
+            rag_config_id=body.rag_config_id,
+            user_id=auth.principal_id,
+            user_input=body.user_input,
+            filters_override=body.filters_override,
+            top_k_override=body.top_k_override,
         )

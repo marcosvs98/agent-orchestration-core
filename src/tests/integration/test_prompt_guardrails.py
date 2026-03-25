@@ -17,7 +17,7 @@ class TestPromptGuardrails:
     @pytest.mark.asyncio
     async def test_prompt_service_validates_prompt_before_persisting(self):
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Valid prompt",
             description="Test",
         )
@@ -50,7 +50,7 @@ class TestPromptGuardrails:
     @pytest.mark.asyncio
     async def test_prompt_service_rejects_empty_template(self):
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="",
             description="Test",
         )

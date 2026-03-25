@@ -5,10 +5,14 @@ import sys
 from pathlib import Path
 from uuid import UUID, uuid4
 
-project_root = Path(__file__).resolve().parents[3]
-src_path = project_root / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
+for _repo in Path(__file__).resolve().parents:
+    if (_repo / "pyproject.toml").exists():
+        sys.path.insert(0, str(_repo / "src"))
+        sys.path.insert(0, str(_repo / "resources" / "scripts"))
+        sys.path.insert(0, str(_repo))
+        break
+else:
+    raise RuntimeError("repository root not found")
 
 from sqlalchemy import select
 
@@ -16,20 +20,25 @@ from adapters.cache.redis_adapter import RedisAdapter
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.schemas.trace import TraceContext
+from domain.execution.repositories.execution_repository import ExecutionRepository
+from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.rag.repositories.rag_repository import RagRepository
-from domain.rag.schemas.rag import RagConfigOptions, RagDocumentCreate
+from domain.rag.schemas.rag import RagConfigOptions
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from infra.database import get_db
 from infra.database import DatabaseConnection, async_session, engine
+from infra.database.models.rag.rag_chunking_rule import RagChunkingRule
 from infra.database.models.rag.rag_config import RagConfig
 from infra.database.models.rag.vector_store import VectorStore
 from settings import EMBEDDING_DIMENSION, OPENAI_API_KEY
 
 from seeds.demo.ids import (
+    RAG_CHUNKING_RULE_DEMO_ID,
     RAG_CONFIG_DEMO_ID,
     TENANT_DEMO_ID,
     VECTOR_STORE_DEMO_ID,
 )
+from seeds.demo.rag_payloads import demo_assistente_bolso_kb_documents
 
 
 class _SeedObservationHandle:
@@ -136,6 +145,32 @@ async def seed_rag() -> None:
             await session.commit()
 
         result = await session.execute(
+            select(RagChunkingRule).where(
+                RagChunkingRule.rag_chunking_rule_id == RAG_CHUNKING_RULE_DEMO_ID
+            )
+        )
+        existing_rule = result.scalar_one_or_none()
+        if existing_rule is None:
+            demo_chunking_params = {
+                "strategy": "TOKEN_WINDOW",
+                "target_tokens": 500,
+                "overlap_tokens": 50,
+                "max_chunks_per_document": 100,
+                "max_document_chars": 100_000,
+            }
+            session.add(
+                RagChunkingRule(
+                    rag_chunking_rule_id=RAG_CHUNKING_RULE_DEMO_ID,
+                    tenant_id=TENANT_DEMO_ID,
+                    name="demo-seed-token-window",
+                    status="ACTIVE",
+                    strategy="TOKEN_WINDOW",
+                    params=demo_chunking_params,
+                )
+            )
+            await session.commit()
+
+        result = await session.execute(
             select(RagConfig).where(RagConfig.rag_config_id == RAG_CONFIG_DEMO_ID)
         )
         existing_config = result.scalar_one_or_none()
@@ -146,6 +181,7 @@ async def seed_rag() -> None:
                 rag_config_id=RAG_CONFIG_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
                 vector_store_id=VECTOR_STORE_DEMO_ID,
+                chunking_rule_id=RAG_CHUNKING_RULE_DEMO_ID,
                 status=VersionStatus.PUBLISHED.value,
                 version_major=1,
                 version_minor=0,
@@ -159,6 +195,8 @@ async def seed_rag() -> None:
             if not options:
                 options = RagConfigOptions().model_dump(mode="json")
                 existing_config.options = options
+            if existing_config.chunking_rule_id is None:
+                existing_config.chunking_rule_id = RAG_CHUNKING_RULE_DEMO_ID
             if existing_config.status != VersionStatus.PUBLISHED.value:
                 existing_config.status = VersionStatus.PUBLISHED.value
             await session.commit()
@@ -168,8 +206,18 @@ async def seed_rag() -> None:
 
     cache_adapter = RedisAdapter()
     database_connection = DatabaseConnection(engine=engine, sessionmaker=async_session)
-    rag_repository = RagRepository(database_connection)
     tracer = _SeedTracer()
+    execution_repository = ExecutionRepository(
+        database_connection,
+        tracer=tracer,
+        cache_adapter=cache_adapter,
+    )
+    rag_policy_service = RagPolicyService(repository=execution_repository)
+    rag_repository = RagRepository(
+        database_connection,
+        tracer=tracer,
+        cache_adapter=cache_adapter,
+    )
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=OPENAI_API_KEY,
         model="text-embedding-3-small",
@@ -181,149 +229,9 @@ async def seed_rag() -> None:
         repository=rag_repository,
         embedding_adapter=embedding_adapter,
         tracer=tracer,
+        rag_policy_service=rag_policy_service,
     )
-    documents = [
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="identity_proposito",
-            content=(
-                "Identidade: O Assistente de Bolso é uma IA de controle financeiro pessoal operada via WhatsApp. "
-                "Atua como interface conversacional para organização de receitas, despesas, saldos, metas financeiras e compromissos. "
-                "É um operador financeiro conversacional. Não substitui contador, assessor de investimentos ou consultor jurídico/tributário. "
-                "Seu papel é fornecer organização, visibilidade e apoio operacional. "
-                "Proposta de valor: Conecta automaticamente às contas bancárias via Open Finance; categoriza ganhos e gastos; "
-                "permite consultas financeiras por mensagem; gera relatórios e resumos periódicos; gerencia compromissos e lembretes; "
-                "pode integrar com Google Agenda; opera de forma simples, direto no WhatsApp. A experiência deve ser conversacional, prática e sem fricção. "
-                "Propósito: Organizar a vida financeira do usuário; reduzir fricção no registro de movimentações; "
-                "fornecer clareza sobre para onde o dinheiro está indo; apoiar criação e acompanhamento de metas financeiras; "
-                "centralizar finanças e compromissos em uma única conversa. "
-                "Tom de voz: profissional, claro, direto, objetivo, didático quando necessário, respeitoso. "
-                "Small talk é permitido, mas deve ser breve e reconduzido para utilidade prática."
-            ),
-            version="1",
-            metadata={"topic": "identity_proposito"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="escopo",
-            content=(
-                "Escopo funcional – Inclui: Registro manual de despesas e receitas via linguagem natural; "
-                "registro automático via conexão bancária; consulta de saldo; consulta de gastos por categoria; "
-                "consulta de economia acumulada; relatórios mensais e resumos periódicos; criação de metas financeiras; "
-                "cálculo simples de quanto precisa economizar para atingir uma meta; criação e consulta de compromissos; "
-                "criação de lembretes; integração com Google Agenda. "
-                "Não inclui: Aconselhamento de investimentos avançado; planejamento tributário; "
-                "decisões financeiras autônomas; simulação de operações financeiras inexistentes."
-            ),
-            version="1",
-            metadata={"topic": "scope"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="faq_conexao_bancaria",
-            content=(
-                "FAQ – Conexão Bancária. "
-                "Pergunta: Como conecto minha conta bancária? "
-                "Resposta: Você pode conectar sua conta por meio do fluxo de Open Finance. Após autorização, suas movimentações passam a ser sincronizadas automaticamente. "
-                "Pergunta: Preciso atualizar manualmente as transações? "
-                "Resposta: Não. Após a conexão, as movimentações são sincronizadas automaticamente. "
-                "Pergunta: Minhas transações são registradas automaticamente? "
-                "Resposta: Sim, quando a conta está conectada, receitas e despesas são importadas e categorizadas automaticamente."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "conexao_bancaria"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="faq_registro_despesas_receitas",
-            content=(
-                "FAQ – Registro de Despesas e Receitas. "
-                "Pergunta: Como registro uma despesa? "
-                "Resposta: Basta informar o valor e a descrição, por exemplo: “Gastei 120 reais no mercado”. Se houver integração ativa, o sistema pode já ter registrado automaticamente. "
-                "Pergunta: Como registro uma receita? "
-                "Resposta: Informe o valor e a origem, por exemplo: “Recebi 2.000 reais de salário”. "
-                "Pergunta: Preciso informar a data? "
-                "Resposta: Se não informar, será considerada a data atual."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "registro"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="faq_consultas_financeiras",
-            content=(
-                "FAQ – Consultas Financeiras. "
-                "Pergunta: Quanto eu economizei este mês? "
-                "Resposta: O assistente calcula com base nas receitas e despesas registradas no período. "
-                "Pergunta: Quais são meus maiores gastos? "
-                "Resposta: O assistente pode informar os principais gastos por categoria no período solicitado. "
-                "Pergunta: Qual meu saldo atual? "
-                "Resposta: O saldo é calculado com base nas contas conectadas e movimentações registradas."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "consultas"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="faq_relatorios",
-            content=(
-                "FAQ – Relatórios e Resumos. "
-                "Pergunta: Recebo relatório mensal? "
-                "Resposta: Sim, o assistente pode fornecer resumos mensais com visão consolidada de receitas, despesas e economia. "
-                "Pergunta: Posso ver meus gastos por categoria? "
-                "Resposta: Sim, é possível consultar gastos segmentados por categoria."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "relatorios"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="faq_metas_financeiras",
-            content=(
-                "FAQ – Metas Financeiras. "
-                "Pergunta: Posso criar uma meta financeira? "
-                "Resposta: Sim. Você pode definir um objetivo, como “Quero economizar 5.000 reais”. O assistente ajuda a calcular quanto precisa poupar por período. "
-                "Pergunta: Como sei quanto posso gastar por dia para atingir minha meta? "
-                "Resposta: O assistente pode calcular um limite médio de gasto com base no prazo e no valor da meta."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "metas"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="faq_uso_geral",
-            content=(
-                "FAQ – Uso Geral. "
-                "Pergunta: Como começo a usar? "
-                "Resposta: Inicie a conversa com uma saudação e siga o fluxo de configuração, incluindo conexão bancária se desejar sincronização automática. "
-                "Pergunta: Posso usar apenas por mensagem? "
-                "Resposta: Sim. Toda interação ocorre via WhatsApp. "
-                "Pergunta: O assistente entende áudio ou imagem? "
-                "Resposta: Conforme escopo do agente, o assistente pode interpretar áudios e imagens enviadas, tratando-as como entradas da conversa."
-            ),
-            version="1",
-            metadata={"topic": "faq", "section": "uso_geral"},
-        ),
-        RagDocumentCreate(
-            source="assistente-bolso",
-            doc_type="comportamento_limites",
-            content=(
-                "Princípios de comportamento: O assistente deve nunca inventar dados financeiros; trabalhar exclusivamente com dados disponíveis no sistema; "
-                "informar explicitamente quando não houver informação; confirmar dados em caso de ambiguidade relevante; "
-                "não assumir contexto financeiro não informado; não prometer funcionalidades inexistentes. Se houver limitação técnica, deve informar claramente. "
-                "Tratamento de dados: Utiliza integração bancária via Open Finance para sincronizar movimentações; evita duplicidade quando integração estiver ativa; "
-                "pode integrar com Google Agenda para compromissos. Segurança: Comunicação via WhatsApp; dados financeiros tratados com segurança; nunca expor dados sensíveis além do necessário. "
-                "Small talk – Cumprimento: responder de forma cordial e oferecer ajuda objetiva (ex: “Olá. Como posso ajudar com sua organização financeira hoje?”). "
-                "Usuário frustrado: reconhecer a situação e oferecer solução prática. Pedido genérico: converter para ação concreta (ex: “Você quer registrar uma despesa, consultar seu saldo ou criar uma meta?”). "
-                "Limitações estratégicas: Não realiza aconselhamento financeiro profundo; não toma decisões pelo usuário; não executa operações bancárias; não simula funcionalidades inexistentes. "
-                "Diretriz final: O Assistente de Bolso deve operar como um copiloto financeiro pessoal: organizado, confiável, orientado a execução e focado em clareza financeira."
-            ),
-            version="1",
-            metadata={"topic": "policy"},
-        ),
-    ]
-    documents = []
-    for document in documents:
+    for document in demo_assistente_bolso_kb_documents():
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,
             rag_config_id=RAG_CONFIG_DEMO_ID,

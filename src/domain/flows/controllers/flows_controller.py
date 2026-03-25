@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from uuid import UUID
 
 from domain.common.schemas.change import ChangeRequest
@@ -6,7 +6,12 @@ from domain.flows.schemas.flows import (
     ConditionExpression,
     ConditionExpressionCreate,
     CustomNodeCreate,
+    DeploymentComposeRequest,
+    DeploymentComposeResponse,
+    DeploymentComposeValidateResponse,
     Flow,
+    FlowArtifactsBatchUpsertRequest,
+    FlowArtifactsBatchUpsertResponse,
     FlowCreate,
     FlowVersion,
     FlowVersionCreate,
@@ -186,6 +191,27 @@ class FlowsController:
             methods=["POST"],
             response_model=Node,
             status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/deployments:compose",
+            self.compose_deployment,
+            methods=["POST"],
+            response_model=DeploymentComposeResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/deployments:validate",
+            self.validate_compose_deployment,
+            methods=["POST"],
+            response_model=DeploymentComposeValidateResponse,
+            status_code=status.HTTP_200_OK,
+        )
+        r(
+            "/flows/{flow_id}/versions/{flow_version_id}/artifacts:batch-upsert",
+            self.batch_upsert_artifacts,
+            methods=["PUT"],
+            response_model=FlowArtifactsBatchUpsertResponse,
+            status_code=status.HTTP_200_OK,
         )
         r(
             "/routers",
@@ -498,6 +524,58 @@ class FlowsController:
             flow_version_id=flow_version_id,
             payload=payload,
             principal_id=auth.principal_id,
+        )
+
+    async def compose_deployment(
+        self,
+        flow_id: str,
+        flow_version_id: str,
+        payload: DeploymentComposeRequest,
+        auth: AuthContext = Depends(get_auth_context),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> DeploymentComposeResponse:
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
+            raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
+        if not idempotency_key or not idempotency_key.strip():
+            raise RouterValidationException(errors=["idempotency_key_required"])
+        return await self.service.compose_deployment(
+            tenant_id=auth.tenant_id,
+            payload=payload,
+            idempotency_key=idempotency_key.strip(),
+        )
+
+    async def batch_upsert_artifacts(
+        self,
+        flow_id: str,
+        flow_version_id: str,
+        payload: FlowArtifactsBatchUpsertRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> FlowArtifactsBatchUpsertResponse:
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
+            raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
+        return await self.service.batch_upsert_artifacts(
+            tenant_id=auth.tenant_id,
+            payload=payload,
+        )
+
+    async def validate_compose_deployment(
+        self,
+        flow_id: str,
+        flow_version_id: str,
+        payload: DeploymentComposeRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> DeploymentComposeValidateResponse:
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
+            flow_version_id
+        ):
+            raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
+        return await self.service.validate_compose_deployment(
+            tenant_id=auth.tenant_id,
+            payload=payload,
         )
 
     async def list_routers(

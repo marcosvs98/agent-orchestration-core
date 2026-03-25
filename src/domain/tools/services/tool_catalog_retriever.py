@@ -4,9 +4,16 @@ from typing import Any
 from uuid import UUID
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.rag.schemas import RagContext
+from domain.rag.schemas.rag import RagCorpusKind
 from domain.rag.services.rag_runtime_service import RagRuntimeService
+from domain.tools.repositories.tools_repository import ToolsRepository
 from domain.tools.schemas.tool_discovery import ToolDiscoveryCandidate
 from domain.tools.schemas.tools import AvailableTool
+
+MAX_TOOL_CATALOG_TOP_K = 5
+TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER = 3
+TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP = 0.42
 
 
 class ToolCatalogRetriever:
@@ -14,9 +21,11 @@ class ToolCatalogRetriever:
         self,
         rag_runtime_service: RagRuntimeService,
         tracer: RuntimeTracerPort,
+        tools_repository: ToolsRepository,
     ) -> None:
         self.rag_runtime_service = rag_runtime_service
         self.tracer = tracer
+        self.tools_repository = tools_repository
 
     async def retrieve_candidates(
         self,
@@ -24,44 +33,46 @@ class ToolCatalogRetriever:
         tenant_id: UUID,
         rag_config_id: UUID,
         user_input: str,
-        available_tools: list[AvailableTool],
-        top_k: int,
+        top_k: int | None = None,
         tool_intent_filter: str | None = None,
     ) -> tuple[list[AvailableTool], list[dict[str, Any]]]:
-        if not available_tools or not user_input:
-            return available_tools[:top_k], []
-        lookup: dict[UUID, AvailableTool] = {}
-        for tool in available_tools:
-            lookup[tool.tool_config_id] = tool
+        k = MAX_TOOL_CATALOG_TOP_K
+        if top_k is not None:
+            k = min(max(1, top_k), MAX_TOOL_CATALOG_TOP_K)
+        if not user_input:
+            return [], []
         with self.tracer.observe(
             as_type="retriever",
             name="domain.tools.tool_catalog_retriever.retrieve_candidates",
             input={
                 "tenant_id": str(tenant_id),
                 "rag_config_id": str(rag_config_id),
-                "available_count": len(available_tools),
-                "top_k": top_k,
+                "top_k": k,
             },
         ) as retrieve_handle:
             filters_override: dict[str, object] = {
                 "source": "tool_catalog",
                 "doc_type": "tool_catalog",
-                "category": "TOOL_CATALOG",
+                "category": RagCorpusKind.TOOL_CATALOG.value,
             }
             if tool_intent_filter:
                 filters_override["tool_intent"] = tool_intent_filter
-            context = await self.rag_runtime_service.get_context(
+            context: RagContext = await self.rag_runtime_service.get_context(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
                 user_id=None,
                 user_input=user_input,
                 filters_override=filters_override,
-                top_k_override=max(top_k * 3, top_k),
+                top_k_override=max(
+                    k * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER,
+                    k,
+                ),
+                similarity_threshold_cap=TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP,
             )
-            ranked = self._rank_candidates(
-                context_items=context.context_items, lookup=lookup
+            ranked: list[ToolDiscoveryCandidate] = self._rank_from_rag_global(
+                context_items=context.context_items,
             )
-            selected = ranked[:top_k]
+            selected: list[ToolDiscoveryCandidate] = ranked[:k]
             if not selected:
                 evidence_empty: list[dict[str, Any]] = []
                 if retrieve_handle:
@@ -77,17 +88,25 @@ class ToolCatalogRetriever:
                         }
                     )
                 return [], evidence_empty
-            candidates = []
-            evidence = []
+            ordered_ids = [item.tool_config_id for item in selected]
+            score_by_id = {item.tool_config_id: item.score for item in selected}
+            rows = await self.tools_repository.list_published_tool_configs_with_tools_by_config_ids(
+                tenant_id=tenant_id,
+                tool_config_ids=ordered_ids,
+            )
+            by_config_id: dict[UUID, tuple[Any, Any]] = {}
+            for cfg, tool in rows:
+                by_config_id[cfg.tool_config_id] = (cfg, tool)
+            candidates: list[AvailableTool] = []
+            evidence: list[dict[str, Any]] = []
             for item in selected:
-                base = lookup[item.tool_config_id]
-                candidates.append(
-                    base.model_copy(
-                        update={
-                            "retrieval_score": item.score,
-                        }
-                    )
-                )
+                row = by_config_id.get(item.tool_config_id)
+                if row is None:
+                    continue
+                cfg, tool = row
+                score = score_by_id.get(item.tool_config_id, 0.0)
+                at = self._to_available_tool(cfg, tool, score)
+                candidates.append(at)
                 evidence.append(
                     {
                         "tool_config_id": str(item.tool_config_id),
@@ -118,11 +137,31 @@ class ToolCatalogRetriever:
                 )
             return candidates, evidence
 
-    def _rank_candidates(
+    @staticmethod
+    def _to_available_tool(
+        config: Any,
+        tool: Any,
+        retrieval_score: float,
+    ) -> AvailableTool:
+        config_data = config.config or {}
+        return AvailableTool.model_validate(
+            {
+                "name": tool.name,
+                "tool_id": config.tool_id,
+                "tool_config_id": config.tool_config_id,
+                "summary": config_data.get("summary"),
+                "description": config_data.get("description"),
+                "operation_id": config_data.get("operation_id"),
+                "method": config_data.get("method"),
+                "path": config_data.get("path"),
+                "retrieval_score": retrieval_score,
+            }
+        )
+
+    def _rank_from_rag_global(
         self,
         *,
         context_items: list[Any],
-        lookup: dict[UUID, AvailableTool],
     ) -> list[ToolDiscoveryCandidate]:
         best_by_tool: dict[UUID, ToolDiscoveryCandidate] = {}
         for item in context_items:
@@ -135,10 +174,8 @@ class ToolCatalogRetriever:
                 tool_config_uuid = UUID(str(tool_config_id))
             except ValueError:
                 continue
-            if tool_config_uuid not in lookup:
-                continue
-            score = float(item_dump.get("score") or 0.0)
-            candidate = ToolDiscoveryCandidate(
+            score: float = float(item_dump.get("score") or 0.0)
+            candidate: ToolDiscoveryCandidate = ToolDiscoveryCandidate(
                 tool_config_id=tool_config_uuid,
                 score=score,
                 content=str(item_dump.get("content") or ""),

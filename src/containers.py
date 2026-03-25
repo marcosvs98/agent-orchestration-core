@@ -48,6 +48,7 @@ from domain.execution.controllers.execution_plane_controller import (
 from domain.execution.services.execution_service import ExecutionService
 from domain.execution.services.state_machine import RunLifecycleStateMachine
 from domain.execution.repositories.execution_repository import ExecutionRepository
+from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.execution.adapters.idempotency_service import IdempotencyService
 from services.execution_boundary import ExecutionBoundary
 from infra.http_tool_executor import HttpToolExecutor
@@ -246,6 +247,7 @@ class AuthContainer(containers.DeclarativeContainer):
 class FlowsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
+    rag = providers.DependenciesContainer()
 
     flows_repository = providers.Factory(
         FlowsRepository,
@@ -261,11 +263,19 @@ class FlowsContainer(containers.DeclarativeContainer):
         database_connection=core.database_connection,
         tracer=adapters.tracer,
     )
+    flows_idempotency_service = providers.Factory(
+        IdempotencyService,
+        redis_adapter=adapters.redis_adapter,
+        tracer=adapters.tracer,
+    )
     flows_service = providers.Factory(
         FlowsService,
         repository=flows_repository,
         limit_policy_repository=execution_limit_policy_repository,
         authoring_events=authoring_event_repository,
+        idempotency=flows_idempotency_service,
+        rag_repository=rag.rag_repository,
+        rag_policy_service=rag.rag_policy_service,
     )
     flows_controller = providers.Factory(FlowsController, service=flows_service)
 
@@ -301,6 +311,7 @@ class ToolsContainer(containers.DeclarativeContainer):
         ToolsRepository,
         database_connection=core.database_connection,
         tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
     )
     agents_repository = providers.Factory(
         AgentsRepository,
@@ -355,8 +366,23 @@ class RAGContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         cache_adapter=adapters.redis_adapter,
     )
+    rag_execution_repository = providers.Factory(
+        ExecutionRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+        cache_adapter=adapters.redis_adapter,
+    )
+    rag_policy_service = providers.Factory(
+        RagPolicyService,
+        repository=rag_execution_repository,
+    )
     authoring_event_repository = providers.Factory(
         AuthoringEventRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    ai_repository = providers.Factory(
+        AIRepository,
         database_connection=core.database_connection,
         tracer=adapters.tracer,
     )
@@ -378,6 +404,8 @@ class RAGContainer(containers.DeclarativeContainer):
         repository=rag_repository,
         embedding_adapter=embedding_adapter,
         tracer=adapters.tracer,
+        rag_policy_service=rag_policy_service,
+        ai_repository=ai_repository,
     )
     rag_controller = providers.Factory(
         RagController, service=rag_service, runtime_service=rag_runtime_service
@@ -468,7 +496,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
                 "timeout_ms": 1000,
             },
             "fallback_enabled": True,
-            "prompt_key": "InputModerationNode",
+            "prompt_key": "ContentModeration",
             "temperature": 0.0,
             "max_tokens": 18,
         }
@@ -487,7 +515,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
         prompt_text=None,
         output_schema=None,
         prompt_service=prompt_service,
-        prompt_key="InputModerationNode",
+        prompt_key="ContentModeration",
         model_alias="slm-local-moderation",
         slm_timeout_s=0.3,
         temperature=0.0,
@@ -762,11 +790,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
     adapters = providers.Container(AdaptersContainer)
 
     auth = providers.Container(AuthContainer, core=core, adapters=adapters)
-    flows = providers.Container(FlowsContainer, core=core, adapters=adapters)
+    rag = providers.Container(RAGContainer, core=core, adapters=adapters)
+    flows = providers.Container(FlowsContainer, core=core, adapters=adapters, rag=rag)
     agents = providers.Container(AgentsContainer, core=core, adapters=adapters)
     tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
     ai_policy = providers.Container(AIPolicyContainer, core=core, adapters=adapters)
-    rag = providers.Container(RAGContainer, core=core, adapters=adapters)
     human_sla = providers.Container(HumanSLAContainer, core=core)
     execution = providers.Container(
         ExecutionContainer,

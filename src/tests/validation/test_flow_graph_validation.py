@@ -13,8 +13,8 @@ def test_flow_graph_validator_accepts_valid_graph():
     definition = FlowGraphDefinition(
         start_node="A",
         nodes={
-            "A": FlowGraphNodeSpec(type="IntentToolSelectionNode"),
-            "B": FlowGraphNodeSpec(type="ResponseNode"),
+            "A": FlowGraphNodeSpec(type="ToolResolver"),
+            "B": FlowGraphNodeSpec(type="ResponseBuilder"),
         },
         edges=[FlowGraphEdge(from_node="A", to_node="B", condition="1 == 1")],
     )
@@ -25,9 +25,9 @@ def test_flow_graph_validator_rejects_unreachable():
     definition = FlowGraphDefinition(
         start_node="A",
         nodes={
-            "A": FlowGraphNodeSpec(type="IntentToolSelectionNode"),
-            "B": FlowGraphNodeSpec(type="ResponseNode"),
-            "C": FlowGraphNodeSpec(type="FallbackNode"),
+            "A": FlowGraphNodeSpec(type="ToolResolver"),
+            "B": FlowGraphNodeSpec(type="ResponseBuilder"),
+            "C": FlowGraphNodeSpec(type="HumanFallback"),
         },
         edges=[FlowGraphEdge(from_node="A", to_node="B", condition="1 == 1")],
     )

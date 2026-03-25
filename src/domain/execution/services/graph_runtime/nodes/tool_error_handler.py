@@ -25,7 +25,7 @@ class ToolErrorHandlerNode(NodeExecutor):
     ) -> NodeResult:
         config = config or {}
         current_state = context.state or {}
-        tool_out = context.get_node_output(NodeType.ToolExecutionNode)
+        tool_out = context.get_node_output(NodeType.ToolExecutor)
         results = tool_out.get("result")
         if not isinstance(results, list) and isinstance(context.node_output, dict):
             results = context.node_output.get("result")

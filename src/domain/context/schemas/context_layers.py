@@ -64,14 +64,15 @@ class LayerUsageDecision(BaseModel):
         cls,
         *,
         allow_rag_tenant: bool,
-        allow_user_memory: bool,
+        allow_user_memory_structured: bool,
+        allow_user_memory_vector: bool,
         allow_session_context: bool,
         allow_memory_write: bool,
     ) -> "LayerUsageDecision":
         return cls(
             allow_session_context=allow_session_context,
             allow_tenant_knowledge=allow_rag_tenant,
-            allow_user_memory_structured=allow_user_memory,
-            allow_user_memory_vector=allow_user_memory,
+            allow_user_memory_structured=allow_user_memory_structured,
+            allow_user_memory_vector=allow_user_memory_vector,
             allow_memory_write=allow_memory_write,
         )

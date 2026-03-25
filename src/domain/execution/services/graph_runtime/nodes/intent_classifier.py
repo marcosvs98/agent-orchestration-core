@@ -5,9 +5,10 @@ from uuid import UUID
 
 from domain.agents.repositories.agents_repository import AgentsRepository
 from domain.execution.ports.runtime_tracer import ObservationHandle, RuntimeTracerPort
-from domain.execution.services.graph_runtime.nodes.intent_detection_llm_fallback import (
-    IntentDetectionLLMFallback,
+from domain.execution.services.graph_runtime.nodes.intent_classifier_llm_fallback import (
+    IntentClassifierLLMFallback,
 )
+from domain.execution.services.graph_runtime.nodes._common import read_user_input
 from domain.execution.services.graph_runtime.nodes.intent_examples_retriever import (
     IntentExamplesRetriever,
 )
@@ -25,8 +26,9 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.85
 DEFAULT_TOP_K = 1
 
 
-class IntentDetectionNode:
-    node_type = NodeType.IntentDetectionNode
+# TODO:  Avaliar isso
+class IntentClassifier:
+    node_type = NodeType.IntentClassifier
     side_effect = False
     deterministic = False
 
@@ -36,7 +38,7 @@ class IntentDetectionNode:
         tracer: RuntimeTracerPort,
         agents_repository: AgentsRepository | None,
         intent_examples_retriever: IntentExamplesRetriever | None,
-        llm_fallback: IntentDetectionLLMFallback | None = None,
+        llm_fallback: IntentClassifierLLMFallback | None = None,
     ) -> None:
         self.tracer = tracer
         self.agents_repository = agents_repository
@@ -47,11 +49,9 @@ class IntentDetectionNode:
         self, context: ExecutionContext, config: dict[str, Any] | None = None
     ) -> NodeResult:
         cfg = config or {}
-        confidence_threshold = self._config_float(
-            cfg, "confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD
-        )
-        top_k = self._config_int(cfg, "top_k", DEFAULT_TOP_K)
-        user_input = str((context.input_payload or {}).get("user_input", "") or "")
+        confidence_threshold = cfg.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD)
+        top_k = cfg.get("top_k", DEFAULT_TOP_K)
+        user_input = read_user_input(context)
 
         with self.tracer.observe(
             as_type="chain",
@@ -218,6 +218,7 @@ class IntentDetectionNode:
         confidence: float,
         context: ExecutionContext,
     ) -> NodeResult:
+        # Todo: if we change the output_schema of the database this will break. Why fix it ?
         output = {
             "result": [
                 {
@@ -267,35 +268,9 @@ class IntentDetectionNode:
             node_id = UUID(context.current_node_id)
         except (ValueError, TypeError):
             return None
-        agent_version_id = await self.agents_repository.get_agent_version_id_by_node_id(
+        return await self.agents_repository.resolve_effective_rag_config_id_for_node(
             node_id
         )
-        if not agent_version_id:
-            return None
-        agent_version = await self.agents_repository.get_agent_version(agent_version_id)
-        if agent_version is None:
-            return None
-        return agent_version.rag_config_id
-
-    @staticmethod
-    def _config_float(config: dict[str, Any], key: str, default: float) -> float:
-        raw = config.get(key)
-        if raw is None:
-            return default
-        if isinstance(raw, (int, float)):
-            return float(raw)
-        return default
-
-    @staticmethod
-    def _config_int(config: dict[str, Any], key: str, default: int) -> int:
-        raw = config.get(key)
-        if raw is None:
-            return default
-        if isinstance(raw, int):
-            return raw
-        if isinstance(raw, float):
-            return int(raw)
-        return default
 
     @staticmethod
     def _extract_intent_type(result: NodeResult) -> str | None:

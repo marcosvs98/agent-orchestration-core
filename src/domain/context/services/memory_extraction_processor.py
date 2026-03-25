@@ -25,26 +25,28 @@ _DEFAULT_LLM_TASK_TYPE = LLMTaskType.MEMORY_EXTRACTION
 
 
 class MemoryExtractionProcessor:
-    """Post-execution processor: extracts memory items from flow output via LLM and persists via MemoryWriteService."""
-
     def __init__(
         self,
         llm_executor: LLMExecutorPort | None,
         memory_write_service: Any,
         tracer: RuntimeTracerPort,
+        memory_policy_service: Any,
     ) -> None:
         self.llm_executor = llm_executor
         self.memory_write_service = memory_write_service
         self.tracer = tracer
+        self.memory_policy_service = memory_policy_service
 
     def _resolve_task_type(
         self, task_type_value: str | LLMTaskType | None
     ) -> LLMTaskType:
-        if isinstance(task_type_value, LLMTaskType):
-            return task_type_value
-        if not task_type_value or not isinstance(task_type_value, str):
+        if task_type_value is None:
             return _DEFAULT_LLM_TASK_TYPE
-        key = task_type_value.strip()
+        if task_type_value in LLMTaskType:
+            return LLMTaskType(str(task_type_value))
+        key = str(task_type_value).strip()
+        if not key:
+            return _DEFAULT_LLM_TASK_TYPE
         return _LLM_TASK_TYPE_BY_VALUE.get(key, _DEFAULT_LLM_TASK_TYPE)
 
     async def execute(
@@ -60,12 +62,72 @@ class MemoryExtractionProcessor:
         event_context: MemoryWriteEventContext,
         trace_id: UUID,
     ) -> None:
-        """Extract memory items from flow_output using config and write via memory_write_service."""
         try:
             config = MemoryExtractionConfig.model_validate(config_payload)
         except (ValidationError, TypeError):
+            with self.tracer.observe(
+                as_type="event",
+                name="domain.context.memory_extraction.skipped",
+                input={
+                    "reason_code": "invalid_config",
+                    "tenant_id": str(tenant_id),
+                    "flow_run_id": str(flow_run_id),
+                },
+            ):
+                pass
             return
-        if not config.enabled or not self.llm_executor or not self.memory_write_service:
+        if not config.enabled:
+            with self.tracer.observe(
+                as_type="event",
+                name="domain.context.memory_extraction.skipped",
+                input={
+                    "reason_code": "disabled",
+                    "tenant_id": str(tenant_id),
+                    "flow_run_id": str(flow_run_id),
+                },
+            ):
+                pass
+            return
+        if not self.llm_executor:
+            with self.tracer.observe(
+                as_type="event",
+                name="domain.context.memory_extraction.skipped",
+                input={
+                    "reason_code": "missing_llm_executor",
+                    "tenant_id": str(tenant_id),
+                    "flow_run_id": str(flow_run_id),
+                },
+            ):
+                pass
+            return
+        if not self.memory_write_service:
+            with self.tracer.observe(
+                as_type="event",
+                name="domain.context.memory_extraction.skipped",
+                input={
+                    "reason_code": "missing_memory_write_service",
+                    "tenant_id": str(tenant_id),
+                    "flow_run_id": str(flow_run_id),
+                },
+            ):
+                pass
+            return
+        resolved_memory = await self.memory_policy_service.resolve(
+            tenant_id=tenant_id,
+        )
+        definition = resolved_memory.definition
+        allowed_sources = definition.allowed_sources if definition is not None else []
+        if MemoryPolicySource.INFERRED_LLM not in allowed_sources:
+            with self.tracer.observe(
+                as_type="event",
+                name="domain.context.memory_extraction.skipped",
+                input={
+                    "reason_code": "inferred_llm_not_allowed",
+                    "tenant_id": str(tenant_id),
+                    "flow_run_id": str(flow_run_id),
+                },
+            ):
+                pass
             return
         with self.tracer.observe(
             as_type="span",
@@ -118,13 +180,39 @@ class MemoryExtractionProcessor:
                     policy_llm=None,
                 )
             except Exception:
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.context.memory_extraction.skipped",
+                    input={
+                        "reason_code": "llm_execution_failed",
+                        "tenant_id": str(tenant_id),
+                        "flow_run_id": str(flow_run_id),
+                    },
+                ):
+                    pass
                 if span_handle:
                     span_handle.failure()
                 return
-            raw_output = result.output if isinstance(result.output, dict) else {}
+            raw_out = result.output
+            if raw_out is None:
+                raw_output: dict[str, Any] = {}
+            elif type(raw_out) is dict:
+                raw_output = raw_out
+            else:
+                raw_output = {}
             try:
                 parsed = MemoryExtractionLLMOutput.model_validate(raw_output)
             except (ValidationError, TypeError):
+                with self.tracer.observe(
+                    as_type="event",
+                    name="domain.context.memory_extraction.skipped",
+                    input={
+                        "reason_code": "llm_output_validation_failed",
+                        "tenant_id": str(tenant_id),
+                        "flow_run_id": str(flow_run_id),
+                    },
+                ):
+                    pass
                 if span_handle:
                     span_handle.failure(
                         output={"error": "llm_output_validation_failed"}

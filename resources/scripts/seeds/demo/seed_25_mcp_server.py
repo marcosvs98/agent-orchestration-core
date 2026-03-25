@@ -25,6 +25,8 @@ from infra.database.models.mcp_registry.mcp_server_vector_store import (
 )
 
 from seeds.demo.ids import (
+    FLOW_DEPLOYMENT_DEFAULT_ID,
+    FLOW_SNAPSHOT_V1_ID,
     MCP_SEED_DEMO_API_KEY,
     MCP_SERVER_DEMO_ID,
     TENANT_DEMO_ID,
@@ -54,12 +56,16 @@ async def seed_mcp_server() -> None:
                 tenant_id=TENANT_DEMO_ID,
                 name="demo-mcp-server",
                 status="ACTIVE",
+                flow_snapshot_id=FLOW_SNAPSHOT_V1_ID,
+                flow_deployment_id=FLOW_DEPLOYMENT_DEFAULT_ID,
             )
             session.add(srv)
         else:
             srv.tenant_id = TENANT_DEMO_ID
             srv.name = "demo-mcp-server"
             srv.status = "ACTIVE"
+            srv.flow_snapshot_id = FLOW_SNAPSHOT_V1_ID
+            srv.flow_deployment_id = FLOW_DEPLOYMENT_DEFAULT_ID
             session.add(srv)
         await session.flush()
         await session.execute(

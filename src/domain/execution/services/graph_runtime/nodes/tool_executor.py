@@ -7,9 +7,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ValidationError
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from domain.execution.services.graph_runtime.schemas.tool_execution import (
+from domain.execution.services.graph_runtime.schemas.tool_executor import (
     ToolExecutionMode,
-    ToolExecutionNodeOutput,
+    ToolExecutorOutput,
     ToolRunInput,
     ToolRunResult,
 )
@@ -42,8 +42,8 @@ class _ToolSelectionItem(BaseModel):
     selected_tool: _SelectedTool
 
 
-class ToolExecutionNode(NodeExecutor):
-    node_type = NodeType.ToolExecutionNode
+class ToolExecutor(NodeExecutor):
+    node_type = NodeType.ToolExecutor
     side_effect = True
     deterministic = False
 
@@ -81,16 +81,14 @@ class ToolExecutionNode(NodeExecutor):
             )
 
         runtime_policy = (context.metadata or {}).get("runtime_policy") or {}
-        limits = (
-            runtime_policy.get("limits") if isinstance(runtime_policy, dict) else {}
-        )
-
-        max_concurrency = max(
-            1,
-            int(limits.get("tool_fanout_max_concurrency", 4))
-            if isinstance(limits, dict)
-            else 4,
-        )
+        if not isinstance(runtime_policy, dict):
+            runtime_policy = {}
+        limits_raw = runtime_policy.get("limits")
+        limits = limits_raw if isinstance(limits_raw, dict) else {}
+        raw_fanout = limits.get("tool_fanout_max_concurrency", 4)
+        if raw_fanout is None:
+            raw_fanout = 4
+        max_concurrency = max(1, int(raw_fanout))
 
         semaphore = asyncio.Semaphore(max_concurrency)
 
@@ -102,7 +100,7 @@ class ToolExecutionNode(NodeExecutor):
         gathered_results = await asyncio.gather(*tasks) if tasks else []
         results = [*precomputed_results, *gathered_results]
 
-        execution_output = ToolExecutionNodeOutput(result=list(results))
+        execution_output = ToolExecutorOutput(result=list(results))
         data = execution_output.model_dump(mode="json")
 
         next_state = {**(context.state or {}), self.node_type.value: data}
@@ -205,7 +203,7 @@ class ToolExecutionNode(NodeExecutor):
     async def _parse_inputs_from_context(
         self, context: ExecutionContext
     ) -> tuple[list[ToolRunInput], list[ToolRunResult]]:
-        param_out = context.get_node_output(NodeType.ParamExtractionNode)
+        param_out = context.get_node_output(NodeType.ToolInputFiller)
         raw_result = param_out.get("result")
         strict_mode = await self._strict_contract_mode(context)
 
@@ -236,7 +234,7 @@ class ToolExecutionNode(NodeExecutor):
 
         if not ready_operations:
             return [], []
-        tool_slice = context.get_node_output(NodeType.ToolSelectionNode)
+        tool_slice = context.get_node_output(NodeType.ToolResolver)
 
         configs_by_name = await self._build_tool_config_map(tool_slice, strict_mode)
 

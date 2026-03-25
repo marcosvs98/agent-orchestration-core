@@ -25,6 +25,16 @@ from infra.database.models.flow.flow_graph_draft import (
 from infra.database.models.flow.flow_graph_snapshot import (
     FlowGraphSnapshot as FlowGraphSnapshotModel,
 )
+from infra.database.models.flow.flow_snapshot import FlowSnapshot as FlowSnapshotModel
+from infra.database.models.flow.flow_deployment import (
+    FlowDeployment as FlowDeploymentModel,
+)
+from infra.database.models.flow.snapshot_effective_policy import (
+    SnapshotEffectivePolicy as SnapshotEffectivePolicyModel,
+)
+from infra.database.models.flow.snapshot_binding import (
+    SnapshotBinding as SnapshotBindingModel,
+)
 from infra.database.models.routing.routing_rule import RoutingRule as RoutingRuleModel
 from infra.database.models.routing.condition_expression import (
     ConditionExpression as ConditionExpressionModel,
@@ -314,6 +324,152 @@ class FlowsRepository:
             )
             return result.scalar_one_or_none()
 
+    async def upsert_flow_snapshot(
+        self,
+        *,
+        flow_version_id: UUID,
+        snapshot_schema_version: int,
+        snapshot_hash: str,
+        snapshot: dict,
+        runtime_policy: dict,
+        tool_catalog: dict,
+        llm_provider_config_hash: str | None,
+        created_by: str,
+        frozen_rag_config_id: UUID | None = None,
+        frozen_rag_chunking_rule_id: UUID | None = None,
+        frozen_rag_policy_version_id: UUID | None = None,
+        frozen_rag_materialization_hash: str | None = None,
+    ) -> FlowSnapshotModel:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(FlowSnapshotModel).where(
+                    FlowSnapshotModel.flow_version_id == flow_version_id
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing is None:
+                instance = FlowSnapshotModel(
+                    flow_version_id=flow_version_id,
+                    snapshot_schema_version=snapshot_schema_version,
+                    snapshot_hash=snapshot_hash,
+                    snapshot=snapshot,
+                    frozen_rag_config_id=frozen_rag_config_id,
+                    frozen_rag_chunking_rule_id=frozen_rag_chunking_rule_id,
+                    frozen_rag_policy_version_id=frozen_rag_policy_version_id,
+                    frozen_rag_materialization_hash=frozen_rag_materialization_hash,
+                    runtime_policy=runtime_policy,
+                    tool_catalog=tool_catalog,
+                    llm_provider_config_hash=llm_provider_config_hash,
+                    created_by=created_by,
+                )
+                session.add(instance)
+                await session.commit()
+                await session.refresh(instance)
+                return instance
+            existing.snapshot_schema_version = snapshot_schema_version
+            existing.snapshot_hash = snapshot_hash
+            existing.snapshot = snapshot
+            existing.frozen_rag_config_id = frozen_rag_config_id
+            existing.frozen_rag_chunking_rule_id = frozen_rag_chunking_rule_id
+            existing.frozen_rag_policy_version_id = frozen_rag_policy_version_id
+            existing.frozen_rag_materialization_hash = frozen_rag_materialization_hash
+            existing.runtime_policy = runtime_policy
+            existing.tool_catalog = tool_catalog
+            existing.llm_provider_config_hash = llm_provider_config_hash
+            existing.created_by = created_by
+            await session.commit()
+            await session.refresh(existing)
+            return existing
+
+    async def get_flow_snapshot_by_flow_version(
+        self, flow_version_id: UUID
+    ) -> FlowSnapshotModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(FlowSnapshotModel).where(
+                    FlowSnapshotModel.flow_version_id == flow_version_id
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def upsert_snapshot_effective_policy(
+        self, *, flow_snapshot_id: UUID, policy_hash: str, definition: dict
+    ) -> SnapshotEffectivePolicyModel:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(SnapshotEffectivePolicyModel).where(
+                    SnapshotEffectivePolicyModel.flow_snapshot_id == flow_snapshot_id
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing is None:
+                instance = SnapshotEffectivePolicyModel(
+                    flow_snapshot_id=flow_snapshot_id,
+                    policy_hash=policy_hash,
+                    definition=definition,
+                )
+                session.add(instance)
+                await session.commit()
+                return instance
+            existing.policy_hash = policy_hash
+            existing.definition = definition
+            await session.commit()
+            return existing
+
+    async def replace_snapshot_bindings(
+        self, *, flow_snapshot_id: UUID, bindings: list[dict]
+    ) -> None:
+        async with self.db.get_session() as session:
+            await session.execute(
+                sa.delete(SnapshotBindingModel).where(
+                    SnapshotBindingModel.flow_snapshot_id == flow_snapshot_id
+                )
+            )
+            for binding in bindings:
+                session.add(
+                    SnapshotBindingModel(
+                        flow_snapshot_id=flow_snapshot_id,
+                        binding_key=binding["binding_key"],
+                        value_type=binding["value_type"],
+                        source_kind=binding["source_kind"],
+                        value=binding["value"],
+                    )
+                )
+            await session.commit()
+
+    async def upsert_flow_deployment(
+        self,
+        *,
+        flow_id: UUID,
+        flow_version_id: UUID,
+        flow_snapshot_id: UUID,
+        environment: str,
+        deployed_by: str,
+    ) -> FlowDeploymentModel:
+        async with self.db.get_session() as session:
+            active = await session.execute(
+                select(FlowDeploymentModel).where(
+                    FlowDeploymentModel.flow_id == flow_id,
+                    FlowDeploymentModel.environment == environment,
+                    FlowDeploymentModel.status == "ACTIVE",
+                )
+            )
+            active_model = active.scalar_one_or_none()
+            if active_model:
+                active_model.status = "INACTIVE"
+            instance = FlowDeploymentModel(
+                flow_id=flow_id,
+                flow_version_id=flow_version_id,
+                flow_snapshot_id=flow_snapshot_id,
+                environment=environment,
+                status="ACTIVE",
+                deployed_by=deployed_by,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
     async def list_flows(self, *, tenant_id: UUID, limit: int = 200) -> list[FlowModel]:
         async with self.db.get_session() as session:
             stmt = (
@@ -446,7 +602,9 @@ class FlowsRepository:
         flow_version_id: UUID,
         node_prompt_id: UUID,
         allow_rag_tenant: bool,
-        allow_user_memory: bool,
+        allow_user_memory_structured: bool,
+        allow_user_memory_vector: bool,
+        rag_config_id: UUID | None,
         allow_session_context: bool,
         allow_memory_write: bool,
         created_by: str,
@@ -463,7 +621,9 @@ class FlowsRepository:
                 flow_version_id=flow_version_id,
                 node_prompt_id=node_prompt_id,
                 allow_rag_tenant=allow_rag_tenant,
-                allow_user_memory=allow_user_memory,
+                allow_user_memory_structured=allow_user_memory_structured,
+                allow_user_memory_vector=allow_user_memory_vector,
+                rag_config_id=rag_config_id,
                 allow_session_context=allow_session_context,
                 allow_memory_write=allow_memory_write,
             )
@@ -481,7 +641,9 @@ class FlowsRepository:
         source_node_template_id: UUID,
         node_prompt_id: UUID,
         allow_rag_tenant: bool,
-        allow_user_memory: bool,
+        allow_user_memory_structured: bool,
+        allow_user_memory_vector: bool,
+        rag_config_id: UUID | None,
         allow_session_context: bool,
         allow_memory_write: bool,
         created_by: str,
@@ -498,7 +660,9 @@ class FlowsRepository:
                 flow_version_id=flow_version_id,
                 node_prompt_id=node_prompt_id,
                 allow_rag_tenant=allow_rag_tenant,
-                allow_user_memory=allow_user_memory,
+                allow_user_memory_structured=allow_user_memory_structured,
+                allow_user_memory_vector=allow_user_memory_vector,
+                rag_config_id=rag_config_id,
                 allow_session_context=allow_session_context,
                 allow_memory_write=allow_memory_write,
                 node_type=node_type,
@@ -518,7 +682,9 @@ class FlowsRepository:
         config: dict | None,
         node_prompt_id: UUID,
         allow_rag_tenant: bool,
-        allow_user_memory: bool,
+        allow_user_memory_structured: bool,
+        allow_user_memory_vector: bool,
+        rag_config_id: UUID | None,
         allow_session_context: bool,
         allow_memory_write: bool,
         created_by: str,
@@ -535,7 +701,9 @@ class FlowsRepository:
                 flow_version_id=flow_version_id,
                 node_prompt_id=node_prompt_id,
                 allow_rag_tenant=allow_rag_tenant,
-                allow_user_memory=allow_user_memory,
+                allow_user_memory_structured=allow_user_memory_structured,
+                allow_user_memory_vector=allow_user_memory_vector,
+                rag_config_id=rag_config_id,
                 allow_session_context=allow_session_context,
                 allow_memory_write=allow_memory_write,
                 node_type=node_type,

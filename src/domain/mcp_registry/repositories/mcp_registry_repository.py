@@ -27,6 +27,12 @@ from infra.database.models.prompts.user_prompt import UserPrompt as UserPromptMo
 from infra.database.models.rag.vector_store import VectorStore as VectorStoreModel
 from infra.database.models.tool.tool import Tool as ToolModel
 from infra.database.models.tool.tool_config import ToolConfig as ToolConfigModel
+from infra.database.models.flow.flow_snapshot import FlowSnapshot as FlowSnapshotModel
+from infra.database.models.flow.flow_deployment import (
+    FlowDeployment as FlowDeploymentModel,
+)
+from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
+from infra.database.models.flow.flow import Flow as FlowModel
 
 
 def _mcp_prompt_slug(title: str, user_prompt_id: UUID) -> str:
@@ -87,6 +93,54 @@ class McpRegistryRepository:
             found = {row[0] for row in result.fetchall()}
             return len(found) == len(set(user_prompt_ids))
 
+    async def list_servers_by_tenant(self, *, tenant_id: UUID) -> list[McpServer]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(McpServer)
+                .where(McpServer.tenant_id == tenant_id)
+                .order_by(McpServer.created_at.desc())
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_server_by_tenant(
+        self, *, tenant_id: UUID, mcp_server_id: UUID
+    ) -> McpServer | None:
+        async with self.db.get_session() as session:
+            stmt = select(McpServer).where(
+                McpServer.tenant_id == tenant_id,
+                McpServer.mcp_server_id == mcp_server_id,
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def list_server_binding_ids(
+        self, *, mcp_server_id: UUID
+    ) -> tuple[list[UUID], list[UUID], list[UUID]]:
+        async with self.db.get_session() as session:
+            t_stmt = select(McpServerTool.tool_config_id).where(
+                McpServerTool.mcp_server_id == mcp_server_id
+            )
+            v_stmt = select(McpServerVectorStore.vector_store_id).where(
+                McpServerVectorStore.mcp_server_id == mcp_server_id
+            )
+            p_stmt = select(McpServerUserPrompt.user_prompt_id).where(
+                McpServerUserPrompt.mcp_server_id == mcp_server_id
+            )
+            tool_ids = sorted(
+                (r[0] for r in (await session.execute(t_stmt)).fetchall()),
+                key=lambda x: str(x),
+            )
+            vector_store_ids = sorted(
+                (r[0] for r in (await session.execute(v_stmt)).fetchall()),
+                key=lambda x: str(x),
+            )
+            user_prompt_ids = sorted(
+                (r[0] for r in (await session.execute(p_stmt)).fetchall()),
+                key=lambda x: str(x),
+            )
+            return tool_ids, vector_store_ids, user_prompt_ids
+
     async def create_server_with_bindings(
         self,
         *,
@@ -95,6 +149,8 @@ class McpRegistryRepository:
         tool_config_ids: list[UUID],
         vector_store_ids: list[UUID],
         user_prompt_ids: list[UUID],
+        flow_snapshot_id: UUID | None,
+        flow_deployment_id: UUID | None,
     ) -> tuple[McpServer, str]:
         raw_key = secrets.token_urlsafe(32)
         key_hash = self.hash_api_key(raw_key)
@@ -104,6 +160,8 @@ class McpRegistryRepository:
                 tenant_id=tenant_id,
                 name=name,
                 status="ACTIVE",
+                flow_snapshot_id=flow_snapshot_id,
+                flow_deployment_id=flow_deployment_id,
             )
             session.add(server)
             await session.flush()
@@ -146,6 +204,45 @@ class McpRegistryRepository:
             await session.commit()
             await session.refresh(server)
             return server, raw_key
+
+    async def validate_flow_snapshot_tenant(
+        self, *, tenant_id: UUID, flow_snapshot_id: UUID | None
+    ) -> bool:
+        if flow_snapshot_id is None:
+            return True
+        async with self.db.get_session() as session:
+            stmt = (
+                select(FlowSnapshotModel.flow_snapshot_id)
+                .join(
+                    FlowVersionModel,
+                    FlowVersionModel.flow_version_id
+                    == FlowSnapshotModel.flow_version_id,
+                )
+                .join(FlowModel, FlowModel.flow_id == FlowVersionModel.flow_id)
+                .where(
+                    FlowSnapshotModel.flow_snapshot_id == flow_snapshot_id,
+                    FlowModel.tenant_id == tenant_id,
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none() is not None
+
+    async def validate_flow_deployment_tenant(
+        self, *, tenant_id: UUID, flow_deployment_id: UUID | None
+    ) -> bool:
+        if flow_deployment_id is None:
+            return True
+        async with self.db.get_session() as session:
+            stmt = (
+                select(FlowDeploymentModel.flow_deployment_id)
+                .join(FlowModel, FlowModel.flow_id == FlowDeploymentModel.flow_id)
+                .where(
+                    FlowDeploymentModel.flow_deployment_id == flow_deployment_id,
+                    FlowModel.tenant_id == tenant_id,
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none() is not None
 
     async def verify_api_key_and_load_bindings(
         self, *, mcp_server_id: UUID, api_key: str
@@ -195,6 +292,8 @@ class McpRegistryRepository:
                 tool_config_ids=frozenset(tools),
                 vector_store_ids=frozenset(vss),
                 user_prompt_ids=frozenset(ups),
+                flow_snapshot_id=server_row.flow_snapshot_id,
+                flow_deployment_id=server_row.flow_deployment_id,
             )
 
     async def fetch_mcp_server_build_spec(
@@ -215,9 +314,7 @@ class McpRegistryRepository:
                         ToolModel.tool_id == ToolConfigModel.tool_id,
                     )
                     .where(
-                        ToolConfigModel.tool_config_id.in_(
-                            list(state.tool_config_ids)
-                        ),
+                        ToolConfigModel.tool_config_id.in_(list(state.tool_config_ids)),
                         ToolConfigModel.tenant_id == state.tenant_id,
                     )
                 )
@@ -285,4 +382,6 @@ class McpRegistryRepository:
             tools=tuple(tool_rows),
             vector_store_ids=vss,
             prompts=tuple(prompt_rows),
+            flow_snapshot_id=state.flow_snapshot_id,
+            flow_deployment_id=state.flow_deployment_id,
         )

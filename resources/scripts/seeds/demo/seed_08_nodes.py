@@ -22,20 +22,23 @@ from seeds.demo.ids import (
     NODE_FALLBACK_SLA_ID,
     NODE_INPUT_MODERATION_ID,
     NODE_INTENT_ID,
+    NODE_MEMORY_COMMIT_ID,
     NODE_PRE_EXEC_VALIDATION_ID,
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_ERROR_HANDLER_ID,
     NODE_TOOL_EXEC_ID,
     NODE_TOOL_SELECTION_ID,
-    NODE_USER_CONTEXT_ENRICHMENT_ID,
+    NODE_MEMORY_PAYLOAD_SUMMARIZE_ID,
     PROMPT_CLARIFICATION_ID,
     PROMPT_FALLBACK_SLA_ID,
     PROMPT_INPUT_MODERATION_ID,
     PROMPT_INTENT_ID,
+    PROMPT_MEMORY_PAYLOAD_SUMMARIZE_ID,
     PROMPT_RESPONSE_ID,
     PROMPT_SLOT_ID,
     PROMPT_TOOL_SELECTION_ID,
+    RAG_CONFIG_DEMO_ID,
 )
 
 
@@ -56,17 +59,6 @@ class _ConfigWithLlm(BaseModel):
     llm: _LlmNodeConfig
 
 
-class _UserContextLayersConfig(BaseModel):
-    allow_tenant_knowledge: bool
-    allow_user_memory_structured: bool
-    allow_user_memory_vector: bool
-
-
-class _UserContextNodeConfig(BaseModel):
-    publish: bool
-    layers: _UserContextLayersConfig
-
-
 class _ModerationProviderConfig(BaseModel):
     provider: str
     model_alias: str
@@ -80,6 +72,24 @@ class _ModerationNodeConfig(BaseModel):
     prompt_key: str
     temperature: float
     max_tokens: int
+
+
+class _MemoryCommitNodeConfig(BaseModel):
+    schema_id: str
+    schema_version: int = 1
+    source: str = "explicit_user"
+    rag_config_id: str
+    data: dict[str, object] | None = None
+
+
+def _memory_commit_node_config() -> dict[str, object]:
+    return _MemoryCommitNodeConfig(
+        schema_id="user.preference.v1",
+        schema_version=1,
+        source="explicit_user",
+        rag_config_id=str(RAG_CONFIG_DEMO_ID),
+        data={"preference_key": "demo.memory_commit", "preference_value": "seed"},
+    ).model_dump(mode="json")
 
 
 def _llm_node_config(
@@ -111,15 +121,27 @@ def _llm_node_config(
     ).model_dump(mode="json")
 
 
-def _user_context_node_config() -> dict[str, object]:
-    return _UserContextNodeConfig(
-        publish=True,
-        layers=_UserContextLayersConfig(
-            allow_tenant_knowledge=True,
-            allow_user_memory_structured=True,
-            allow_user_memory_vector=True,
-        ),
-    ).model_dump(mode="json")
+def _memory_payload_summarize_node_config() -> dict[str, object]:
+    base = _llm_node_config(
+        task_type="MEMORY_CONTENT_SUMMARIZE",
+        provider="OPENAI",
+        model_alias="gpt-4.1-mini",
+        temperature=0.0,
+        top_p=0.0,
+        use_system_prompt=False,
+        use_system_context=False,
+        use_conversation_history=False,
+        completion_budget={
+            "schema_factor": 1.2,
+            "safety_margin": 16,
+            "floor": 48,
+        },
+    )
+    return {
+        "source_node_id": str(NODE_SLOT_ID),
+        "min_payload_bytes_to_run": 4096,
+        **base,
+    }
 
 
 def _moderation_node_config() -> dict[str, object]:
@@ -135,7 +157,7 @@ def _moderation_node_config() -> dict[str, object]:
             timeout_ms=1000,
         ),
         fallback_enabled=True,
-        prompt_key="InputModerationNode",
+        prompt_key="ContentModeration",
         temperature=0.0,
         max_tokens=18,
     ).model_dump(mode="json")
@@ -146,17 +168,17 @@ async def seed_nodes() -> None:
         templates = [
             (
                 "catalog.input_moderation.v1",
-                "InputModerationNode",
+                "ContentModeration",
                 _moderation_node_config(),
             ),
             (
-                "catalog.user_context_enrichment.v1",
-                "UserContextEnrichmentNode",
-                _user_context_node_config(),
+                "catalog.memory_payload_summarize.v1",
+                "ContextSummarizer",
+                _memory_payload_summarize_node_config(),
             ),
             (
                 "catalog.intent_detection.v1",
-                "IntentDetectionNode",
+                "IntentClassifier",
                 _llm_node_config(
                     task_type="INTENT_SELECTION",
                     provider="OPENAI",
@@ -174,7 +196,7 @@ async def seed_nodes() -> None:
             ),
             (
                 "catalog.tool_selection.v1",
-                "ToolSelectionNode",
+                "ToolResolver",
                 _llm_node_config(
                     task_type="TOOL_SELECTION",
                     provider="OPENAI",
@@ -192,7 +214,7 @@ async def seed_nodes() -> None:
             ),
             (
                 "catalog.param_extraction.v1",
-                "ParamExtractionNode",
+                "ToolInputFiller",
                 _llm_node_config(
                     task_type="SLOT_FILLING",
                     provider="OPENAI",
@@ -210,7 +232,7 @@ async def seed_nodes() -> None:
             ),
             (
                 "catalog.clarification.v1",
-                "ClarificationNode",
+                "QueryClarifier",
                 _llm_node_config(
                     task_type="CLARIFICATION",
                     provider="OPENAI",
@@ -225,11 +247,11 @@ async def seed_nodes() -> None:
                     },
                 ),
             ),
-            ("catalog.tool_execution.v1", "ToolExecutionNode", {}),
+            ("catalog.tool_execution.v1", "ToolExecutor", {}),
             ("catalog.tool_error_handler.v1", "ToolErrorHandlerNode", {"max_retries": 1}),
             (
                 "catalog.fallback_sla.v1",
-                "FallbackNodeSLA",
+                "HumanFallback",
                 _llm_node_config(
                     task_type="FALLBACK_SLA",
                     provider="OPENAI",
@@ -248,7 +270,7 @@ async def seed_nodes() -> None:
             ),
             (
                 "catalog.response_composer.v1",
-                "ResponseComposer",
+                "ResponseBuilder",
                 _llm_node_config(
                     task_type="RESPONSE_RENDER",
                     provider="OPENAI",
@@ -262,6 +284,11 @@ async def seed_nodes() -> None:
                         "floor": 80,
                     },
                 ),
+            ),
+            (
+                "catalog.memory_commit.v1",
+                "MemoryCommitNode",
+                _memory_commit_node_config(),
             ),
         ]
 
@@ -305,9 +332,9 @@ async def seed_nodes() -> None:
                 _moderation_node_config(),
             ),
             (
-                NODE_USER_CONTEXT_ENRICHMENT_ID,
-                code_to_template.get("catalog.user_context_enrichment.v1"),
-                _user_context_node_config(),
+                NODE_MEMORY_PAYLOAD_SUMMARIZE_ID,
+                code_to_template.get("catalog.memory_payload_summarize.v1"),
+                _memory_payload_summarize_node_config(),
             ),
             (
                 NODE_INTENT_ID,
@@ -427,6 +454,11 @@ async def seed_nodes() -> None:
                 ),
             ),
             (
+                NODE_MEMORY_COMMIT_ID,
+                code_to_template.get("catalog.memory_commit.v1"),
+                _memory_commit_node_config(),
+            ),
+            (
                 NODE_RESPONSE_ID,
                 code_to_template.get("catalog.response_composer.v1"),
                 _llm_node_config(
@@ -447,7 +479,7 @@ async def seed_nodes() -> None:
 
         node_prompt_map: dict[object, object] = {
             NODE_INPUT_MODERATION_ID: PROMPT_INPUT_MODERATION_ID,
-            NODE_USER_CONTEXT_ENRICHMENT_ID: PROMPT_RESPONSE_ID,
+            NODE_MEMORY_PAYLOAD_SUMMARIZE_ID: PROMPT_MEMORY_PAYLOAD_SUMMARIZE_ID,
             NODE_INTENT_ID: PROMPT_INTENT_ID,
             NODE_CLARIFICATION_INTENT_ID: PROMPT_CLARIFICATION_ID,
             NODE_TOOL_SELECTION_ID: PROMPT_TOOL_SELECTION_ID,
@@ -455,6 +487,7 @@ async def seed_nodes() -> None:
             NODE_PRE_EXEC_VALIDATION_ID: PROMPT_RESPONSE_ID,
             NODE_TOOL_EXEC_ID: PROMPT_RESPONSE_ID,
             NODE_TOOL_ERROR_HANDLER_ID: PROMPT_RESPONSE_ID,
+            NODE_MEMORY_COMMIT_ID: PROMPT_RESPONSE_ID,
             NODE_RESPONSE_ID: PROMPT_RESPONSE_ID,
             NODE_CLARIFICATION_ID: PROMPT_CLARIFICATION_ID,
             NODE_FALLBACK_SLA_ID: PROMPT_FALLBACK_SLA_ID,
@@ -462,7 +495,7 @@ async def seed_nodes() -> None:
 
         node_flags: dict[object, tuple[bool, bool, bool, bool]] = {
             NODE_INPUT_MODERATION_ID: (False, False, False, False),
-            NODE_USER_CONTEXT_ENRICHMENT_ID: (False, False, False, False),
+            NODE_MEMORY_PAYLOAD_SUMMARIZE_ID: (False, False, False, False),
             NODE_INTENT_ID: (False, False, False, False),
             NODE_CLARIFICATION_INTENT_ID: (False, False, False, False),
             NODE_TOOL_SELECTION_ID: (False, False, False, False),
@@ -470,7 +503,8 @@ async def seed_nodes() -> None:
             NODE_PRE_EXEC_VALIDATION_ID: (False, False, False, False),
             NODE_TOOL_EXEC_ID: (False, False, False, False),
             NODE_TOOL_ERROR_HANDLER_ID: (False, False, False, False),
-            NODE_RESPONSE_ID: (True, True, True, True),
+            NODE_MEMORY_COMMIT_ID: (True, True, True, True),
+            NODE_RESPONSE_ID: (True, True, True, False),
             NODE_CLARIFICATION_ID: (False, False, False, False),
             NODE_FALLBACK_SLA_ID: (False, False, False, False),
         }
@@ -501,7 +535,9 @@ async def seed_nodes() -> None:
                 flow_version_id=FLOW_VERSION_V1_ID,
                 node_prompt_id=node_prompt_id,
                 allow_rag_tenant=allow_rag_tenant,
-                allow_user_memory=allow_user_memory,
+                allow_user_memory_structured=allow_user_memory,
+                allow_user_memory_vector=allow_user_memory,
+                rag_config_id=None,
                 allow_session_context=allow_session_context,
                 allow_memory_write=allow_memory_write,
                 node_type=node_type,

@@ -15,23 +15,21 @@ class PromptIntent(StrEnum):
     CLARIFICATION = "clarification"
     RESPONSE_RENDER = "response_render"
     FALLBACK_RESPONSE = "fallback_response"
+    MEMORY_CONTENT_SUMMARIZE = "memory_payload_summarize"
 
 
 class NodeType(StrEnum):
-    InputModerationNode = "InputModerationNode"
-    UserContextEnrichmentNode = "UserContextEnrichmentNode"
-
-    IntentDetectionNode = "IntentDetectionNode"
-    ParamExtractionNode = "ParamExtractionNode"
-
-    ClarificationNode = "ClarificationNode"
-
-    ToolSelectionNode = "ToolSelectionNode"
-    ToolExecutionNode = "ToolExecutionNode"
+    ContentModeration = "ContentModeration"
+    ContextSummarizer = "ContextSummarizer"
+    IntentClassifier = "IntentClassifier"
+    ToolInputFiller = "ToolInputFiller"
+    QueryClarifier = "QueryClarifier"
+    ToolResolver = "ToolResolver"
+    ToolExecutor = "ToolExecutor"
     ToolErrorHandlerNode = "ToolErrorHandlerNode"
-
-    ResponseComposer = "ResponseComposer"
-    FallbackNodeSLA = "FallbackNodeSLA"
+    ResponseBuilder = "ResponseBuilder"
+    HumanFallback = "HumanFallback"
+    MemoryCommitNode = "MemoryCommitNode"
 
 
 class NodePrompt(BaseModel):

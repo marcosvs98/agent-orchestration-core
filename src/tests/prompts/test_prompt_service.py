@@ -21,7 +21,7 @@ class TestPromptService:
         prompt_id = uuid4()
         prompt = NodePrompt(
             prompt_id=prompt_id,
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Cached prompt",
             input_schema=None,
             output_schema=None,
@@ -39,9 +39,9 @@ class TestPromptService:
 
         import time
         cache_entry = PromptCacheEntry(prompt=prompt, timestamp=time.time(), ttl=3600)
-        service._cache[NodeType.IntentToolSelectionNode.value] = cache_entry
+        service._cache[NodeType.ToolResolver.value] = cache_entry
 
-        result = await service.get_prompt(NodeType.IntentToolSelectionNode.value)
+        result = await service.get_prompt(NodeType.ToolResolver.value)
 
         assert result is not None
         assert result.prompt_id == prompt_id
@@ -51,7 +51,7 @@ class TestPromptService:
         prompt_id = uuid4()
         prompt = NodePrompt(
             prompt_id=prompt_id,
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Repository prompt",
             input_schema=None,
             output_schema=None,
@@ -68,17 +68,17 @@ class TestPromptService:
         repo.get_active_prompt = AsyncMock(return_value=prompt)
         service = PromptService(repository=repo)
 
-        result = await service.get_prompt(NodeType.IntentToolSelectionNode.value)
+        result = await service.get_prompt(NodeType.ToolResolver.value)
 
         assert result is not None
         assert result.prompt_id == prompt_id
-        repo.get_active_prompt.assert_called_once_with(NodeType.IntentToolSelectionNode.value)
+        repo.get_active_prompt.assert_called_once_with(NodeType.ToolResolver.value)
 
     @pytest.mark.asyncio
     async def test_create_or_update_prompt_creates_new_prompt(self):
         prompt_id = uuid4()
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="New prompt text",
             description="Test",
             created_by="test_user",
@@ -118,7 +118,7 @@ class TestPromptService:
         existing_id = uuid4()
         existing = NodePrompt(
             prompt_id=existing_id,
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Old prompt",
             input_schema=None,
             output_schema=None,
@@ -132,7 +132,7 @@ class TestPromptService:
         )
 
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Updated prompt text",
             description="Updated",
             created_by="test_user",
@@ -173,7 +173,7 @@ class TestPromptService:
         prompt_id = uuid4()
         prompt = NodePrompt(
             prompt_id=prompt_id,
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Prompt to deactivate",
             input_schema=None,
             output_schema=None,
@@ -193,12 +193,12 @@ class TestPromptService:
 
         import time
         cache_entry = PromptCacheEntry(prompt=prompt, timestamp=time.time(), ttl=3600)
-        service._cache[NodeType.IntentToolSelectionNode.value] = cache_entry
+        service._cache[NodeType.ToolResolver.value] = cache_entry
 
-        await service.deactivate_prompt(NodeType.IntentToolSelectionNode.value)
+        await service.deactivate_prompt(NodeType.ToolResolver.value)
 
         repo.deactivate_prompt.assert_called_once_with(prompt_id)
-        assert NodeType.IntentToolSelectionNode.value not in service._cache
+        assert NodeType.ToolResolver.value not in service._cache
 
     def test_calculate_frozen_hash_returns_consistent_hash(self):
         text = "Test prompt text"

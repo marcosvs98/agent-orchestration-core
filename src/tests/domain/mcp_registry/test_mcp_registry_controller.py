@@ -9,6 +9,8 @@ from domain.mcp_registry.controllers.mcp_registry_controller import (
 from domain.mcp_registry.schemas.mcp_registry import (
     McpServerCreateRequest,
     McpServerCreateResponse,
+    McpServerDetail,
+    McpServerSummary,
 )
 from domain.mcp_registry.services.mcp_registry_service import McpRegistryService
 from exceptions.service_exceptions import AuthorizationDeniedException
@@ -20,6 +22,8 @@ class TestMcpRegistryController:
     def service(self) -> MagicMock:
         svc = MagicMock(spec=McpRegistryService)
         svc.create_server = AsyncMock()
+        svc.list_servers = AsyncMock()
+        svc.get_server = AsyncMock()
         return svc
 
     @pytest.fixture
@@ -116,3 +120,69 @@ class TestMcpRegistryController:
                 body=body_req, request=req, auth=auth
             )
         service.create_server.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_returns_servers(
+        self, controller: McpRegistryController, service: MagicMock
+    ) -> None:
+        tenant_id = uuid4()
+        server_id = uuid4()
+        auth = AuthContext(
+            tenant_id=tenant_id,
+            principal_type="human",
+            principal_id="p1",
+            scopes={"mcp_servers:list"},
+            token_issuer="i",
+            token_audience="a",
+            expires_at=9999999999,
+        )
+        service.list_servers = AsyncMock(
+            return_value=[
+                McpServerSummary(
+                    mcp_server_id=server_id,
+                    name="srv",
+                    status="ACTIVE",
+                    endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
+                    flow_snapshot_id=None,
+                    flow_deployment_id=None,
+                )
+            ]
+        )
+        result = await controller.list_mcp_servers(auth=auth)
+        assert len(result) == 1
+        assert result[0].mcp_server_id == server_id
+        service.list_servers.assert_called_once_with(tenant_id=tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_get_returns_server_detail(
+        self, controller: McpRegistryController, service: MagicMock
+    ) -> None:
+        tenant_id = uuid4()
+        server_id = uuid4()
+        auth = AuthContext(
+            tenant_id=tenant_id,
+            principal_type="human",
+            principal_id="p1",
+            scopes={"mcp_servers:get"},
+            token_issuer="i",
+            token_audience="a",
+            expires_at=9999999999,
+        )
+        service.get_server = AsyncMock(
+            return_value=McpServerDetail(
+                mcp_server_id=server_id,
+                name="srv",
+                status="ACTIVE",
+                endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
+                flow_snapshot_id=None,
+                flow_deployment_id=None,
+                tool_config_ids=[],
+                vector_store_ids=[],
+                user_prompt_ids=[],
+            )
+        )
+        result = await controller.get_mcp_server(mcp_server_id=server_id, auth=auth)
+        assert result.mcp_server_id == server_id
+        service.get_server.assert_called_once_with(
+            tenant_id=tenant_id, mcp_server_id=server_id
+        )

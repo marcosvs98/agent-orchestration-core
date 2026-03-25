@@ -7,9 +7,12 @@ from uuid import UUID
 import settings
 from domain.context.schemas.context_layers import ContextLayerScope
 from domain.context.schemas.memory_write import (
+    MemoryPreferenceWriteOutcome,
     MemoryWriteEventContext,
     MemoryWriteResult,
+    PreferenceKeyDerivationReason,
 )
+from domain.rag.schemas.rag import RagDocument
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.events import ExecutionEventType
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
@@ -23,7 +26,7 @@ from domain.governance.schemas.memory_policy import (
 from domain.governance.services.memory_policy_service import MemoryPolicyService
 from domain.rag.ports.queue import EmbeddingJobQueuePort
 from domain.rag.schemas.embedding_job import EmbeddingJobPayload, EmbeddingStatus
-from domain.rag.schemas.rag import RagDocumentCreate
+from domain.rag.schemas.rag import RagDocumentCreate, RagUserMemoryDocumentType
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from exceptions.service_exceptions import DomainValidationException
 
@@ -58,14 +61,14 @@ class MemoryWriteService:
         item: dict,
         event_context: MemoryWriteEventContext | None = None,
     ) -> MemoryWriteResult:
-        memory_item = UserMemoryItem.model_validate(item)
+        memory_item: UserMemoryItem = UserMemoryItem.model_validate(item)
         resolved_policy, expires_at = await self.policy_service.enforce_write(
             tenant_id=tenant_id,
             user_id=user_id,
             item=memory_item,
         )
 
-        targets = self._resolve_write_targets(
+        targets: list[MemoryWriteTarget] = self._resolve_write_targets(
             item=memory_item,
             default_target=MemoryWriteTarget.USER_MEMORY_VECTOR,
             policy_schemas=(
@@ -74,11 +77,11 @@ class MemoryWriteService:
                 else []
             ),
         )
-        result = MemoryWriteResult(
+        result: MemoryWriteResult = MemoryWriteResult(
             targets_applied=[],
             policy_version_id=resolved_policy.policy_version_id,
         )
-        allowed_schema = self._find_allowed_schema(
+        allowed_schema: AllowedSchema = self._find_allowed_schema(
             schema_id=memory_item.schema_id,
             policy_schemas=(
                 resolved_policy.definition.allowed_schemas
@@ -103,8 +106,8 @@ class MemoryWriteService:
                     event_context=event_context,
                     policy_version_id=resolved_policy.policy_version_id,
                     preference_key=self._extract_payload_preference_key(memory_item),
-                    outcome="ignored",
-                    reason=derivation_reason,
+                    outcome=MemoryPreferenceWriteOutcome.IGNORED.value,
+                    reason=derivation_reason.value,
                     new_version=None,
                 )
             else:
@@ -119,8 +122,8 @@ class MemoryWriteService:
                         event_context=event_context,
                         policy_version_id=resolved_policy.policy_version_id,
                         preference_key=preference_key,
-                        outcome="ignored",
-                        reason="missing_value",
+                        outcome=MemoryPreferenceWriteOutcome.IGNORED.value,
+                        reason=PreferenceKeyDerivationReason.MISSING_VALUE.value,
                         new_version=None,
                     )
                 else:
@@ -149,13 +152,14 @@ class MemoryWriteService:
                             event_context=event_context,
                             policy_version_id=resolved_policy.policy_version_id,
                             preference_key=preference_key,
-                            outcome="applied",
-                            reason=derivation_reason,
+                            outcome=MemoryPreferenceWriteOutcome.APPLIED.value,
+                            reason=derivation_reason.value,
                             new_version=deterministic_result.version,
                         )
                     else:
                         ignore_reason = (
-                            deterministic_result.reason or "source_priority_denied"
+                            deterministic_result.reason
+                            or PreferenceKeyDerivationReason.SOURCE_PRIORITY_DENIED.value
                         )
                         await self._emit_memory_updated_outcome(
                             tenant_id=tenant_id,
@@ -164,7 +168,7 @@ class MemoryWriteService:
                             event_context=event_context,
                             policy_version_id=resolved_policy.policy_version_id,
                             preference_key=preference_key,
-                            outcome="ignored",
+                            outcome=MemoryPreferenceWriteOutcome.IGNORED.value,
                             reason=ignore_reason,
                             new_version=None,
                         )
@@ -173,7 +177,7 @@ class MemoryWriteService:
             profile_patch = memory_item.data.get("profile_patch")
             if not isinstance(profile_patch, dict):
                 raise DomainValidationException(message="memory_profile_patch_required")
-            current_profile = await self.repository.get_user_memory_profile(
+            current_profile: dict = await self.repository.get_user_memory_profile(
                 tenant_id=tenant_id,
                 user_id=user_id,
             )
@@ -215,22 +219,35 @@ class MemoryWriteService:
             )
 
         if MemoryWriteTarget.USER_MEMORY_VECTOR in targets:
-            current_count = await self.rag_runtime_service.count_documents_for_user(
+            cap: dict = (
+                await self.rag_runtime_service.resolve_user_memory_vector_document_cap(
+                    tenant_id=tenant_id,
+                )
+            )
+            current_count: int = await self.rag_runtime_service.count_user_memory_documents_for_rag_config(
                 tenant_id=tenant_id,
                 user_id=user_id,
+                rag_config_id=memory_item.rag_config_id,
             )
-            if current_count >= settings.MAX_USER_MEMORY_DOCUMENTS:
-                with self.tracer.observe(
-                    as_type="event",
+            if current_count >= cap["effective_cap"]:
+                self._emit_trace_event(
                     name="domain.memory.write.cap_reached",
-                    input={
+                    payload={
                         "tenant_id": str(tenant_id),
                         "user_id": user_id,
+                        "rag_config_id": str(memory_item.rag_config_id),
                         "current_count": current_count,
-                        "cap": settings.MAX_USER_MEMORY_DOCUMENTS,
+                        "effective_cap": cap["effective_cap"],
+                        "app_max_user_memory_documents": cap[
+                            "app_max_user_memory_documents"
+                        ],
+                        "tenant_max_documents_per_user": cap[
+                            "tenant_max_documents_per_user"
+                        ],
+                        "binding": cap["binding"],
+                        "reason_code": cap["reason_code"],
                     },
-                ):
-                    pass
+                )
             else:
                 prepared_document = (
                     await self.rag_runtime_service.prepare_document_for_embedding(
@@ -238,7 +255,7 @@ class MemoryWriteService:
                         rag_config_id=memory_item.rag_config_id,
                         document=RagDocumentCreate(
                             source=memory_item.source.value,
-                            doc_type="USER_MEMORY_ITEM",
+                            doc_type=RagUserMemoryDocumentType.USER_MEMORY_ITEM.value,
                             content=json.dumps(memory_item.data, ensure_ascii=True),
                             metadata={
                                 "scope": ContextLayerScope.USER_MEMORY.value,
@@ -295,10 +312,12 @@ class MemoryWriteService:
                         payload=event_payload,
                     )
                 elif self.embedding_job_queue is None:
-                    document = await self.rag_runtime_service.embed_document_by_id(
-                        tenant_id=tenant_id,
-                        rag_config_id=memory_item.rag_config_id,
-                        document_id=prepared_document.id,
+                    document: RagDocument = (
+                        await self.rag_runtime_service.embed_document_by_id(
+                            tenant_id=tenant_id,
+                            rag_config_id=memory_item.rag_config_id,
+                            document_id=prepared_document.id,
+                        )
                     )
                     result.embedded_document_id = document.id
                     event_payload = {
@@ -362,24 +381,19 @@ class MemoryWriteService:
                         "rag_config_id": str(memory_item.rag_config_id),
                         "document_id": str(prepared_document.id),
                     }
-                    with self.tracer.observe(
-                        as_type="event",
-                        name="domain.rag.embedding.queued",
-                        input={
-                            "tenant_id": str(tenant_id),
-                            "user_id": user_id,
-                            **queued_payload,
-                        },
-                        metadata={
-                            "event_type": ExecutionEventType.MemoryEmbeddingQueued.value
-                        },
-                    ):
-                        pass
                     await self._append_execution_event(
                         tenant_id=tenant_id,
                         event_context=event_context,
                         event_type=ExecutionEventType.MemoryEmbeddingQueued,
                         payload=queued_payload,
+                    )
+                    self._emit_trace_event(
+                        name="domain.rag.embedding.queued",
+                        payload={
+                            "tenant_id": str(tenant_id),
+                            "user_id": user_id,
+                            **queued_payload,
+                        },
                     )
 
         return result
@@ -411,22 +425,22 @@ class MemoryWriteService:
         *,
         memory_item: UserMemoryItem,
         preference_policy: PreferenceUpdatePolicy | None,
-    ) -> tuple[str | None, str]:
+    ) -> tuple[str | None, PreferenceKeyDerivationReason]:
         if preference_policy is None:
-            return None, "no_policy"
+            return None, PreferenceKeyDerivationReason.NO_POLICY
         if preference_policy.fixed_key is not None:
             normalized_fixed_key = preference_policy.fixed_key.strip()
             if not normalized_fixed_key:
-                return None, "no_policy"
-            return normalized_fixed_key, "fixed_key_used"
+                return None, PreferenceKeyDerivationReason.NO_POLICY
+            return normalized_fixed_key, PreferenceKeyDerivationReason.FIXED_KEY_USED
         payload_key = self._extract_payload_preference_key(memory_item)
         if payload_key is None:
-            return None, "key_not_allowed"
+            return None, PreferenceKeyDerivationReason.KEY_NOT_ALLOWED
         if not preference_policy.allowed_keys:
-            return None, "key_not_allowed"
+            return None, PreferenceKeyDerivationReason.KEY_NOT_ALLOWED
         if payload_key not in set(preference_policy.allowed_keys):
-            return None, "key_not_allowed"
-        return payload_key, "key_allowed"
+            return None, PreferenceKeyDerivationReason.KEY_NOT_ALLOWED
+        return payload_key, PreferenceKeyDerivationReason.KEY_ALLOWED
 
     def _extract_preference_value(
         self,
@@ -533,7 +547,9 @@ class MemoryWriteService:
             name=name,
             input=payload,
             metadata={"event_type": name.replace("event.", "", 1)},
-        ):
+        ) as span_event:
+            if span_event:
+                span_event.update(output=payload)
             return
 
     def _deep_merge(
@@ -560,9 +576,20 @@ class UserMemoryWriter(MemoryWriteService):
         user_id: str,
         item: dict,
     ) -> None:
-        await self.write_memory_item(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            item=item,
-            event_context=None,
-        )
+        with self.tracer.observe(
+            as_type="span",
+            name="domain.memory.writer.append_memory_item",
+            input={
+                "tenant_id": str(tenant_id),
+                "user_id": user_id,
+                "schema_id": item.get("schema_id"),
+            },
+        ) as handle:
+            await self.write_memory_item(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                item=item,
+                event_context=None,
+            )
+            if handle:
+                handle.success(output={"status": "ok"})

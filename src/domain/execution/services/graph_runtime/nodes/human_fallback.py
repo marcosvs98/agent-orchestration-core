@@ -21,8 +21,9 @@ from domain.execution.services.graph_runtime.agent_runtime_resolver import (
 )
 
 
-class FallbackNode(LLMNodeExecutor):
-    node_type = NodeType.FallbackNodeSLA
+# TODO:  Avaliar isso
+class HumanFallback(LLMNodeExecutor):
+    node_type = NodeType.HumanFallback
     llm_task = LLMTaskType.FALLBACK_RESPONSE
     prompt_intent = PromptIntent.FALLBACK_RESPONSE
     side_effect = True

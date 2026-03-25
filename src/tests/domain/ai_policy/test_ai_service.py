@@ -39,29 +39,6 @@ class TestAIService:
         return AIService(repository=repository, authoring_events=authoring_events)
 
     @pytest.mark.asyncio
-    async def test_list_ai_tasks_returns_empty_list_when_no_results(
-        self, ai_service, repository
-    ):
-        repository.list_ai_tasks = AsyncMock(return_value=[])
-
-        result = await ai_service.list_ai_tasks()
-
-        assert result == []
-        repository.list_ai_tasks.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_list_ai_tasks_returns_tasks(self, ai_service, repository):
-        task_id = uuid4()
-        mock_task = SimpleNamespace(ai_task_id=task_id, name="IntentDetection")
-        repository.list_ai_tasks = AsyncMock(return_value=[mock_task])
-
-        result = await ai_service.list_ai_tasks()
-
-        assert len(result) == 1
-        assert result[0].id == task_id
-        assert result[0].name == "IntentDetection"
-
-    @pytest.mark.asyncio
     async def test_create_ai_execution_policy_creates_policy_with_success(
         self, ai_service, repository, authoring_events
     ):

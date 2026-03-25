@@ -5,15 +5,16 @@ import os
 import sys
 from pathlib import Path
 
-project_root = Path(__file__).resolve().parents[3]
-src_path = project_root / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
+for _repo in Path(__file__).resolve().parents:
+    if (_repo / "pyproject.toml").exists():
+        sys.path.insert(0, str(_repo / "src"))
+        sys.path.insert(0, str(_repo / "resources" / "scripts"))
+        sys.path.insert(0, str(_repo))
+        break
+else:
+    raise SystemExit("repository root not found")
 
 from exceptions.service_exceptions import DomainValidationException
-scripts_path = Path(__file__).resolve().parent.parent.parent
-if str(scripts_path) not in sys.path:
-    sys.path.insert(0, str(scripts_path))
 
 from wait_for_db import wait_for_db
 from seeds.demo.seed_01_tenant import seed_tenant
@@ -43,6 +44,7 @@ from seeds.demo.seed_22_memory_policy import seed_memory_policy
 from seeds.demo.seed_23_rag_policy import seed_rag_policy
 from seeds.demo.seed_24_user_prompt import seed_user_prompt
 from seeds.demo.seed_25_mcp_server import seed_mcp_server
+from seeds.demo.seed_26_flow_snapshot_deployment import seed_flow_snapshot_deployment
 
 
 async def main() -> None:
@@ -77,6 +79,7 @@ async def main() -> None:
             ("Billing Policy", seed_billing_policy),
             ("Memory Policy", seed_memory_policy),
             ("RAG Policy", seed_rag_policy),
+            ("Flow Snapshot Deployment", seed_flow_snapshot_deployment),
             ("MCP server", seed_mcp_server),
         ]
 

@@ -6,7 +6,19 @@ from domain.flows.schemas.graph import FlowGraphDefinition
 from exceptions.service_exceptions import DomainValidationException
 
 
-TERMINAL_NODE_TYPES = {"ResponseComposer", "FallbackNode"}
+TERMINAL_NODE_TYPES = {"ResponseBuilder", "HumanFallback"}
+
+_DEPRECATED_NODE_TYPES = frozenset({"UserContextEnrichmentNode"})
+
+_RAG_PIPELINE_NODE_TYPES = frozenset(
+    {
+        "IntentClassifier",
+        "ToolResolver",
+        "ToolInputFiller",
+        "ResponseBuilder",
+        "HumanFallback",
+    }
+)
 
 
 class FlowGraphValidator:
@@ -15,6 +27,11 @@ class FlowGraphValidator:
     @staticmethod
     def validate(definition: FlowGraphDefinition) -> None:
         nodes = definition.nodes
+        for _nid, spec in nodes.items():
+            if spec.type in _DEPRECATED_NODE_TYPES:
+                raise DomainValidationException(
+                    message="deprecated_node_type_user_context_enrichment"
+                )
         if definition.start_node not in nodes:
             raise DomainValidationException(message="start_node_not_found")
 
@@ -62,3 +79,36 @@ class FlowGraphValidator:
 
         if not has_terminal_path(definition.start_node, set()):
             raise DomainValidationException(message="no_terminal_path")
+
+        for _node_id, spec in nodes.items():
+            if spec.type not in _RAG_PIPELINE_NODE_TYPES:
+                continue
+            cfg = spec.config or {}
+            rp = cfg.get("rag_pipeline")
+            if rp is not None and not isinstance(rp, dict):
+                raise DomainValidationException(message="rag_pipeline_config_invalid")
+
+        memory_commit_ids = [
+            node_id
+            for node_id, spec in nodes.items()
+            if spec.type == "MemoryCommitNode"
+        ]
+        if len(memory_commit_ids) > 1:
+            raise DomainValidationException(message="multiple_memory_commit_nodes")
+        for node_id, spec in nodes.items():
+            if spec.type != "MemoryCommitNode":
+                continue
+            cfg = spec.config or {}
+            dm = cfg.get("data_merge")
+            if not isinstance(dm, list):
+                continue
+            for rule in dm:
+                if not isinstance(rule, dict):
+                    raise DomainValidationException(
+                        message="memory_commit_data_merge_rule_invalid"
+                    )
+                fid = rule.get("from_node_id")
+                if not fid or fid not in nodes:
+                    raise DomainValidationException(
+                        message="memory_commit_data_merge_unknown_from_node"
+                    )

@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 from domain.prompts.schemas.prompt import NodeType
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
 
+USER_CONTEXT_READ_GATE_STATE_KEY = "user_context_enrichment"
+NODE_OUTPUTS_BY_NODE_ID_KEY = "_node_outputs_by_node_id"
+MEMORY_CONTENT_SUMMARIZE_STAGING_KEY = "_MEMORY_CONTENT_SUMMARIZE_input"
+
 
 class NodeExecutionStatus(StrEnum):
     SUCCESS = "SUCCESS"
@@ -24,6 +28,7 @@ class IntentType(StrEnum):
     ANALYSIS = "analysis"
     CONVERSATION = "conversation"
     CONTROL = "control"
+    UPDATE_USER_PREFERENCES = "update_user_preferences"
 
 
 class IntentValidationStatus(StrEnum):
@@ -56,6 +61,7 @@ class ToolSelectionMode(StrEnum):
     HEURISTIC_AUTO_SELECT = "heuristic_auto_select"
     SEMANTIC = "semantic"
     LLM_FALLBACK = "llm_fallback"
+    RAG_WITH_LLM = "rag_with_llm"
 
 
 class ToolSelectionReason(StrEnum):
@@ -71,6 +77,7 @@ class ToolSelectionReason(StrEnum):
     )
     ABOVE_CONFIDENCE_THRESHOLD = "above_confidence_threshold"
     BELOW_CONFIDENCE_THRESHOLD = "below_confidence_threshold"
+    LLM_SELECTION = "llm_selection"
 
 
 class ToolIntentFilter(StrEnum):
@@ -92,6 +99,10 @@ class IntentClassificationReason(StrEnum):
     ABOVE_CONFIDENCE_THRESHOLD = "above_confidence_threshold"
     BELOW_CONFIDENCE_THRESHOLD = "below_confidence_threshold"
     LLM_FALLBACK_UNAVAILABLE = "llm_fallback_unavailable"
+
+
+class RuntimeTraceEdgeEventStatus(StrEnum):
+    RECORDED = "recorded"
 
 
 class ExecutionContext(BaseModel):
@@ -133,15 +144,13 @@ class ExecutionContext(BaseModel):
 
 
 class NodeResult(BaseModel):
-    """Canonical node execution result."""
-
     node: NodeType
     status: NodeExecutionStatus
     data: Dict[str, Any] = Field(default_factory=dict)
     error: Dict[str, Any] | None = None
     metrics: Dict[str, Any] | None = None
     next_state: Dict[str, Any] | None = None
-    memory_append: Dict[str, Any] | None = None
+    memory: List[Dict[str, Any]] | None = None
 
 
 class NodeExecutor(Protocol):

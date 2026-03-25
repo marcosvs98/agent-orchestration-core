@@ -6,6 +6,8 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
@@ -16,11 +18,21 @@ from domain.rag.schemas.rag_tenant_summary import (
     RagConfigPreviewRow,
     RagTenantSummaryData,
 )
-from exceptions.service_exceptions import NotFoundServiceException
+from domain.governance.schemas.rag_policy import RagIngestQuotas
+from exceptions.service_exceptions import (
+    DomainValidationException,
+    NotFoundServiceException,
+)
 from infra.database import DatabaseConnection
+from infra.database.models.rag.rag_chunking_rule import (
+    RagChunkingRule as RagChunkingRuleModel,
+)
 from infra.database.models.rag.rag_config import RagConfig as RagConfigModel
 from infra.database.models.rag.rag_document import RagDocument as RagDocumentModel
 from infra.database.models.rag.rag_chunk import RagChunk as RagChunkModel
+from infra.database.models.rag.rag_usage_counter import (
+    RagUsageCounter as RagUsageCounterModel,
+)
 from infra.database.models.rag.rag_query_cache import (
     RagQueryCache as RagQueryCacheModel,
 )
@@ -121,10 +133,9 @@ class RagRepository:
 
     async def get_rag_config(self, rag_config_id: UUID) -> RagConfigModel | None:
         key = f"rag_config:{rag_config_id}"
-        if self.cache_adapter:
-            cached = await self.cache_adapter.get(key)
-            if cached:
-                return RagConfigModel.from_dict(cached)
+
+        if cached := await self.cache_adapter.get(key):
+            return RagConfigModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(RagConfigModel).where(
                 RagConfigModel.rag_config_id == rag_config_id
@@ -156,6 +167,86 @@ class RagRepository:
             row = result.scalar_one_or_none()
             if self.cache_adapter and row:
                 await self.cache_adapter.set(key, row.to_dict(), ttl=60)
+            return row
+
+    async def get_chunking_rule(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_chunking_rule_id: UUID,
+    ) -> RagChunkingRuleModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RagChunkingRuleModel).where(
+                RagChunkingRuleModel.rag_chunking_rule_id == rag_chunking_rule_id,
+                RagChunkingRuleModel.tenant_id == tenant_id,
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def list_chunking_rules(
+        self, *, tenant_id: UUID, limit: int = 200
+    ) -> list[RagChunkingRuleModel]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(RagChunkingRuleModel)
+                .where(RagChunkingRuleModel.tenant_id == tenant_id)
+                .order_by(RagChunkingRuleModel.name.asc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def create_chunking_rule(
+        self,
+        *,
+        tenant_id: UUID,
+        name: str,
+        status: str,
+        strategy: str,
+        params: dict[str, object],
+    ) -> RagChunkingRuleModel:
+        async with self.db.get_session() as session:
+            instance = RagChunkingRuleModel(
+                tenant_id=tenant_id,
+                name=name,
+                status=status,
+                strategy=strategy,
+                params=params,
+            )
+            session.add(instance)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def update_chunking_rule(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_chunking_rule_id: UUID,
+        name: str | None = None,
+        status: str | None = None,
+        strategy: str | None = None,
+        params: dict[str, object] | None = None,
+    ) -> RagChunkingRuleModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(RagChunkingRuleModel).where(
+                RagChunkingRuleModel.rag_chunking_rule_id == rag_chunking_rule_id,
+                RagChunkingRuleModel.tenant_id == tenant_id,
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if status is not None:
+                row.status = status
+            if strategy is not None:
+                row.strategy = strategy
+            if params is not None:
+                row.params = params
+            await session.commit()
+            await session.refresh(row)
             return row
 
     async def get_published_rag_config_id_for_vector_store(
@@ -228,6 +319,8 @@ class RagRepository:
         tenant_id: UUID,
         source_version_id: UUID | None = None,
         vector_store_id: UUID,
+        chunking_rule_id: UUID | None = None,
+        corpus_kind: str | None = None,
         options: dict[str, object] | None = None,
         version_major: int | None = None,
         version_minor: int | None = None,
@@ -236,6 +329,8 @@ class RagRepository:
         created_by: str,
     ) -> RagConfigModel:
         async with self.db.get_session() as session:
+            effective_chunking_rule_id = chunking_rule_id
+            effective_corpus_kind = corpus_kind
             if source_version_id is not None:
                 source_version = await session.execute(
                     select(RagConfigModel).where(
@@ -257,6 +352,10 @@ class RagRepository:
                     config_hash = source.config_hash
                 if options is None:
                     options = source.options
+                if effective_chunking_rule_id is None:
+                    effective_chunking_rule_id = source.chunking_rule_id
+                if effective_corpus_kind is None:
+                    effective_corpus_kind = source.corpus_kind
             else:
                 if (
                     version_major is None
@@ -286,9 +385,27 @@ class RagRepository:
                         if version_patch is None:
                             version_patch = last.version_patch + 1
 
+            if effective_chunking_rule_id is None or effective_corpus_kind is None:
+                raise DomainValidationException(
+                    message="rag_config_requires_chunking_rule_and_corpus_kind",
+                    name="RAG_CONFIG_REQUIRES_CHUNKING_RULE_AND_CORPUS_KIND",
+                    input_data={
+                        "code": "rag_config_requires_chunking_rule_and_corpus_kind",
+                    },
+                )
+            cr_stmt = select(RagChunkingRuleModel).where(
+                RagChunkingRuleModel.rag_chunking_rule_id == effective_chunking_rule_id,
+                RagChunkingRuleModel.tenant_id == tenant_id,
+            )
+            cr_row = (await session.execute(cr_stmt)).scalar_one_or_none()
+            if cr_row is None:
+                raise NotFoundServiceException(message="rag_chunking_rule_not_found")
+
             instance = RagConfigModel(
                 tenant_id=tenant_id,
                 vector_store_id=vector_store_id,
+                chunking_rule_id=effective_chunking_rule_id,
+                corpus_kind=effective_corpus_kind,
                 status=VersionStatus.DRAFT,
                 version_major=version_major,
                 version_minor=version_minor,
@@ -494,6 +611,25 @@ class RagRepository:
             value = result.scalar()
             return int(value) if value is not None else 0
 
+    async def count_user_memory_documents_for_rag_config(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: str,
+        rag_config_id: UUID,
+    ) -> int:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(sa.func.count(RagDocumentModel.document_id))
+                .where(RagDocumentModel.tenant_id == tenant_id)
+                .where(RagDocumentModel.rag_config_id == rag_config_id)
+                .where(RagDocumentModel.doc_metadata["scope"].astext == "USER_MEMORY")
+                .where(RagDocumentModel.doc_metadata["user_id"].astext == user_id)
+            )
+            result = await session.execute(stmt)
+            value = result.scalar()
+            return int(value) if value is not None else 0
+
     async def list_chunks(
         self, *, document_id: UUID, limit: int
     ) -> list[RagChunkModel]:
@@ -557,6 +693,207 @@ class RagRepository:
             await session.commit()
             return int(result.rowcount or 0) > 0
 
+    async def finalize_document_embedding_with_usage(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_config_id: UUID,
+        corpus_kind: str,
+        document_id: UUID,
+        chunks: list[RagChunkModel],
+        completed_at: datetime,
+        quotas: RagIngestQuotas | None,
+    ) -> None:
+        if not chunks:
+            raise DomainValidationException(
+                message="rag_chunks_required_for_finalize",
+                name="RAG_CHUNKS_REQUIRED",
+                input_data={"code": "rag_chunks_required_for_finalize"},
+                status_code=422,
+            )
+        doc_delta = 1
+        chunk_delta = len(chunks)
+        q = quotas or RagIngestQuotas()
+
+        def _check_cap(current: int, delta: int, cap: int | None, code: str) -> None:
+            if cap is None:
+                return
+            if current + delta > int(cap):
+                raise DomainValidationException(
+                    message=code,
+                    name="RAG_USAGE_QUOTA_EXCEEDED",
+                    input_data={"code": code},
+                    status_code=422,
+                )
+
+        async def lock_counter(
+            session: AsyncSession,
+            *,
+            scope: str,
+            user_id: str | None,
+        ) -> RagUsageCounterModel:
+            filt = [
+                RagUsageCounterModel.tenant_id == tenant_id,
+                RagUsageCounterModel.rag_config_id == rag_config_id,
+                RagUsageCounterModel.scope == scope,
+            ]
+            if scope == "TENANT":
+                filt.append(RagUsageCounterModel.user_id.is_(None))
+            else:
+                filt.append(RagUsageCounterModel.user_id == user_id)
+
+            def build_stmt() -> sa.sql.Select:
+                return (
+                    select(RagUsageCounterModel)
+                    .where(*filt)
+                    .with_for_update(of=RagUsageCounterModel)
+                )
+
+            row = (await session.execute(build_stmt())).scalar_one_or_none()
+            if row is not None:
+                return row
+            try:
+                async with session.begin_nested():
+                    session.add(
+                        RagUsageCounterModel(
+                            tenant_id=tenant_id,
+                            rag_config_id=rag_config_id,
+                            scope=scope,
+                            user_id=user_id,
+                            document_count=0,
+                            chunk_count=0,
+                        )
+                    )
+                    await session.flush()
+            except IntegrityError:
+                pass
+            row = (await session.execute(build_stmt())).scalar_one_or_none()
+            if row is None:
+                raise NotFoundServiceException(message="rag_usage_counter_row_missing")
+            return row
+
+        async with self.db.get_session() as session:
+            doc_stmt = select(RagDocumentModel).where(
+                RagDocumentModel.document_id == document_id,
+                RagDocumentModel.tenant_id == tenant_id,
+            )
+            document = (await session.execute(doc_stmt)).scalar_one_or_none()
+            if document is None:
+                raise NotFoundServiceException(message="rag_document_not_found")
+            if document.rag_config_id != rag_config_id:
+                raise NotFoundServiceException(message="rag_document_not_found")
+
+            meta = document.doc_metadata or {}
+            raw_uid = meta.get("user_id")
+            uid: str | None
+            if raw_uid is None:
+                uid = None
+            else:
+                uid = str(raw_uid)
+
+            tenant_row: RagUsageCounterModel | None = None
+            user_row: RagUsageCounterModel | None = None
+
+            if corpus_kind == "USER_MEMORY":
+                if not uid:
+                    raise DomainValidationException(
+                        message="rag_user_memory_user_id_required",
+                        name="RAG_USER_MEMORY_USER_ID_REQUIRED",
+                        input_data={"code": "rag_user_memory_user_id_required"},
+                        status_code=422,
+                    )
+                user_row = await lock_counter(session, scope="USER", user_id=uid)
+                _check_cap(
+                    user_row.document_count,
+                    doc_delta,
+                    q.max_documents_per_user,
+                    "rag_quota_max_documents_per_user",
+                )
+                _check_cap(
+                    user_row.chunk_count,
+                    chunk_delta,
+                    q.max_chunks_per_user,
+                    "rag_quota_max_chunks_per_user",
+                )
+                if (
+                    q.max_documents_per_tenant is not None
+                    or q.max_chunks_per_tenant is not None
+                ):
+                    tenant_row = await lock_counter(
+                        session, scope="TENANT", user_id=None
+                    )
+                    _check_cap(
+                        tenant_row.document_count,
+                        doc_delta,
+                        q.max_documents_per_tenant,
+                        "rag_quota_max_documents_per_tenant",
+                    )
+                    _check_cap(
+                        tenant_row.chunk_count,
+                        chunk_delta,
+                        q.max_chunks_per_tenant,
+                        "rag_quota_max_chunks_per_tenant",
+                    )
+            else:
+                tenant_row = await lock_counter(session, scope="TENANT", user_id=None)
+                _check_cap(
+                    tenant_row.document_count,
+                    doc_delta,
+                    q.max_documents_per_tenant,
+                    "rag_quota_max_documents_per_tenant",
+                )
+                _check_cap(
+                    tenant_row.chunk_count,
+                    chunk_delta,
+                    q.max_chunks_per_tenant,
+                    "rag_quota_max_chunks_per_tenant",
+                )
+
+            values: list[dict[str, object]] = []
+            for chunk in chunks:
+                values.append(
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "document_id": chunk.document_id,
+                        "chunk_index": chunk.chunk_index,
+                        "content": chunk.content,
+                        "content_hash": chunk.content_hash,
+                        "token_count": chunk.token_count,
+                        "embedding": chunk.embedding,
+                        "embedding_512": chunk.embedding_512,
+                        "embedding_model": chunk.embedding_model,
+                        "embedding_dimension": chunk.embedding_dimension,
+                        "chunk_metadata": chunk.chunk_metadata,
+                    }
+                )
+            insert_stmt = (
+                pg_insert(RagChunkModel)
+                .values(values)
+                .on_conflict_do_nothing(
+                    index_elements=["document_id", "chunk_index"],
+                )
+            )
+            await session.execute(insert_stmt)
+
+            await session.execute(
+                update(RagDocumentModel)
+                .where(RagDocumentModel.document_id == document_id)
+                .values(
+                    embedding_status=EmbeddingStatus.COMPLETED.value,
+                    embedding_completed_at=completed_at,
+                    last_embedding_error_code=None,
+                    updated_at=sa.func.now(),
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+            if tenant_row is not None:
+                tenant_row.document_count = int(tenant_row.document_count) + doc_delta
+                tenant_row.chunk_count = int(tenant_row.chunk_count) + chunk_delta
+            if user_row is not None:
+                user_row.document_count = int(user_row.document_count) + doc_delta
+                user_row.chunk_count = int(user_row.chunk_count) + chunk_delta
+
     async def create_chunks(self, *, chunks: list[RagChunkModel]) -> None:
         if not chunks:
             return
@@ -572,7 +909,7 @@ class RagRepository:
                         "content_hash": chunk.content_hash,
                         "token_count": chunk.token_count,
                         "embedding": chunk.embedding,
-                        "embedding_512": getattr(chunk, "embedding_512", None),
+                        "embedding_512": chunk.embedding_512,
                         "embedding_model": chunk.embedding_model,
                         "embedding_dimension": chunk.embedding_dimension,
                         "chunk_metadata": chunk.chunk_metadata,
@@ -648,6 +985,7 @@ class RagRepository:
         self,
         *,
         tenant_id: UUID,
+        rag_config_id: UUID,
         user_id: str | None,
         query_embedding: list[float],
         embedding_dimension: int,
@@ -674,6 +1012,7 @@ class RagRepository:
                     RagChunkModel.document_id == RagDocumentModel.document_id,
                 )
                 .where(RagDocumentModel.tenant_id == tenant_id)
+                .where(RagDocumentModel.rag_config_id == rag_config_id)
             )
             if embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
                 stmt = stmt.where(RagChunkModel.embedding_512.is_not(None))
@@ -738,6 +1077,7 @@ class RagRepository:
             query_sql = compile_query(stmt)
             params: dict[str, object] = {
                 "tenant_id": str(tenant_id),
+                "rag_config_id": str(rag_config_id),
                 "top_k": top_k,
                 "similarity_threshold": similarity_threshold,
             }

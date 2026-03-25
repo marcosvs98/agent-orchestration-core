@@ -1,8 +1,8 @@
 from uuid import UUID
 
-
 from sqlalchemy import func, select
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
 from utils.query_compiler import compile_query
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
@@ -22,10 +22,14 @@ from infra.database.models.tool.tool_config import ToolConfig as ToolConfigModel
 
 class ToolsRepository:
     def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
+        self,
+        database_connection: DatabaseConnection,
+        tracer: RuntimeTracerPort,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.db = database_connection
         self.tracer = tracer
+        self.cache_adapter = cache_adapter
 
     async def get_tool(self, tool_id: UUID) -> ToolModel | None:
         async with self.db.get_session() as session:
@@ -237,6 +241,105 @@ class ToolsRepository:
                     )
 
                 return instance
+
+    @staticmethod
+    def _published_batch_cache_key(
+        tenant_id: UUID, tool_config_ids: list[UUID]
+    ) -> str:
+        sorted_ids = "|".join(sorted(str(x) for x in tool_config_ids))
+        return f"tools:pub_cfg_batch:{tenant_id}:{sorted_ids}"
+
+    @staticmethod
+    def _rows_to_cache_payload(
+        rows: list[tuple[ToolConfigModel, ToolModel]],
+    ) -> dict:
+        return {
+            "rows": [
+                {
+                    "tool_config": cfg.to_dict(),
+                    "tool": tool.to_dict(),
+                }
+                for cfg, tool in rows
+            ]
+        }
+
+    @staticmethod
+    def _rows_from_cache_payload(
+        payload: dict,
+    ) -> list[tuple[ToolConfigModel, ToolModel]]:
+        out: list[tuple[ToolConfigModel, ToolModel]] = []
+        raw_rows = payload.get("rows")
+        if not isinstance(raw_rows, list):
+            return out
+        for item in raw_rows:
+            if not isinstance(item, dict):
+                continue
+            cfg_raw = item.get("tool_config")
+            tool_raw = item.get("tool")
+            if not isinstance(cfg_raw, dict) or not isinstance(tool_raw, dict):
+                continue
+            out.append(
+                (
+                    ToolConfigModel.from_dict(cfg_raw),
+                    ToolModel.from_dict(tool_raw),
+                )
+            )
+        return out
+
+    async def list_published_tool_configs_with_tools_by_config_ids(
+        self,
+        *,
+        tenant_id: UUID,
+        tool_config_ids: list[UUID],
+    ) -> list[tuple[ToolConfigModel, ToolModel]]:
+        if not tool_config_ids:
+            return []
+        cache_key = self._published_batch_cache_key(tenant_id, tool_config_ids)
+        if self.cache_adapter:
+            cached = await self.cache_adapter.get(cache_key)
+            if isinstance(cached, dict) and "rows" in cached:
+                return self._rows_from_cache_payload(cached)
+        async with self.db.get_session() as session:
+            stmt = (
+                select(ToolConfigModel, ToolModel)
+                .join(ToolModel, ToolModel.tool_id == ToolConfigModel.tool_id)
+                .where(
+                    ToolConfigModel.tenant_id == tenant_id,
+                    ToolConfigModel.tool_config_id.in_(tool_config_ids),
+                    ToolConfigModel.status == VersionStatus.PUBLISHED.value,
+                )
+            )
+            query_sql = compile_query(stmt)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.tools.tools_repository.list_published_tool_configs_with_tools_by_config_ids",
+                input={
+                    "query": query_sql,
+                    "params": {
+                        "tenant_id": str(tenant_id),
+                        "tool_config_ids": [str(x) for x in tool_config_ids],
+                    },
+                },
+                metadata={
+                    "retriever_name": "list_published_tool_configs_with_tools_by_config_ids"
+                },
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                rows = list(result.all())
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": len(rows),
+                            "found": len(rows) > 0,
+                        }
+                    )
+                if self.cache_adapter:
+                    await self.cache_adapter.set(
+                        cache_key,
+                        self._rows_to_cache_payload(rows),
+                        ttl=90,
+                    )
+                return rows
 
     async def list_tool_configs(
         self,

@@ -15,6 +15,8 @@ class AuthoringEventType(StrEnum):
     RAG_CONFIG_PUBLISHED = "RAG_CONFIG_PUBLISHED"
     RAG_CONFIG_DEPRECATED = "RAG_CONFIG_DEPRECATED"
     RAG_CONFIG_DISABLED = "RAG_CONFIG_DISABLED"
+    RAG_CHUNKING_RULE_CREATED = "RAG_CHUNKING_RULE_CREATED"
+    RAG_CHUNKING_RULE_UPDATED = "RAG_CHUNKING_RULE_UPDATED"
     TENANT_TOKEN_ISSUED = "TENANT_TOKEN_ISSUED"
 
 
@@ -26,6 +28,7 @@ class ChangeType(StrEnum):
 
 class ResourceType(StrEnum):
     RAG_CONFIG = "rag_config"
+    RAG_CHUNKING_RULE = "rag_chunking_rule"
     AGENT = "agent"
     FLOW = "flow"
     TOOL = "tool"

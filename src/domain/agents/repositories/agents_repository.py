@@ -59,12 +59,15 @@ class AgentsRepository:
                             "found": agent is not None,
                         }
                     )
-
                 return agent
 
     async def get_agent_version(
         self, agent_version_id: UUID
     ) -> AgentVersionModel | None:
+        key = f"agent_version_by_id:{agent_version_id}"
+        if cached := await self.cache_adapter.get(key):
+            return AgentVersionModel(**cached)
+
         async with self.db.get_session() as session:
             stmt = select(AgentVersionModel).where(
                 AgentVersionModel.agent_version_id == agent_version_id
@@ -88,8 +91,10 @@ class AgentsRepository:
                         output={
                             "result_count": 1 if version else 0,
                             "found": version is not None,
+                            "origem": "database"
                         }
                     )
+                await self.cache_adapter.set(key, version.to_dict())
 
                 return version
 
@@ -669,6 +674,41 @@ class AgentsRepository:
                     ttl=AGENT_VERSION_BY_NODE_CACHE_TTL,
                 )
                 return agent_version_id
+
+    # Todo: this code should staying here ?
+    async def resolve_effective_rag_config_id_for_node(
+        self, node_id: UUID
+    ) -> UUID | None:
+        async with self.db.get_session() as session:
+            stmt = select(NodeModel.rag_config_id).where(NodeModel.node_id == node_id)
+            query_sql = compile_query(stmt)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.agents.agents_repository.resolve_effective_rag_config_id_for_node",
+                input={
+                    "query": query_sql,
+                    "params": {"node_id": str(node_id)},
+                },
+                metadata={"retriever_name": "resolve_effective_rag_config_id_for_node"},
+            ) as retriever_handle:
+                result = await session.execute(stmt)
+                node_rid = result.scalar_one_or_none()
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if node_rid is not None else 0,
+                            "found": node_rid is not None,
+                        }
+                    )
+        if node_rid is not None:
+            return node_rid
+        agent_version_id = await self.get_agent_version_id_by_node_id(node_id)
+        if agent_version_id is None:
+            return None
+        agent_version = await self.get_agent_version(agent_version_id)
+        if agent_version is None:
+            return None
+        return agent_version.rag_config_id
 
     async def list_node_bindings_by_agent_version_id(
         self, *, tenant_id: UUID, agent_version_id: UUID

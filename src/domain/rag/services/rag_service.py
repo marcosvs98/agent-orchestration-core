@@ -13,11 +13,16 @@ from domain.governance.schemas.authoring_events import (
 from domain.rag.ports.service import RagServicePort
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.schemas.rag import (
+    RagChunkingRule,
+    RagChunkingRuleCreate,
+    RagChunkingRuleUpdate,
     RagConfig,
     RagConfigCreate,
     RagConfigOptions,
+    RagCorpusKind,
     VectorStore,
     VectorStoreCreate,
+    parse_rag_chunking_rule_params,
 )
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -63,6 +68,8 @@ class RagService(RagServicePort):
             RagConfig(
                 id=config.rag_config_id,
                 vector_store_id=config.vector_store_id,
+                chunking_rule_id=config.chunking_rule_id,
+                corpus_kind=RagCorpusKind(config.corpus_kind),
                 options=config.options,
                 status=config.status,
                 version_major=config.version_major,
@@ -93,6 +100,8 @@ class RagService(RagServicePort):
             tenant_id=tenant_id,
             source_version_id=rag_config_create.source_version_id,
             vector_store_id=rag_config_create.vector_store_id,
+            chunking_rule_id=rag_config_create.chunking_rule_id,
+            corpus_kind=rag_config_create.corpus_kind.value,
             options=options,
             version_major=rag_config_create.version_major,
             version_minor=rag_config_create.version_minor,
@@ -114,6 +123,8 @@ class RagService(RagServicePort):
         return RagConfig(
             id=config_model.rag_config_id,
             vector_store_id=config_model.vector_store_id,
+            chunking_rule_id=config_model.chunking_rule_id,
+            corpus_kind=RagCorpusKind(config_model.corpus_kind),
             options=config_model.options,
             status=config_model.status,
             version_major=config_model.version_major,
@@ -158,6 +169,8 @@ class RagService(RagServicePort):
         return RagConfig(
             id=refreshed.rag_config_id,
             vector_store_id=refreshed.vector_store_id,
+            chunking_rule_id=refreshed.chunking_rule_id,
+            corpus_kind=RagCorpusKind(refreshed.corpus_kind),
             options=refreshed.options,
             status=refreshed.status,
             version_major=refreshed.version_major,
@@ -202,6 +215,8 @@ class RagService(RagServicePort):
         return RagConfig(
             id=refreshed.rag_config_id,
             vector_store_id=refreshed.vector_store_id,
+            chunking_rule_id=refreshed.chunking_rule_id,
+            corpus_kind=RagCorpusKind(refreshed.corpus_kind),
             options=refreshed.options,
             status=refreshed.status,
             version_major=refreshed.version_major,
@@ -248,10 +263,113 @@ class RagService(RagServicePort):
         return RagConfig(
             id=refreshed.rag_config_id,
             vector_store_id=refreshed.vector_store_id,
+            chunking_rule_id=refreshed.chunking_rule_id,
+            corpus_kind=RagCorpusKind(refreshed.corpus_kind),
             options=refreshed.options,
             status=refreshed.status,
             version_major=refreshed.version_major,
             version_minor=refreshed.version_minor,
             version_patch=refreshed.version_patch,
             config_hash=refreshed.config_hash,
+        )
+
+    async def list_chunking_rules(
+        self, *, tenant_id: UUID, limit: int = 200
+    ) -> list[RagChunkingRule]:
+        rows = await self.repository.list_chunking_rules(
+            tenant_id=tenant_id, limit=limit
+        )
+        return [self._chunking_rule_to_schema(r) for r in rows]
+
+    async def create_chunking_rule(
+        self,
+        *,
+        tenant_id: UUID,
+        payload: RagChunkingRuleCreate,
+        principal_id: str,
+    ) -> RagChunkingRule:
+        raw_params = dict(payload.params or {})
+        raw_params["strategy"] = payload.strategy.value
+        parse_rag_chunking_rule_params(raw_params)
+        created = await self.repository.create_chunking_rule(
+            tenant_id=tenant_id,
+            name=payload.name,
+            status=payload.status.value,
+            strategy=payload.strategy.value,
+            params=payload.params or {},
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type=ResourceType.RAG_CHUNKING_RULE,
+            resource_id=created.rag_chunking_rule_id,
+            version_id=None,
+            event_type=AuthoringEventType.RAG_CHUNKING_RULE_CREATED,
+            change_type=ChangeType.CREATE,
+            principal_id=principal_id,
+            justification="create rag chunking rule",
+            schema_version=1,
+        )
+        return self._chunking_rule_to_schema(created)
+
+    async def update_chunking_rule(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_chunking_rule_id: str,
+        payload: RagChunkingRuleUpdate,
+        principal_id: str,
+        change_request: ChangeRequest,
+    ) -> RagChunkingRule:
+        rule_uuid = UUID(rag_chunking_rule_id)
+        existing = await self.repository.get_chunking_rule(
+            tenant_id=tenant_id,
+            rag_chunking_rule_id=rule_uuid,
+        )
+        if existing is None:
+            raise NotFoundServiceException(message="rag_chunking_rule_not_found")
+        next_strategy = (
+            payload.strategy.value
+            if payload.strategy is not None
+            else existing.strategy
+        )
+        next_params = (
+            payload.params if payload.params is not None else existing.params or {}
+        )
+        raw_validate = dict(next_params)
+        raw_validate["strategy"] = next_strategy
+        parse_rag_chunking_rule_params(raw_validate)
+        if not change_request.justification.strip():
+            raise DomainValidationException(message="justification_required")
+        updated = await self.repository.update_chunking_rule(
+            tenant_id=tenant_id,
+            rag_chunking_rule_id=rule_uuid,
+            name=payload.name,
+            status=payload.status.value if payload.status is not None else None,
+            strategy=payload.strategy.value if payload.strategy is not None else None,
+            params=payload.params,
+        )
+        if updated is None:
+            raise NotFoundServiceException(message="rag_chunking_rule_not_found")
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type=ResourceType.RAG_CHUNKING_RULE,
+            resource_id=rule_uuid,
+            version_id=None,
+            event_type=AuthoringEventType.RAG_CHUNKING_RULE_UPDATED,
+            change_type=change_request.change_type,
+            principal_id=principal_id,
+            justification=change_request.justification,
+            schema_version=1,
+        )
+        return self._chunking_rule_to_schema(updated)
+
+    @staticmethod
+    def _chunking_rule_to_schema(row: object) -> RagChunkingRule:
+        return RagChunkingRule(
+            id=row.rag_chunking_rule_id,
+            name=row.name,
+            status=row.status,
+            strategy=row.strategy,
+            params=row.params or {},
+            config_hash=row.config_hash,
         )

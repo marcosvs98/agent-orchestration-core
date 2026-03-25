@@ -155,10 +155,10 @@ class ConversationReadService:
         )
         if end_user_id is None:
             raise NotFoundServiceException(message="end_user_not_found")
-        preferences = await self.execution_repository.get_user_preferences(
-            tenant_id=tenant_id, user_id=user_id
-        )
-        memory_profile = await self.execution_repository.get_user_memory_profile(
+        (
+            preferences,
+            memory_profile,
+        ) = await self.execution_repository.get_user_memory_preferences_and_profile(
             tenant_id=tenant_id, user_id=user_id
         )
         logger.info(

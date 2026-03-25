@@ -20,9 +20,7 @@ from domain.tools.schemas.http_result import HttpToolResult
 
 logger = get_logger(__name__)
 
-_MCP_CONTAINER: ContextVar[object | None] = ContextVar(
-    "mcp_container", default=None
-)
+_MCP_CONTAINER: ContextVar[object | None] = ContextVar("mcp_container", default=None)
 
 _MCP_PATH_RE = re.compile(
     r"^/core/v1/mcp-servers/([0-9a-fA-F-]{36})/mcp(.*)$",
@@ -60,7 +58,14 @@ def _spec_cache_key(spec: McpServerBuildSpec) -> tuple:
         )
         for b in spec.tools
     )
-    return (spec.mcp_server_id, th, spec.vector_store_ids, ph)
+    return (
+        spec.mcp_server_id,
+        th,
+        spec.vector_store_ids,
+        ph,
+        spec.flow_snapshot_id,
+        spec.flow_deployment_id,
+    )
 
 
 class _McpHttpProxyTool(Tool):
@@ -79,8 +84,13 @@ class _McpHttpProxyTool(Tool):
             jsonschema.validate(instance=arguments, schema=self.parameters, **vkwargs)
         except jsonschema.ValidationError as exc:
             return ToolResult(
-                content=json.dumps({"error": "arguments_validation_failed", "detail": exc.message}),
-                structured_content={"error": "arguments_validation_failed", "detail": exc.message},
+                content=json.dumps(
+                    {"error": "arguments_validation_failed", "detail": exc.message}
+                ),
+                structured_content={
+                    "error": "arguments_validation_failed",
+                    "detail": exc.message,
+                },
             )
         ctr = _MCP_CONTAINER.get()
         if ctr is None:
@@ -168,7 +178,10 @@ class _McpHttpProxyTool(Tool):
             except jsonschema.ValidationError as exc:
                 return ToolResult(
                     content=json.dumps(
-                        {"error": "response_body_schema_mismatch", "detail": exc.message}
+                        {
+                            "error": "response_body_schema_mismatch",
+                            "detail": exc.message,
+                        }
                     ),
                     structured_content={
                         "error": "response_body_schema_mismatch",
@@ -182,7 +195,9 @@ class _McpHttpProxyTool(Tool):
         dumped = HttpToolResult.model_validate(result).model_dump(mode="json")
         return ToolResult(
             content=json.dumps(dumped, default=str),
-            structured_content=dumped if isinstance(dumped, dict) else {"result": dumped},
+            structured_content=dumped
+            if isinstance(dumped, dict)
+            else {"result": dumped},
         )
 
 

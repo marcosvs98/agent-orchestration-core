@@ -10,7 +10,10 @@ from jinja2 import DebugUndefined, Environment
 from domain.ai_policy.schemas.ai import AITaskContextFlags
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
-from domain.execution.services.graph_runtime.types import ExecutionContext
+from domain.execution.services.graph_runtime.types import (
+    ExecutionContext,
+    MEMORY_CONTENT_SUMMARIZE_STAGING_KEY,
+)
 from domain.llm.schemas.llm import LLMTaskType
 from domain.llm.services.context_builder import ContextBuilder
 from domain.llm.services.structured_output_schema_composer import (
@@ -65,7 +68,7 @@ class PromptResolver:
                 "node_type": node_type.value if node_type else None,
                 "prompt_id": str(prompt_id) if prompt_id else None,
             },
-        ) as agent_span:
+        ):
             resolved_node_type = self._resolve_node_type(intent, node_type)
             task_type = self._resolve_task_type(intent, resolved_node_type)
             effective_prompt_id = prompt_id
@@ -139,11 +142,12 @@ class PromptResolver:
             return node_type
 
         mapping = {
-            PromptIntent.INTENT_TOOL_SELECTION: NodeType.ToolSelectionNode,
-            PromptIntent.SLOT_FILLING: NodeType.ParamExtractionNode,
-            PromptIntent.CLARIFICATION: NodeType.ClarificationNode,
-            PromptIntent.RESPONSE_RENDER: NodeType.ResponseComposer,
-            PromptIntent.FALLBACK_RESPONSE: NodeType.FallbackNodeSLA,
+            PromptIntent.INTENT_TOOL_SELECTION: NodeType.ToolResolver,
+            PromptIntent.SLOT_FILLING: NodeType.ToolInputFiller,
+            PromptIntent.CLARIFICATION: NodeType.QueryClarifier,
+            PromptIntent.RESPONSE_RENDER: NodeType.ResponseBuilder,
+            PromptIntent.FALLBACK_RESPONSE: NodeType.HumanFallback,
+            PromptIntent.MEMORY_CONTENT_SUMMARIZE: NodeType.ContextSummarizer,
         }
 
         resolved = mapping.get(intent)
@@ -159,12 +163,13 @@ class PromptResolver:
         node_type: NodeType,
     ) -> LLMTaskType:
         node_map = {
-            NodeType.IntentDetectionNode: LLMTaskType.INTENT_SELECTION,
-            NodeType.ToolSelectionNode: LLMTaskType.INTENT_SELECTION,
-            NodeType.ParamExtractionNode: LLMTaskType.SLOT_FILLING,
-            NodeType.ClarificationNode: LLMTaskType.CLARIFICATION,
-            NodeType.ResponseComposer: LLMTaskType.RESPONSE_RENDER,
-            NodeType.FallbackNodeSLA: LLMTaskType.FALLBACK_RESPONSE,
+            NodeType.IntentClassifier: LLMTaskType.INTENT_SELECTION,
+            NodeType.ToolResolver: LLMTaskType.INTENT_SELECTION,
+            NodeType.ToolInputFiller: LLMTaskType.SLOT_FILLING,
+            NodeType.QueryClarifier: LLMTaskType.CLARIFICATION,
+            NodeType.ResponseBuilder: LLMTaskType.RESPONSE_RENDER,
+            NodeType.HumanFallback: LLMTaskType.FALLBACK_RESPONSE,
+            NodeType.ContextSummarizer: LLMTaskType.MEMORY_CONTENT_SUMMARIZE,
         }
 
         if node_type in node_map:
@@ -176,6 +181,7 @@ class PromptResolver:
             PromptIntent.CLARIFICATION: LLMTaskType.CLARIFICATION,
             PromptIntent.RESPONSE_RENDER: LLMTaskType.RESPONSE_RENDER,
             PromptIntent.FALLBACK_RESPONSE: LLMTaskType.FALLBACK_RESPONSE,
+            PromptIntent.MEMORY_CONTENT_SUMMARIZE: LLMTaskType.MEMORY_CONTENT_SUMMARIZE,
         }
 
         task_type = intent_map.get(intent)
@@ -203,7 +209,9 @@ class PromptResolver:
 
         return AITaskContextFlags(
             allow_rag_tenant=bool(node.allow_rag_tenant),
-            allow_user_memory=bool(node.allow_user_memory),
+            allow_user_memory_structured=bool(node.allow_user_memory_structured),
+            allow_user_memory_vector=bool(node.allow_user_memory_vector),
+            rag_config_id=node.rag_config_id,
             allow_session_context=bool(node.allow_session_context),
             allow_memory_write=bool(node.allow_memory_write),
         )
@@ -215,7 +223,7 @@ class PromptResolver:
     ) -> dict[str, Any]:
         user_input = (context.input_payload or {}).get("user_input", "")
 
-        intent_slice = context.get_node_output(NodeType.IntentDetectionNode)
+        intent_slice = context.get_node_output(NodeType.IntentClassifier)
         try:
             result = intent_slice.get("result") or []
             detected_intent = result[0].get("intent_type") or ""
@@ -223,7 +231,7 @@ class PromptResolver:
             detected_intent = ""
 
         if intent == PromptIntent.RESPONSE_RENDER:
-            tool_slice = context.get_node_output(NodeType.ToolExecutionNode)
+            tool_slice = context.get_node_output(NodeType.ToolExecutor)
             try:
                 tool_slice.get
             except AttributeError:
@@ -232,6 +240,14 @@ class PromptResolver:
                 "tool_response": tool_slice,
                 "original_intent": detected_intent or "",
                 "user_input": user_input,
+            }
+
+        if intent == PromptIntent.MEMORY_CONTENT_SUMMARIZE:
+            staging = (context.state or {}).get(MEMORY_CONTENT_SUMMARIZE_STAGING_KEY)
+            raw = staging.get("raw") if isinstance(staging, dict) else None
+            return {
+                "user_input": user_input,
+                "memory_payload_raw": raw,
             }
 
         return {

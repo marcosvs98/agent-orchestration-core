@@ -35,9 +35,9 @@ from domain.execution.services.state_machine import (
     RunLifecycleStateMachine,
     AgentRunStatus,
     FlowRunStatus,
+    ToolRunStatus,
 )
 from domain.execution.services.graph_runtime.executor import RuntimeExecutor
-from domain.tools.schemas.tools import AvailableTool
 from domain.execution.services.graph_runtime.graph_compiler import GraphCompiler
 from domain.execution.services.graph_runtime.agent_runtime_resolver import (
     AgentRuntimeResolver,
@@ -48,11 +48,16 @@ from domain.execution.services.observability.hooks import (
     MemoryExtractionHook,
 )
 from domain.execution.services.runtime_policy_resolver import RuntimePolicyResolver
+from domain.governance.schemas.runtime_policy import (
+    ResolvedRuntimePolicy,
+    RuntimePolicyDefinition,
+    RuntimePolicyScope,
+    RuntimePolicySource,
+)
 from exceptions.service_exceptions import (
     AIOutputValidationException,
     DomainConflictException,
     DomainValidationException,
-    format_exception,
     HashIncompatibleException,
     IdempotencyInProgressException,
     LimitExceededException,
@@ -81,6 +86,7 @@ from domain.governance.services.execution_limit_service import ExecutionLimitSer
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.jobs.arq_embedding_queue import ArqEmbeddingQueueAdapter
+from domain.rag.schemas.rag import RagCorpusKind
 from domain.prompts.services.prompt_service import PromptService
 from domain.prompts.repositories.prompt_repository import PromptRepository
 from domain.agents.repositories.agents_repository import AgentsRepository
@@ -110,6 +116,7 @@ from domain.context.services.runtime_policy import RuntimeContextLayerPolicy
 from domain.human_sla.services.human_sla_service import HumanSLAService
 from domain.governance.services.memory_policy_service import MemoryPolicyService
 from domain.governance.services.rag_policy_service import RagPolicyService
+from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.repositories.authoring_event_repository import (
@@ -183,7 +190,11 @@ class ExecutionService(ExecutionServicePort):
             tracer=tracer,
             cache_adapter=repository.cache_adapter,
         )
-        self.tools_repository = ToolsRepository(repository.db, tracer=tracer)
+        self.tools_repository = ToolsRepository(
+            repository.db,
+            tracer=tracer,
+            cache_adapter=repository.cache_adapter,
+        )
         if tools_service:
             self.tools_service = tools_service
         else:
@@ -209,6 +220,7 @@ class ExecutionService(ExecutionServicePort):
         rag_repository = RagRepository(
             repository.db, tracer=tracer, cache_adapter=repository.cache_adapter
         )
+        self._rag_repository = rag_repository
         cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
         embedding_adapter = OpenAIEmbeddingAdapter(
             api_key=settings.OPENAI_API_KEY,
@@ -217,10 +229,14 @@ class ExecutionService(ExecutionServicePort):
             tracer=tracer,
             cache_adapter=cache_adapter,
         )
+        rag_policy_service = RagPolicyService(repository=repository)
+        ai_repository = AIRepository(repository.db, tracer=tracer)
         rag_runtime_service = RagRuntimeService(
             repository=rag_repository,
             embedding_adapter=embedding_adapter,
             tracer=tracer,
+            rag_policy_service=rag_policy_service,
+            ai_repository=ai_repository,
         )
         tool_catalog_indexer = ToolCatalogIndexer(
             rag_runtime_service=rag_runtime_service,
@@ -248,7 +264,6 @@ class ExecutionService(ExecutionServicePort):
             rag_runtime_service=rag_runtime_service,
         )
         memory_policy_service = MemoryPolicyService(repository=repository)
-        rag_policy_service = RagPolicyService(repository=repository)
         rag_activation_service = RagActivationService(
             repository=repository,
             rag_repository=rag_repository,
@@ -280,6 +295,7 @@ class ExecutionService(ExecutionServicePort):
         tool_catalog_retriever = ToolCatalogRetriever(
             rag_runtime_service=rag_runtime_service,
             tracer=self.tracer,
+            tools_repository=self.tools_repository,
         )
         context_builder = ContextBuilder(
             self.agents_repository,
@@ -306,6 +322,7 @@ class ExecutionService(ExecutionServicePort):
             llm_executor=self.llm_executor,
             memory_write_service=memory_write_service,
             tracer=self.tracer,
+            memory_policy_service=memory_policy_service,
         )
         self.hook = MemoryExtractionHook(
             base_hook=base_hook,
@@ -329,6 +346,7 @@ class ExecutionService(ExecutionServicePort):
                 prompt_resolver=prompt_resolver,
                 tool_orchestrator=tool_orchestrator,
                 execution_repository=repository,
+                memory_write_service=memory_write_service,
                 tracer=tracer,
                 agent_runtime_resolver=agent_runtime_resolver,
                 completion_budget_policy=completion_budget_policy,
@@ -340,7 +358,6 @@ class ExecutionService(ExecutionServicePort):
             ),
             tracer=self.tracer,
             hook=self.hook,
-            memory_write_service=memory_write_service,
         )
         self.plan_compiler = GraphCompiler(tracer)
         from domain.governance.repositories.runtime_policy_repository import (
@@ -391,7 +408,7 @@ class ExecutionService(ExecutionServicePort):
                         "timeout_ms": 1000,
                     },
                     "fallback_enabled": True,
-                    "prompt_key": "InputModerationNode",
+                    "prompt_key": "ContentModeration",
                     "temperature": 0.0,
                     "max_tokens": 18,
                 },
@@ -578,21 +595,81 @@ class ExecutionService(ExecutionServicePort):
                     origin_flow_run_id = None
             else:
                 origin_flow_run_id = None
+        flow_deployment = await self.repository.get_active_flow_deployment(
+            flow_id=flow_id
+        )
+        flow_snapshot = None
+        if flow_deployment is not None:
+            flow_snapshot = await self.repository.get_flow_snapshot_by_id(
+                flow_deployment.flow_snapshot_id
+            )
+        if flow_snapshot is None:
+            flow_snapshot = await self.repository.get_flow_snapshot_by_flow_version(
+                selected_flow_version_id
+            )
+
         graph_snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(
             selected_flow_version_id
         )
+        if flow_snapshot is not None:
+            flow_graph_snapshot_id_value = flow_snapshot.snapshot.get(
+                "flow_graph_snapshot_id"
+            )
+            if flow_graph_snapshot_id_value:
+                graph_snapshot = await self.repository.get_flow_graph_snapshot(
+                    UUID(flow_graph_snapshot_id_value)
+                )
+            runtime_policy = ResolvedRuntimePolicy(
+                source=RuntimePolicySource.FLOW,
+                runtime_policy_id=None,
+                version="snapshot",
+                definition=RuntimePolicyDefinition.model_validate(
+                    flow_snapshot.runtime_policy or {}
+                ),
+                scope=RuntimePolicyScope.FLOW,
+                flow_id=flow_id,
+            )
+            runtime_policy_hash = self._hash_dict(flow_snapshot.runtime_policy or {})
+            execution_plan_hash = str(
+                flow_snapshot.snapshot.get("graph_hash")
+                or self._hash_dict(flow_snapshot.snapshot)
+            )
+            tool_catalog_hash = self._hash_dict(flow_snapshot.tool_catalog or {})
+            llm_provider_config_hash = flow_snapshot.llm_provider_config_hash
+        else:
+            if not settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED:
+                raise ResourceBlockedServiceException(message="flow_snapshot_required")
+            if graph_snapshot is None:
+                raise ResourceBlockedServiceException(
+                    message="flow_graph_snapshot_missing"
+                )
+            runtime_policy = await self.policy_resolver.resolve(
+                tenant_id=tenant_id, flow_id=flow_id
+            )
+            runtime_policy_hash = self._hash_dict(
+                runtime_policy.definition.model_dump()
+            )
+            execution_plan_hash = graph_snapshot.graph_hash
+            tool_catalog_hash = self._hash_dict(
+                {"graph": execution_plan_hash, "runtime_policy": runtime_policy_hash}
+            )
+            llm_provider_config_hash = None
         if graph_snapshot is None:
             raise ResourceBlockedServiceException(message="flow_graph_snapshot_missing")
-
-        runtime_policy = await self.policy_resolver.resolve(
-            tenant_id=tenant_id, flow_id=flow_id
-        )
-        runtime_policy_hash = self._hash_dict(runtime_policy.definition.model_dump())
-        execution_plan_hash = graph_snapshot.graph_hash
-        tool_catalog_hash = self._hash_dict(
-            {"graph": execution_plan_hash, "runtime_policy": runtime_policy_hash}
-        )
-        llm_provider_config_hash = None
+        runtime_contract = {
+            "flow_version_id": str(selected_flow_version_id),
+            "flow_graph_snapshot_id": str(graph_snapshot.flow_graph_snapshot_id),
+            "flow_snapshot_id": str(flow_snapshot.flow_snapshot_id)
+            if flow_snapshot is not None
+            else None,
+            "flow_deployment_id": str(flow_deployment.flow_deployment_id)
+            if flow_deployment is not None
+            else None,
+            "execution_plan_hash": execution_plan_hash,
+            "runtime_policy_hash": runtime_policy_hash,
+            "tool_catalog_hash": tool_catalog_hash,
+            "llm_provider_config_hash": llm_provider_config_hash,
+        }
 
         flow_run_id = await self.repository.create_flow_run(
             session_id=flow_run.session_id,
@@ -603,6 +680,13 @@ class ExecutionService(ExecutionServicePort):
             input_payload=flow_run.input,
             interaction_id=interaction_id,
             flow_graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id
+            if flow_snapshot is not None
+            else None,
+            flow_deployment_id=flow_deployment.flow_deployment_id
+            if flow_deployment is not None
+            else None,
+            runtime_contract=runtime_contract,
             execution_plan_hash=execution_plan_hash,
             runtime_policy_hash=runtime_policy_hash,
             tool_catalog_hash=tool_catalog_hash,
@@ -674,6 +758,13 @@ class ExecutionService(ExecutionServicePort):
             trace_id=trace_uuid,
             root_observation_id=None,
             flow_graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id
+            if flow_snapshot is not None
+            else None,
+            flow_deployment_id=flow_deployment.flow_deployment_id
+            if flow_deployment is not None
+            else None,
+            runtime_contract=runtime_contract,
             execution_plan_hash=execution_plan_hash,
             runtime_policy_hash=runtime_policy_hash,
             tool_catalog_hash=tool_catalog_hash,
@@ -705,12 +796,6 @@ class ExecutionService(ExecutionServicePort):
             )
             if event_handle:
                 event_handle.success(output={"status": "recorded", "payload": payload})
-        available_tools: list[
-            AvailableTool
-        ] = await self.tools_service.list_available_tools_for_execution(
-            tenant_id=tenant_id
-        )
-
         with self.tracer.observe(
             as_type="retriever",
             name="domain.execution.execution_service.cache_get_plan",
@@ -725,7 +810,7 @@ class ExecutionService(ExecutionServicePort):
             plan = self.plan_compiler.compile(
                 graph_snapshot.snapshot,
                 graph_snapshot.graph_hash,
-                available_tools=available_tools,
+                available_tools=[],
             )
             with self.tracer.observe(
                 as_type="tool",
@@ -864,17 +949,47 @@ class ExecutionService(ExecutionServicePort):
             raise NotFoundServiceException(message="flow_version_not_found")
         flow_id = flow_version.flow_id
 
-        graph_snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(
-            flow_version.flow_version_id
-        )
+        runtime_contract = flow_run.runtime_contract or {}
+        graph_snapshot = None
+        flow_snapshot_id_value = runtime_contract.get("flow_snapshot_id")
+        if flow_snapshot_id_value:
+            flow_snapshot = await self.repository.get_flow_snapshot_by_id(
+                UUID(str(flow_snapshot_id_value))
+            )
+            if flow_snapshot is not None:
+                graph_snapshot_id_value = flow_snapshot.snapshot.get(
+                    "flow_graph_snapshot_id"
+                )
+                if graph_snapshot_id_value:
+                    graph_snapshot = await self.repository.get_flow_graph_snapshot(
+                        UUID(str(graph_snapshot_id_value))
+                    )
+                runtime_policy = ResolvedRuntimePolicy(
+                    source=RuntimePolicySource.FLOW,
+                    runtime_policy_id=None,
+                    version="snapshot",
+                    definition=RuntimePolicyDefinition.model_validate(
+                        flow_snapshot.runtime_policy or {}
+                    ),
+                    scope=RuntimePolicyScope.FLOW,
+                    flow_id=flow_id,
+                )
+            else:
+                runtime_policy = await self.policy_resolver.resolve(
+                    tenant_id=tenant_id, flow_id=flow_id
+                )
+        else:
+            runtime_policy = await self.policy_resolver.resolve(
+                tenant_id=tenant_id, flow_id=flow_id
+            )
+        if graph_snapshot is None:
+            graph_snapshot = (
+                await self.repository.get_flow_graph_snapshot_by_flow_version(
+                    flow_version.flow_version_id
+                )
+            )
         if graph_snapshot is None:
             raise NotFoundServiceException(message="flow_graph_snapshot_not_found")
-
-        available_tools: list[
-            AvailableTool
-        ] = await self.tools_service.list_available_tools_for_execution(
-            tenant_id=tenant_id
-        )
 
         with self.tracer.observe(
             as_type="retriever",
@@ -890,13 +1005,13 @@ class ExecutionService(ExecutionServicePort):
                 name="domain.execution.execution_service.compile_plan_resume",
                 input={
                     "graph_hash": graph_snapshot.graph_hash,
-                    "tool_count": len(available_tools),
+                    "tool_count": 0,
                 },
             ):
                 plan = self.plan_compiler.compile(
                     graph_snapshot.snapshot,
                     graph_snapshot.graph_hash,
-                    available_tools=available_tools,
+                    available_tools=[],
                 )
             with self.tracer.observe(
                 as_type="tool",
@@ -906,10 +1021,6 @@ class ExecutionService(ExecutionServicePort):
                 await self.cache_adapter.set(
                     graph_snapshot.graph_hash, plan.model_dump(mode="json")
                 )
-
-        runtime_policy = await self.policy_resolver.resolve(
-            tenant_id=tenant_id, flow_id=flow_id
-        )
 
         interaction_id = await self.repository.create_interaction(
             session_id=session_id,
@@ -1066,7 +1177,9 @@ class ExecutionService(ExecutionServicePort):
             raise ResourceBlockedServiceException(message="agent_version_not_active")
 
         if agent_version.ai_execution_policy_version_id is None:
-            raise ResourceBlockedServiceException(message="ai_execution_policy_not_active")
+            raise ResourceBlockedServiceException(
+                message="ai_execution_policy_not_active"
+            )
         policy_version = await self.repository.get_ai_execution_policy_version(
             agent_version.ai_execution_policy_version_id
         )
@@ -1079,8 +1192,21 @@ class ExecutionService(ExecutionServicePort):
         model_record = await self.repository.get_model(policy_version.model_id)
         model_name = model_record.name if model_record else None
 
-        if agent_version.rag_config_id and not bool(node.allow_rag_tenant):
-            raise RagNotAllowedException(message="rag_not_allowed_for_task")
+        effective_rag_config_id = node.rag_config_id or agent_version.rag_config_id
+        if effective_rag_config_id:
+            rc = await self._rag_repository.get_rag_config(effective_rag_config_id)
+            if rc is None or rc.tenant_id != tenant_id:
+                raise RagNotAllowedException(message="rag_not_allowed_for_task")
+            ck = rc.corpus_kind
+            if ck == RagCorpusKind.TENANT_KNOWLEDGE or ck == RagCorpusKind.TOOL_CATALOG:
+                if not bool(node.allow_rag_tenant):
+                    raise RagNotAllowedException(message="rag_not_allowed_for_task")
+            elif ck == RagCorpusKind.USER_MEMORY:
+                if not (
+                    bool(node.allow_user_memory_structured)
+                    or bool(node.allow_user_memory_vector)
+                ):
+                    raise RagNotAllowedException(message="rag_not_allowed_for_task")
 
         billing_policy_version_id = (
             await self.repository.get_active_billing_policy_version_id(tenant_id)
@@ -1096,7 +1222,16 @@ class ExecutionService(ExecutionServicePort):
             "node_id": str(node.node_id),
             "node_prompt_id": str(node.node_prompt_id),
             "allow_rag_tenant": bool(node.allow_rag_tenant),
-            "allow_user_memory": bool(node.allow_user_memory),
+            "allow_user_memory_structured": bool(node.allow_user_memory_structured),
+            "allow_user_memory_vector": bool(node.allow_user_memory_vector),
+            "rag_config_id": (
+                str(node.rag_config_id) if node.rag_config_id is not None else None
+            ),
+            "effective_rag_config_id": (
+                str(effective_rag_config_id)
+                if effective_rag_config_id is not None
+                else None
+            ),
             "allow_session_context": bool(node.allow_session_context),
             "allow_memory_write": bool(node.allow_memory_write),
             "agent_version_id": str(agent_run.agent_version_id),
@@ -1441,6 +1576,7 @@ class ExecutionService(ExecutionServicePort):
             agent_run_id=tool_run.agent_run_id,
             node_run_id=tool_run.node_run_id,
             status=RunStatus.CREATED,
+            canonical_status=ToolRunStatus.CREATED,
             correlation_id=correlation_id,
             started_at=None,
             finished_at=None,

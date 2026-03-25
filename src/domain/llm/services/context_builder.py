@@ -15,7 +15,10 @@ from domain.context.schemas.memory_retrieval import MemoryRetrievalConfig
 from domain.context.services.rag_activation_service import RagActivationService
 from domain.context.services.runtime_policy import RuntimeContextLayerPolicy
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from domain.execution.services.graph_runtime.types import ExecutionContext
+from domain.execution.services.graph_runtime.types import (
+    USER_CONTEXT_READ_GATE_STATE_KEY,
+    ExecutionContext,
+)
 from domain.governance.schemas.rag_policy import RagActivationScope
 from domain.llm.schemas.llm import LLMTaskType
 from domain.prompts.schemas.prompt import NodeType
@@ -81,7 +84,7 @@ class ContextBuilder:
         if execution_context is None:
             return None
         try:
-            tool_out = execution_context.get_node_output(NodeType.ToolSelectionNode)
+            tool_out = execution_context.get_node_output(NodeType.ToolResolver)
             result = tool_out.get("result") or []
             selected_tool = result[0].get("selected_tool") or {}
             tool_id = selected_tool.get("tool_config_id")
@@ -181,11 +184,11 @@ class ContextBuilder:
         )
         if not bool(policy.get("gating", False)):
             return decision
-        handle = (
-            execution_context.get_node_output(NodeType.UserContextEnrichmentNode)
-            if execution_context is not None
-            else {}
-        )
+        handle = {}
+        if execution_context is not None:
+            raw = execution_context.state.get(USER_CONTEXT_READ_GATE_STATE_KEY)
+            if isinstance(raw, dict):
+                handle = raw
         if not bool(handle.get("published", False)):
             if task_type == LLMTaskType.RESPONSE_RENDER:
                 default_layers = policy.get("default_layers_when_published") or {}
@@ -319,12 +322,10 @@ class ContextBuilder:
             "tool_response": {},
         }
 
-        intent_slice = execution_context.get_node_output(NodeType.IntentDetectionNode)
-        tool_slice = execution_context.get_node_output(NodeType.ToolSelectionNode)
-        param_slice = execution_context.get_node_output(NodeType.ParamExtractionNode)
-        tool_execution_slice = execution_context.get_node_output(
-            NodeType.ToolExecutionNode
-        )
+        intent_slice = execution_context.get_node_output(NodeType.IntentClassifier)
+        tool_slice = execution_context.get_node_output(NodeType.ToolResolver)
+        param_slice = execution_context.get_node_output(NodeType.ToolInputFiller)
+        tool_execution_slice = execution_context.get_node_output(NodeType.ToolExecutor)
 
         try:
             ctx["derived"]["intents"] = intent_slice.get("result") or []
@@ -378,13 +379,22 @@ class ContextBuilder:
         if agent_version_id is not None:
             persona, agent_version = await self._get_persona(agent_version_id)
             ctx["persona"] = persona.model_dump(mode="json")
-            tenant_rag_config_id = (
+            base_rid = (
                 agent_version.rag_config_id if agent_version is not None else None
             )
+            tenant_rag_config_id = base_rid
             if agent_version is not None:
                 agent = await self.agents_repository.get_agent(agent_version.agent_id)
                 if agent is not None:
                     tenant_id = agent.tenant_id
+            try:
+                nid = UUID(str(execution_context.current_node_id))
+            except (ValueError, TypeError):
+                nid = None
+            if nid is not None:
+                tenant_rag_config_id = await self.agents_repository.resolve_effective_rag_config_id_for_node(
+                    nid
+                )
 
         available_tools = []
         for tool in available_tools_models:
@@ -537,7 +547,7 @@ class ContextBuilder:
                 if parts:
                     execution_context.system_context = "\n".join(parts)
 
-        if current_node_type == NodeType.ParamExtractionNode:
+        if current_node_type == NodeType.ToolInputFiller:
             tool_config_id = self._extract_tool_config_id(
                 execution_context=execution_context
             )

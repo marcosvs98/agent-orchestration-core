@@ -1,7 +1,7 @@
 from typing import Any, Dict
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Flow(BaseModel):
@@ -46,7 +46,9 @@ class Node(BaseModel):
     flow_version_id: UUID
     node_prompt_id: UUID
     allow_rag_tenant: bool = False
-    allow_user_memory: bool = False
+    allow_user_memory_structured: bool = False
+    allow_user_memory_vector: bool = False
+    rag_config_id: UUID | None = None
     allow_session_context: bool = False
     allow_memory_write: bool = False
 
@@ -55,7 +57,9 @@ class NodeCreate(BaseModel):
     flow_version_id: UUID
     node_prompt_id: UUID
     allow_rag_tenant: bool = False
-    allow_user_memory: bool = False
+    allow_user_memory_structured: bool = False
+    allow_user_memory_vector: bool = False
+    rag_config_id: UUID | None = None
     allow_session_context: bool = False
     allow_memory_write: bool = False
 
@@ -107,7 +111,9 @@ class NodeTemplateCopyRequest(BaseModel):
     code: str | None = None
     overrides: Dict[str, Any] | None = None
     allow_rag_tenant: bool = False
-    allow_user_memory: bool = False
+    allow_user_memory_structured: bool = False
+    allow_user_memory_vector: bool = False
+    rag_config_id: UUID | None = None
     allow_session_context: bool = False
     allow_memory_write: bool = False
 
@@ -119,6 +125,57 @@ class CustomNodeCreate(BaseModel):
     node_prompt_id: UUID
     config: Dict[str, Any] | None = None
     allow_rag_tenant: bool = False
-    allow_user_memory: bool = False
+    allow_user_memory_structured: bool = False
+    allow_user_memory_vector: bool = False
+    rag_config_id: UUID | None = None
     allow_session_context: bool = False
     allow_memory_write: bool = False
+
+
+class DeploymentComposeBinding(BaseModel):
+    binding_key: str
+    value_type: str
+    source_kind: str
+    value: Dict[str, Any]
+
+
+class DeploymentComposeRequest(BaseModel):
+    flow_id: UUID
+    flow_version_id: UUID
+    principal_id: str
+    environment: str = "default"
+    graph_definition: Dict[str, Any]
+    runtime_policy_definition: Dict[str, Any] | None = None
+    tool_catalog: Dict[str, Any] | None = None
+    llm_provider_config_hash: str | None = None
+    bindings: list[DeploymentComposeBinding] = Field(default_factory=list)
+
+
+class DeploymentComposeResponse(BaseModel):
+    flow_snapshot_id: UUID
+    flow_deployment_id: UUID
+    flow_version_id: UUID
+    environment: str
+
+
+class DeploymentComposeValidateResponse(BaseModel):
+    valid: bool
+    snapshot_hash: str
+
+
+class FlowArtifactsBatchUpsertRequest(BaseModel):
+    flow_id: UUID
+    flow_version_id: UUID
+    principal_id: str
+    nodes_from_templates: list[NodeTemplateCopyRequest] = Field(default_factory=list)
+    custom_nodes: list[CustomNodeCreate] = Field(default_factory=list)
+    routers: list[RouterCreate] = Field(default_factory=list)
+    condition_expressions: list[ConditionExpressionCreate] = Field(default_factory=list)
+    routing_rules: list[RoutingRuleCreate] = Field(default_factory=list)
+
+
+class FlowArtifactsBatchUpsertResponse(BaseModel):
+    nodes_created: int
+    routers_created: int
+    condition_expressions_created: int
+    routing_rules_created: int

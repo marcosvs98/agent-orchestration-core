@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List
 from uuid import UUID
-from domain.context.ports.service import MemoryWriteServicePort
-from domain.context.schemas.memory_write import MemoryWriteEventContext
 from domain.execution.services.graph_runtime.types import NodeExecutor
 from domain.execution.services.graph_runtime.types import NodeResult
 from domain.execution.schemas.execution import FlowRunInput
@@ -14,8 +12,11 @@ from domain.execution.schemas.execution import FlowFailureReason
 from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
 from domain.execution.services.graph_runtime.registry import NodeRegistry
 from domain.execution.services.graph_runtime.types import (
+    NODE_OUTPUTS_BY_NODE_ID_KEY,
+    USER_CONTEXT_READ_GATE_STATE_KEY,
     ExecutionContext,
     NodeExecutionStatus,
+    RuntimeTraceEdgeEventStatus,
     UserContextEnrichmentMode,
 )
 from domain.execution.services.graph_runtime.execution_plan import (
@@ -32,7 +33,6 @@ from domain.flows.schemas.graph import EdgeKind
 from domain.flows.services.flow_graph_validator import TERMINAL_NODE_TYPES
 from exceptions.service_exceptions import (
     format_exception,
-    BaseServiceException,
     DomainValidationException,
 )
 from domain.governance.schemas.runtime_policy import ResolvedRuntimePolicy
@@ -48,13 +48,11 @@ class RuntimeExecutor:
         tracer: RuntimeTracerPort,
         registry: NodeRegistry | None = None,
         hook: ExecutionEventHook | None = None,
-        memory_write_service: MemoryWriteServicePort | None = None,
     ) -> None:
         self.repository = repository
         self.registry = registry or NodeRegistry(tracer=tracer)
         self.tracer = tracer
         self.hook = hook
-        self.memory_write_service = memory_write_service
         self._default_loop_limit = 10
 
     async def run(
@@ -80,13 +78,22 @@ class RuntimeExecutor:
         definition_dump = (
             runtime_policy.definition.model_dump(mode="json") if runtime_policy else {}
         )
-        loop_limit = (
-            definition_dump.get("limits", {}).get(
-                "max_loop_iterations", self._default_loop_limit
-            )
-            if definition_dump
-            else self._default_loop_limit
-        )
+        if definition_dump:
+            limits = definition_dump.get("limits")
+            if not isinstance(limits, dict):
+                limits = {}
+            raw_loop = limits.get("max_loop_iterations")
+            if raw_loop is None:
+                loop_limit = self._default_loop_limit
+            else:
+                try:
+                    loop_limit = int(raw_loop)
+                except (TypeError, ValueError):
+                    loop_limit = self._default_loop_limit
+                if loop_limit < 1:
+                    loop_limit = self._default_loop_limit
+        else:
+            loop_limit = self._default_loop_limit
         metadata = {}
         if definition_dump:
             metadata["runtime_policy"] = definition_dump
@@ -116,12 +123,8 @@ class RuntimeExecutor:
         if isinstance(user_context_policy, dict) and bool(
             user_context_policy.get("enabled")
         ):
-            uce_key = NodeType.UserContextEnrichmentNode.value
-            handle = (
-                context.state.get(uce_key)
-                or context.state.get(NodeType.UserContextEnrichmentNode)
-                or context.state.get("user_context_enrichment")
-            )
+            gate_key = USER_CONTEXT_READ_GATE_STATE_KEY
+            handle = context.state.get(gate_key)
             if not isinstance(handle, dict):
                 handle = {}
             mode = (
@@ -139,7 +142,7 @@ class RuntimeExecutor:
                 else {},
                 "mode": str(handle.get("mode") or mode),
             }
-            context.state[uce_key] = merged_handle
+            context.state[gate_key] = merged_handle
             with self.tracer.observe(
                 as_type="event",
                 name="domain.context.user_context_enrichment.seeded",
@@ -276,20 +279,18 @@ class RuntimeExecutor:
                 canonical_status=status,
             )
 
-            new_state = node_result.next_state or context.state
-            new_memory = list(context.memory)
-            if node_result.memory_append:
-                new_memory.append(node_result.memory_append)
-                await self._persist_user_memory_item(
-                    tenant_id=tenant_id,
-                    user_id=context.user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    causation_id=context.current_node_run_id,
-                    node_id=context.current_node_id,
-                    memory_item=node_result.memory_append,
+            new_state = dict(node_result.next_state or context.state)
+            snap = dict(new_state.get(NODE_OUTPUTS_BY_NODE_ID_KEY) or {})
+            if context.current_node_id:
+                out_data = (
+                    node_result.data if isinstance(node_result.data, dict) else {}
                 )
+                snap[str(context.current_node_id)] = out_data
+            new_state[NODE_OUTPUTS_BY_NODE_ID_KEY] = snap
+            if node_result.memory is not None:
+                new_memory = list(node_result.memory)
+            else:
+                new_memory = list(context.memory)
             resume_to_node_id = None
             if node_result.status == NodeExecutionStatus.NEEDS_INPUT:
                 resume_to_node_id = (
@@ -487,7 +488,7 @@ class RuntimeExecutor:
             next_spec = node_specs.get(next_node_id)
             if (
                 next_spec is not None
-                and next_spec.get("type") == NodeType.FallbackNodeSLA.value
+                and next_spec.get("type") == NodeType.HumanFallback.value
             ):
                 new_metadata = dict(context.metadata or {})
                 new_metadata["fallback_source_node"] = context.current_node_id
@@ -607,7 +608,7 @@ class RuntimeExecutor:
             if event_handle:
                 event_handle.success(
                     output={
-                        "status": "recorded",
+                        "status": RuntimeTraceEdgeEventStatus.RECORDED.value,
                         "payload": {
                             "from_node": current_node_id,
                             "to_node": to_node,
@@ -615,75 +616,6 @@ class RuntimeExecutor:
                         },
                     }
                 )
-
-    async def _persist_user_memory_item(
-        self,
-        *,
-        tenant_id: UUID,
-        user_id: str,
-        session_id: UUID,
-        flow_run_id: UUID,
-        correlation_id: UUID,
-        causation_id: UUID | None,
-        node_id: str | None,
-        memory_item: dict[str, Any],
-    ) -> None:
-        if self.memory_write_service is None or node_id is None:
-            return
-        try:
-            node_uuid = UUID(node_id)
-        except ValueError:
-            return
-        node = await self.repository.get_node(node_uuid)
-        if node is None:
-            return
-        if not bool(node.allow_memory_write):
-            with self.tracer.observe(
-                as_type="event",
-                name="domain.context.memory_policy_decision",
-                input={
-                    "flow_run_id": str(flow_run_id),
-                    "correlation_id": str(correlation_id),
-                    "tenant_id": str(tenant_id),
-                    "user_id": user_id,
-                    "source": str(memory_item.get("source")),
-                    "schema_id": str(memory_item.get("schema_id")),
-                    "allowed": False,
-                    "policy_version_id": None,
-                    "reason": "ai_task_memory_write_disabled",
-                },
-            ):
-                return
-        try:
-            await self.memory_write_service.write_memory_item(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                item=memory_item,
-                event_context=MemoryWriteEventContext(
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    causation_id=causation_id,
-                    node_id=node_uuid,
-                ),
-            )
-        except BaseServiceException as exc:
-            with self.tracer.observe(
-                as_type="event",
-                name="domain.context.memory_policy_decision",
-                input={
-                    "flow_run_id": str(flow_run_id),
-                    "correlation_id": str(correlation_id),
-                    "tenant_id": str(tenant_id),
-                    "user_id": user_id,
-                    "source": str(memory_item.get("source")),
-                    "schema_id": str(memory_item.get("schema_id")),
-                    "allowed": False,
-                    "policy_version_id": None,
-                    "reason": exc.message,
-                },
-            ):
-                return
 
     async def _fail_flow(
         self,
@@ -694,7 +626,7 @@ class RuntimeExecutor:
         flow_run_id: UUID,
         correlation_id: UUID,
         reason: FlowFailureReason,
-        exc: BaseServiceException | None = None,
+        exc: BaseException | None = None,
     ) -> None:
         if exc is None:
             exc = DomainValidationException(message=reason.value)

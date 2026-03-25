@@ -19,6 +19,7 @@ from seeds.demo.ids import (
     PROMPT_CLARIFICATION_ID,
     PROMPT_INPUT_MODERATION_ID,
     PROMPT_INTENT_ID,
+    PROMPT_MEMORY_PAYLOAD_SUMMARIZE_ID,
     PROMPT_RESPONSE_ID,
     PROMPT_SLOT_ID,
     PROMPT_TOOL_SELECTION_ID,
@@ -102,6 +103,17 @@ Return JSON only.
 flagged = true if the text contains hate, harassment, sexual content,
 self harm, violence, or offensive language."""
 
+        memory_payload_summarize_template = """# Task
+Compress the raw ToolInputFiller-related payload for durable user memory.
+
+# Raw payload (JSON)
+{{ ctx.input.input_payload.memory_payload_raw | tojson }}
+
+# Rules
+- Return only valid JSON matching the output schema.
+- Preserve semantically important fields; drop noise.
+- Do not add facts that are not supported by the raw payload."""
+
         fallback_template = """Classify the user message.
 
 high = system error blocking usage
@@ -127,7 +139,7 @@ Return only JSON:
         prompts = [
             (
                 PROMPT_INPUT_MODERATION_ID,
-                "InputModerationNode",
+                "ContentModeration",
                 input_moderation_template,
                 {
                     "type": "object",
@@ -138,7 +150,7 @@ Return only JSON:
             ),
             (
                 PROMPT_FALLBACK_SLA_ID,
-                "FallbackNodeSLA",
+                "HumanFallback",
                 fallback_template,
                 {
                     "type": "object",
@@ -152,7 +164,7 @@ Return only JSON:
             ),
             (
                 PROMPT_INTENT_ID,
-                "IntentDetectionNode",
+                "IntentClassifier",
                 intent_template,
                 {
                     "type": "object",
@@ -170,6 +182,7 @@ Return only JSON:
                                             "query",
                                             "command",
                                             "conversation",
+                                            "update_user_preferences",
                                         ],
                                     },
                                     "confidence": {
@@ -196,7 +209,7 @@ Return only JSON:
             ),
             (
                 PROMPT_SLOT_ID,
-                "ParamExtractionNode",
+                "ToolInputFiller",
                 slot_template,
                 {
                     "type": "object",
@@ -252,7 +265,7 @@ Return only JSON:
             ),
             (
                 PROMPT_CLARIFICATION_ID,
-                "ClarificationNode",
+                "QueryClarifier",
                 clarification_template,
                 {
                     "type": "object",
@@ -293,7 +306,7 @@ Return only JSON:
             ),
             (
                 PROMPT_RESPONSE_ID,
-                "ResponseComposer",
+                "ResponseBuilder",
                 response_template,
                 {
                     "type": "object",
@@ -331,8 +344,22 @@ Return only JSON:
                 },
             ),
             (
+                PROMPT_MEMORY_PAYLOAD_SUMMARIZE_ID,
+                "ContextSummarizer",
+                memory_payload_summarize_template,
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "prepared_memory_data": {"type": "object"},
+                        "reason_code": {"type": "string"},
+                    },
+                    "required": ["prepared_memory_data"],
+                },
+            ),
+            (
                 PROMPT_TOOL_SELECTION_ID,
-                "ToolSelectionNode",
+                "ToolResolver",
                 tool_selection_template,
                 {
                     "type": "object",

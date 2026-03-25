@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from domain.execution.services.graph_runtime.nodes.fallback import FallbackNode
+from domain.execution.services.graph_runtime.nodes.human_fallback import HumanFallback
 from domain.llm.schemas.llm import LLMResult
 from domain.prompts.schemas.prompt import ResolvedPrompt
 from domain.execution.services.graph_runtime.types import (
@@ -114,7 +114,7 @@ async def test_get_or_create_open_case_returns_existing_when_open_exists() -> No
         node_run_id=uuid4(),
         interaction_id=None,
         user_id="user-1",
-        node="IntentDetectionNode",
+        node="IntentClassifier",
         fallback_reason=SLAFallbackReason.UNKNOWN_INTENT,
         opened_at=existing_case.opened_at,
     )
@@ -148,7 +148,7 @@ async def test_get_or_create_open_case_creates_when_no_open_exists() -> None:
         node_run_id=new_case.node_run_id,
         interaction_id=None,
         user_id=new_case.user_id,
-        node="IntentDetectionNode",
+        node="IntentClassifier",
         fallback_reason=SLAFallbackReason.UNKNOWN_INTENT,
         opened_at=new_case.opened_at,
     )
@@ -176,7 +176,7 @@ async def test_get_or_create_open_case_returns_none_when_create_conflicts() -> N
         node_run_id=uuid4(),
         interaction_id=None,
         user_id="user-1",
-        node="ToolSelectionNode",
+        node="ToolResolver",
         fallback_reason=SLAFallbackReason.UNKNOWN_INTENT,
         opened_at=datetime.now(timezone.utc),
     )
@@ -374,7 +374,7 @@ def _make_fallback_node(human_sla_service=None, llm_output=None):
             prompt_frozen_hash="",
         )
     )
-    return FallbackNode(
+    return HumanFallback(
         tracer=tracer,
         llm_executor=llm_executor,
         prompt_resolver=prompt_resolver,
@@ -416,7 +416,7 @@ async def test_fallback_node_execute_with_service_creates_ticket() -> None:
         current_node_id=str(uuid4()),
         current_node_run_id=uuid4(),
         metadata={
-            "fallback_source_node": "ToolSelectionNode",
+            "fallback_source_node": "ToolResolver",
             "fallback_reason": "TOOL_FAILURE",
             "operation_ids": ["op-1"],
         },

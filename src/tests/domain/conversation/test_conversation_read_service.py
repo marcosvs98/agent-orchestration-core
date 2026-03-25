@@ -31,8 +31,9 @@ async def test_get_end_user_detail_merges_preferences_and_profile() -> None:
     read_repo = AsyncMock()
     read_repo.get_end_user_id = AsyncMock(return_value=end_user_id)
     exec_repo = AsyncMock()
-    exec_repo.get_user_preferences = AsyncMock(return_value={"k": "v"})
-    exec_repo.get_user_memory_profile = AsyncMock(return_value={"bio": "x"})
+    exec_repo.get_user_memory_preferences_and_profile = AsyncMock(
+        return_value=({"k": "v"}, {"bio": "x"})
+    )
     service = ConversationReadService(
         read_repository=read_repo, execution_repository=exec_repo
     )

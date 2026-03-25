@@ -30,5 +30,5 @@ class ToolRunResult(BaseModel):
     run_at: str | None = None
 
 
-class ToolExecutionNodeOutput(BaseModel):
+class ToolExecutorOutput(BaseModel):
     result: list[ToolRunResult] = Field(default_factory=list)

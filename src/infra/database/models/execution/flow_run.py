@@ -46,6 +46,17 @@ class FlowRun(ORMBaseModel):
         ForeignKey("flow_graph_snapshot.flow_graph_snapshot_id", ondelete="RESTRICT"),
         nullable=True,
     )
+    flow_snapshot_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("flow_snapshot.flow_snapshot_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    flow_deployment_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("flow_deployment.flow_deployment_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    runtime_contract = Column(JSONB, nullable=False, server_default="{}")
     execution_plan_hash = Column(String(length=128), nullable=True)
     runtime_policy_hash = Column(String(length=128), nullable=True)
     tool_catalog_hash = Column(String(length=128), nullable=True)

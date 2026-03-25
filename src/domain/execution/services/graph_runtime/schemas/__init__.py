@@ -1,5 +1,5 @@
-from domain.execution.services.graph_runtime.schemas.tool_execution import (
-    ToolExecutionNodeOutput,
+from domain.execution.services.graph_runtime.schemas.tool_executor import (
+    ToolExecutorOutput,
     ToolRunInput,
     ToolRunResult,
 )
@@ -7,5 +7,5 @@ from domain.execution.services.graph_runtime.schemas.tool_execution import (
 __all__ = [
     "ToolRunInput",
     "ToolRunResult",
-    "ToolExecutionNodeOutput",
+    "ToolExecutorOutput",
 ]

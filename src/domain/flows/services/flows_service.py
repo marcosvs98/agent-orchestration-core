@@ -1,7 +1,11 @@
+import hashlib
+import json
+from typing import Any
 from uuid import UUID
 
 from domain.flows.ports.service import FlowsServicePort
 
+from domain.execution.adapters.idempotency_service import IdempotencyService
 from domain.common.schemas.change import ChangeRequest
 from domain.common.schemas.versioning import VersionStatus
 
@@ -16,7 +20,12 @@ from domain.flows.schemas.flows import (
     ConditionExpression,
     ConditionExpressionCreate,
     CustomNodeCreate,
+    DeploymentComposeRequest,
+    DeploymentComposeResponse,
+    DeploymentComposeValidateResponse,
     Flow,
+    FlowArtifactsBatchUpsertRequest,
+    FlowArtifactsBatchUpsertResponse,
     FlowCreate,
     FlowVersion,
     FlowVersionCreate,
@@ -39,8 +48,14 @@ from domain.flows.schemas.graph_node_config import validate_node_config
 from domain.flows.services.flow_graph_compiler import FlowGraphCompiler
 from domain.flows.services.flow_graph_draft_validator import FlowGraphDraftValidator
 from domain.flows.services.flow_graph_validator import FlowGraphValidator
+from domain.governance.services.rag_policy_service import RagPolicyService
+from domain.rag.repositories.rag_repository import RagRepository
+from domain.rag.services.rag_flow_snapshot_materialization import (
+    resolve_frozen_rag_snapshot_fields,
+)
 from exceptions.service_exceptions import (
     DomainValidationException,
+    IdempotencyInProgressException,
     NotFoundServiceException,
     ResourceBlockedServiceException,
 )
@@ -52,11 +67,155 @@ class FlowsService(FlowsServicePort):
         repository: FlowsRepository,
         limit_policy_repository: ExecutionLimitPolicyRepository,
         authoring_events: AuthoringEventRepository,
+        idempotency: IdempotencyService,
+        rag_repository: RagRepository | None = None,
+        rag_policy_service: RagPolicyService | None = None,
     ) -> None:
         self.repository = repository
         self.limit_policy_repository = limit_policy_repository
         self.authoring_events = authoring_events
+        self.idempotency = idempotency
+        self.rag_repository = rag_repository
+        self.rag_policy_service = rag_policy_service
         self.compiler = FlowGraphCompiler()
+
+    @staticmethod
+    def _hash_dict(payload: dict) -> str:
+        normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(normalized.encode()).hexdigest()
+
+    @staticmethod
+    def _unique_rag_config_id_for_flow_nodes(nodes: list[Any]) -> UUID | None:
+        found: UUID | None = None
+        for node in nodes:
+            rid = node.rag_config_id
+            if rid is None:
+                continue
+            if found is None:
+                found = rid
+            elif found != rid:
+                raise DomainValidationException(
+                    message="flow_snapshot_rag_config_conflict",
+                    name="FLOW_SNAPSHOT_RAG_CONFIG_CONFLICT",
+                    input_data={"code": "flow_snapshot_rag_config_conflict"},
+                    status_code=422,
+                )
+        return found
+
+    async def _resolve_frozen_rag_for_flow_version(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_version_id: UUID,
+    ) -> tuple[UUID | None, UUID | None, UUID | None, str | None]:
+        if self.rag_repository is None or self.rag_policy_service is None:
+            return None, None, None, None
+        nodes = await self.repository.list_nodes_for_flow_version(flow_version_id)
+        effective = self._unique_rag_config_id_for_flow_nodes(nodes)
+        return await resolve_frozen_rag_snapshot_fields(
+            tenant_id=tenant_id,
+            rag_config_id=effective,
+            rag_repository=self.rag_repository,
+            rag_policy_service=self.rag_policy_service,
+        )
+
+    async def _assert_at_most_one_allow_memory_write_on_create(
+        self,
+        *,
+        flow_version_id: UUID,
+        allow_memory_write: bool,
+    ) -> None:
+        if not allow_memory_write:
+            return
+        nodes = await self.repository.list_nodes_for_flow_version(flow_version_id)
+        if sum(1 for n in nodes if bool(n.allow_memory_write)) > 0:
+            raise DomainValidationException(
+                message="multiple_nodes_allow_memory_write",
+            )
+
+    async def _assert_flow_version_at_most_one_memory_write(
+        self,
+        *,
+        flow_version_id: UUID,
+    ) -> None:
+        nodes = await self.repository.list_nodes_for_flow_version(flow_version_id)
+        if sum(1 for n in nodes if bool(n.allow_memory_write)) > 1:
+            raise DomainValidationException(
+                message="multiple_nodes_allow_memory_write",
+            )
+
+    async def _materialize_snapshot_for_flow_version(
+        self,
+        *,
+        flow_id: UUID,
+        flow_version_id: UUID,
+        principal_id: str,
+        attach_default_deployment: bool,
+    ) -> None:
+        fgs = await self.repository.get_flow_graph_snapshot_by_flow_version(
+            flow_version_id
+        )
+        if fgs is None:
+            return
+        flow = await self.repository.get_flow(flow_id)
+        if flow is None:
+            return
+        runtime_policy: dict[str, Any] = {}
+        tool_catalog: dict[str, Any] = {}
+        binding_rows: list[dict[str, Any]] = []
+        (
+            fr_cfg,
+            fr_rule,
+            fr_pol,
+            fr_hash,
+        ) = await self._resolve_frozen_rag_for_flow_version(
+            tenant_id=flow.tenant_id,
+            flow_version_id=flow_version_id,
+        )
+        snapshot_hash = self._hash_dict(
+            {
+                "graph_hash": fgs.graph_hash,
+                "runtime_policy": runtime_policy,
+                "tool_catalog": tool_catalog,
+                "bindings": binding_rows,
+                "frozen_rag_materialization_hash": fr_hash,
+            }
+        )
+        flow_snapshot = await self.repository.upsert_flow_snapshot(
+            flow_version_id=flow_version_id,
+            snapshot_schema_version=1,
+            snapshot_hash=snapshot_hash,
+            snapshot={
+                "flow_graph_snapshot_id": str(fgs.flow_graph_snapshot_id),
+                "graph_hash": fgs.graph_hash,
+                "graph": fgs.snapshot,
+            },
+            runtime_policy=runtime_policy,
+            tool_catalog=tool_catalog,
+            llm_provider_config_hash=None,
+            created_by=principal_id,
+            frozen_rag_config_id=fr_cfg,
+            frozen_rag_chunking_rule_id=fr_rule,
+            frozen_rag_policy_version_id=fr_pol,
+            frozen_rag_materialization_hash=fr_hash,
+        )
+        await self.repository.upsert_snapshot_effective_policy(
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+            policy_hash=self._hash_dict(runtime_policy),
+            definition=runtime_policy,
+        )
+        await self.repository.replace_snapshot_bindings(
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+            bindings=binding_rows,
+        )
+        if attach_default_deployment:
+            await self.repository.upsert_flow_deployment(
+                flow_id=flow_id,
+                flow_version_id=flow_version_id,
+                flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+                environment="default",
+                deployed_by=principal_id,
+            )
 
     async def create_flow_graph(
         self,
@@ -144,6 +303,9 @@ class FlowsService(FlowsServicePort):
             raise NotFoundServiceException(message="flow_graph_draft_not_found")
         definition = FlowGraphDefinition.model_validate(draft.definition)
         FlowGraphDraftValidator.validate(definition)
+        await self._assert_flow_version_at_most_one_memory_write(
+            flow_version_id=payload.flow_version_id,
+        )
         validated = await self.repository.validate_flow_graph_draft(
             flow_version_id=payload.flow_version_id,
             principal_id=payload.principal_id,
@@ -184,6 +346,9 @@ class FlowsService(FlowsServicePort):
             )
         definition = FlowGraphDefinition.model_validate(draft.definition)
         FlowGraphDraftValidator.validate(definition)
+        await self._assert_flow_version_at_most_one_memory_write(
+            flow_version_id=payload.flow_version_id,
+        )
         snapshot_payload, graph_hash = self.compiler.compile(definition)
 
         snapshot = await self.repository.create_flow_graph_snapshot(
@@ -240,6 +405,10 @@ class FlowsService(FlowsServicePort):
                 message="execution_limit_policy_not_published"
             )
 
+        await self._assert_flow_version_at_most_one_memory_write(
+            flow_version_id=version_uuid,
+        )
+
         await self.repository.set_flow_version_status(
             flow_version_id=version_uuid, status=VersionStatus.VALIDATED
         )
@@ -269,6 +438,9 @@ class FlowsService(FlowsServicePort):
             raise ResourceBlockedServiceException(message="flow_version_not_validated")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
+        await self._assert_flow_version_at_most_one_memory_write(
+            flow_version_id=version_uuid,
+        )
         await self.repository.set_flow_version_status(
             flow_version_id=version_uuid, status=VersionStatus.PUBLISHED
         )
@@ -282,6 +454,12 @@ class FlowsService(FlowsServicePort):
             principal_id=principal_id,
             justification=change_request.justification,
             schema_version=1,
+        )
+        await self._materialize_snapshot_for_flow_version(
+            flow_id=flow_uuid,
+            flow_version_id=version_uuid,
+            principal_id=principal_id,
+            attach_default_deployment=False,
         )
         refreshed = await self.repository.get_flow_version(version_uuid)
         if refreshed is None:
@@ -320,6 +498,12 @@ class FlowsService(FlowsServicePort):
             activated_by_principal_id=principal_id,
             justification=change_request.justification,
             flow_graph_snapshot_id=snapshot.flow_graph_snapshot_id,
+        )
+        await self._materialize_snapshot_for_flow_version(
+            flow_id=flow_uuid,
+            flow_version_id=version_uuid,
+            principal_id=principal_id,
+            attach_default_deployment=True,
         )
         await self.authoring_events.append_event(
             tenant_id=tenant_id,
@@ -380,6 +564,215 @@ class FlowsService(FlowsServicePort):
         )
         return version
 
+    async def compose_deployment(
+        self,
+        *,
+        tenant_id: UUID,
+        payload: DeploymentComposeRequest,
+        idempotency_key: str,
+    ) -> DeploymentComposeResponse:
+        idem_key = self.idempotency.build_key(
+            tenant_id=tenant_id,
+            endpoint="flows:deployments:compose",
+            idempotency_key=idempotency_key,
+        )
+        acquired = await self.idempotency.try_acquire(idem_key)
+        if not acquired:
+            existing = await self.idempotency.get(idem_key)
+            if existing and "response" in existing:
+                return DeploymentComposeResponse.model_validate(existing["response"])
+            raise IdempotencyInProgressException()
+        flow = await self.repository.get_flow(payload.flow_id)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        version = await self.repository.get_flow_version(payload.flow_version_id)
+        if version is None or version.flow_id != payload.flow_id:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        if version.status != VersionStatus.PUBLISHED:
+            raise ResourceBlockedServiceException(message="flow_version_not_published")
+        definition = FlowGraphDefinition.model_validate(payload.graph_definition)
+        FlowGraphDraftValidator.validate(definition)
+        await self._assert_flow_version_at_most_one_memory_write(
+            flow_version_id=payload.flow_version_id,
+        )
+        snapshot_payload, graph_hash = self.compiler.compile(definition)
+        flow_graph_snapshot = (
+            await self.repository.get_flow_graph_snapshot_by_flow_version(
+                payload.flow_version_id
+            )
+        )
+        if flow_graph_snapshot is None:
+            flow_graph_snapshot = await self.repository.create_flow_graph_snapshot(
+                flow_version_id=payload.flow_version_id,
+                snapshot=snapshot_payload,
+                graph_hash=graph_hash,
+                compiled_by=payload.principal_id,
+            )
+        runtime_policy = payload.runtime_policy_definition or {}
+        tool_catalog = payload.tool_catalog or {}
+        llm_provider_config_hash = payload.llm_provider_config_hash
+        (
+            fr_cfg,
+            fr_rule,
+            fr_pol,
+            fr_hash,
+        ) = await self._resolve_frozen_rag_for_flow_version(
+            tenant_id=tenant_id,
+            flow_version_id=payload.flow_version_id,
+        )
+        snapshot_hash = self._hash_dict(
+            {
+                "graph_hash": flow_graph_snapshot.graph_hash,
+                "runtime_policy": runtime_policy,
+                "tool_catalog": tool_catalog,
+                "bindings": [
+                    binding.model_dump(mode="json") for binding in payload.bindings
+                ],
+                "frozen_rag_materialization_hash": fr_hash,
+            }
+        )
+        flow_snapshot = await self.repository.upsert_flow_snapshot(
+            flow_version_id=payload.flow_version_id,
+            snapshot_schema_version=1,
+            snapshot_hash=snapshot_hash,
+            snapshot={
+                "flow_graph_snapshot_id": str(
+                    flow_graph_snapshot.flow_graph_snapshot_id
+                ),
+                "graph_hash": flow_graph_snapshot.graph_hash,
+                "graph": snapshot_payload,
+            },
+            runtime_policy=runtime_policy,
+            tool_catalog=tool_catalog,
+            llm_provider_config_hash=llm_provider_config_hash,
+            created_by=payload.principal_id,
+            frozen_rag_config_id=fr_cfg,
+            frozen_rag_chunking_rule_id=fr_rule,
+            frozen_rag_policy_version_id=fr_pol,
+            frozen_rag_materialization_hash=fr_hash,
+        )
+        await self.repository.upsert_snapshot_effective_policy(
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+            policy_hash=self._hash_dict(runtime_policy),
+            definition=runtime_policy,
+        )
+        await self.repository.replace_snapshot_bindings(
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+            bindings=[binding.model_dump(mode="json") for binding in payload.bindings],
+        )
+        deployment = await self.repository.upsert_flow_deployment(
+            flow_id=payload.flow_id,
+            flow_version_id=payload.flow_version_id,
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+            environment=payload.environment,
+            deployed_by=payload.principal_id,
+        )
+        result = DeploymentComposeResponse(
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id,
+            flow_deployment_id=deployment.flow_deployment_id,
+            flow_version_id=payload.flow_version_id,
+            environment=deployment.environment,
+        )
+        await self.idempotency.set_result(
+            idem_key, {"response": result.model_dump(mode="json")}
+        )
+        return result
+
+    async def validate_compose_deployment(
+        self, *, tenant_id: UUID, payload: DeploymentComposeRequest
+    ) -> DeploymentComposeValidateResponse:
+        flow = await self.repository.get_flow(payload.flow_id)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        version = await self.repository.get_flow_version(payload.flow_version_id)
+        if version is None or version.flow_id != payload.flow_id:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        definition = FlowGraphDefinition.model_validate(payload.graph_definition)
+        FlowGraphDraftValidator.validate(definition)
+        await self._assert_flow_version_at_most_one_memory_write(
+            flow_version_id=payload.flow_version_id,
+        )
+        snapshot_payload, graph_hash = self.compiler.compile(definition)
+        fr_hash = (
+            await self._resolve_frozen_rag_for_flow_version(
+                tenant_id=tenant_id,
+                flow_version_id=payload.flow_version_id,
+            )
+        )[3]
+        snapshot_hash = self._hash_dict(
+            {
+                "graph_hash": graph_hash,
+                "runtime_policy": payload.runtime_policy_definition or {},
+                "tool_catalog": payload.tool_catalog or {},
+                "bindings": [
+                    binding.model_dump(mode="json") for binding in payload.bindings
+                ],
+                "frozen_rag_materialization_hash": fr_hash,
+            }
+        )
+        return DeploymentComposeValidateResponse(
+            valid=True, snapshot_hash=snapshot_hash
+        )
+
+    async def batch_upsert_artifacts(
+        self, *, tenant_id: UUID, payload: FlowArtifactsBatchUpsertRequest
+    ) -> FlowArtifactsBatchUpsertResponse:
+        flow = await self.repository.get_flow(payload.flow_id)
+        if flow is None or flow.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="flow_not_found")
+        version = await self.repository.get_flow_version(payload.flow_version_id)
+        if version is None or version.flow_id != payload.flow_id:
+            raise NotFoundServiceException(message="flow_version_not_found")
+        nodes_created = 0
+        routers_created = 0
+        expressions_created = 0
+        rules_created = 0
+        for request in payload.nodes_from_templates:
+            await self.copy_node_from_template_request(
+                tenant_id=tenant_id,
+                flow_id=str(payload.flow_id),
+                flow_version_id=str(payload.flow_version_id),
+                payload=request,
+                principal_id=payload.principal_id,
+            )
+            nodes_created += 1
+        for request in payload.custom_nodes:
+            await self.create_custom_node(
+                tenant_id=tenant_id,
+                flow_id=str(payload.flow_id),
+                flow_version_id=str(payload.flow_version_id),
+                payload=request,
+                principal_id=payload.principal_id,
+            )
+            nodes_created += 1
+        for request in payload.routers:
+            await self.create_router(
+                tenant_id=tenant_id,
+                router_create=request,
+                principal_id=payload.principal_id,
+            )
+            routers_created += 1
+        for request in payload.condition_expressions:
+            await self.create_condition_expression(
+                tenant_id=tenant_id,
+                condition_expression_create=request,
+                principal_id=payload.principal_id,
+            )
+            expressions_created += 1
+        for request in payload.routing_rules:
+            await self.create_routing_rule(
+                tenant_id=tenant_id,
+                routing_rule_create=request,
+                principal_id=payload.principal_id,
+            )
+            rules_created += 1
+        return FlowArtifactsBatchUpsertResponse(
+            nodes_created=nodes_created,
+            routers_created=routers_created,
+            condition_expressions_created=expressions_created,
+            routing_rules_created=rules_created,
+        )
+
     async def list_flows(self, *, tenant_id: UUID, limit: int = 200) -> list[Flow]:
         flows = await self.repository.list_flows(tenant_id=tenant_id, limit=limit)
         return [
@@ -417,7 +810,13 @@ class FlowsService(FlowsServicePort):
             justification="create flow",
             schema_version=1,
         )
-        return Flow(id=model.flow_id, name=model.name)
+        return Flow(
+            id=model.flow_id,
+            name=model.name,
+            description=model.description,
+            tags=model.tags,
+            created_by=model.created_by,
+        )
 
     async def get_flow(self, *, tenant_id: UUID, flow_id: str) -> Flow:
         flow_uuid = UUID(flow_id)
@@ -523,7 +922,9 @@ class FlowsService(FlowsServicePort):
                 flow_version_id=node.flow_version_id,
                 node_prompt_id=node.node_prompt_id,
                 allow_rag_tenant=bool(node.allow_rag_tenant),
-                allow_user_memory=bool(node.allow_user_memory),
+                allow_user_memory_structured=bool(node.allow_user_memory_structured),
+                allow_user_memory_vector=bool(node.allow_user_memory_vector),
+                rag_config_id=node.rag_config_id,
                 allow_session_context=bool(node.allow_session_context),
                 allow_memory_write=bool(node.allow_memory_write),
             )
@@ -539,11 +940,17 @@ class FlowsService(FlowsServicePort):
         flow = await self.repository.get_flow(version.flow_id)
         if flow is None or flow.tenant_id != tenant_id:
             raise NotFoundServiceException(message="flow_not_found")
+        await self._assert_at_most_one_allow_memory_write_on_create(
+            flow_version_id=node_create.flow_version_id,
+            allow_memory_write=node_create.allow_memory_write,
+        )
         model = await self.repository.create_node(
             flow_version_id=node_create.flow_version_id,
             node_prompt_id=node_create.node_prompt_id,
             allow_rag_tenant=node_create.allow_rag_tenant,
-            allow_user_memory=node_create.allow_user_memory,
+            allow_user_memory_structured=node_create.allow_user_memory_structured,
+            allow_user_memory_vector=node_create.allow_user_memory_vector,
+            rag_config_id=node_create.rag_config_id,
             allow_session_context=node_create.allow_session_context,
             allow_memory_write=node_create.allow_memory_write,
             created_by=principal_id,
@@ -564,7 +971,9 @@ class FlowsService(FlowsServicePort):
             flow_version_id=model.flow_version_id,
             node_prompt_id=model.node_prompt_id,
             allow_rag_tenant=bool(model.allow_rag_tenant),
-            allow_user_memory=bool(model.allow_user_memory),
+            allow_user_memory_structured=bool(model.allow_user_memory_structured),
+            allow_user_memory_vector=bool(model.allow_user_memory_vector),
+            rag_config_id=model.rag_config_id,
             allow_session_context=bool(model.allow_session_context),
             allow_memory_write=bool(model.allow_memory_write),
         )
@@ -594,7 +1003,9 @@ class FlowsService(FlowsServicePort):
         node_template_id: UUID,
         overrides: dict | None,
         allow_rag_tenant: bool,
-        allow_user_memory: bool,
+        allow_user_memory_structured: bool,
+        allow_user_memory_vector: bool,
+        rag_config_id: UUID | None,
         allow_session_context: bool,
         allow_memory_write: bool,
         principal_id: str,
@@ -628,6 +1039,10 @@ class FlowsService(FlowsServicePort):
         if node_prompt_id is None:
             raise NotFoundServiceException(message="node_prompt_not_found")
 
+        await self._assert_at_most_one_allow_memory_write_on_create(
+            flow_version_id=version_uuid,
+            allow_memory_write=allow_memory_write,
+        )
         node_model = await self.repository.create_node_from_template(
             flow_version_id=version_uuid,
             node_type=template.node_type,
@@ -635,7 +1050,9 @@ class FlowsService(FlowsServicePort):
             source_node_template_id=template.node_template_id,
             node_prompt_id=node_prompt_id,
             allow_rag_tenant=allow_rag_tenant,
-            allow_user_memory=allow_user_memory,
+            allow_user_memory_structured=allow_user_memory_structured,
+            allow_user_memory_vector=allow_user_memory_vector,
+            rag_config_id=rag_config_id,
             allow_session_context=allow_session_context,
             allow_memory_write=allow_memory_write,
             created_by=principal_id,
@@ -683,7 +1100,9 @@ class FlowsService(FlowsServicePort):
             flow_version_id=node_model.flow_version_id,
             node_prompt_id=node_model.node_prompt_id,
             allow_rag_tenant=bool(node_model.allow_rag_tenant),
-            allow_user_memory=bool(node_model.allow_user_memory),
+            allow_user_memory_structured=bool(node_model.allow_user_memory_structured),
+            allow_user_memory_vector=bool(node_model.allow_user_memory_vector),
+            rag_config_id=node_model.rag_config_id,
             allow_session_context=bool(node_model.allow_session_context),
             allow_memory_write=bool(node_model.allow_memory_write),
         )
@@ -720,7 +1139,9 @@ class FlowsService(FlowsServicePort):
             node_template_id=template_id,
             overrides=payload.overrides,
             allow_rag_tenant=payload.allow_rag_tenant,
-            allow_user_memory=payload.allow_user_memory,
+            allow_user_memory_structured=payload.allow_user_memory_structured,
+            allow_user_memory_vector=payload.allow_user_memory_vector,
+            rag_config_id=payload.rag_config_id,
             allow_session_context=payload.allow_session_context,
             allow_memory_write=payload.allow_memory_write,
             principal_id=principal_id,
@@ -850,13 +1271,19 @@ class FlowsService(FlowsServicePort):
         if version is None or version.flow_id != flow_uuid:
             raise NotFoundServiceException(message="flow_version_not_found")
         validate_node_config(payload.node_type, payload.config or {})
+        await self._assert_at_most_one_allow_memory_write_on_create(
+            flow_version_id=version_uuid,
+            allow_memory_write=payload.allow_memory_write,
+        )
         node_model = await self.repository.create_custom_node(
             flow_version_id=version_uuid,
             node_type=payload.node_type,
             config=payload.config or {},
             node_prompt_id=payload.node_prompt_id,
             allow_rag_tenant=payload.allow_rag_tenant,
-            allow_user_memory=payload.allow_user_memory,
+            allow_user_memory_structured=payload.allow_user_memory_structured,
+            allow_user_memory_vector=payload.allow_user_memory_vector,
+            rag_config_id=payload.rag_config_id,
             allow_session_context=payload.allow_session_context,
             allow_memory_write=payload.allow_memory_write,
             created_by=principal_id,
@@ -900,7 +1327,9 @@ class FlowsService(FlowsServicePort):
             flow_version_id=node_model.flow_version_id,
             node_prompt_id=node_model.node_prompt_id,
             allow_rag_tenant=bool(node_model.allow_rag_tenant),
-            allow_user_memory=bool(node_model.allow_user_memory),
+            allow_user_memory_structured=bool(node_model.allow_user_memory_structured),
+            allow_user_memory_vector=bool(node_model.allow_user_memory_vector),
+            rag_config_id=node_model.rag_config_id,
             allow_session_context=bool(node_model.allow_session_context),
             allow_memory_write=bool(node_model.allow_memory_write),
         )

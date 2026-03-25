@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 
-from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.execution import (
     AgentRunCreate,
     FlowRunCreate,
@@ -13,13 +12,23 @@ from domain.execution.schemas.execution import (
     FlowRunResumeInput,
     ToolRunCreate,
 )
+from domain.governance.schemas.runtime_policy import (
+    ResolvedRuntimePolicy,
+    RuntimePolicyDefinition,
+    RuntimePolicyScope,
+    RuntimePolicySource,
+)
+from domain.execution.schemas.trace import TraceContext
 from domain.execution.services.execution_service import ExecutionService
+from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
 from domain.execution.services.graph_runtime.execution_plan import ExecutionPlan
 from domain.execution.services.state_machine import (
     RunStatus,
     RunLifecycleStateMachine,
     AgentRunStatus,
+    FlowRunStatus,
 )
+from domain.rag.schemas.rag import RagCorpusKind
 from exceptions.service_exceptions import (
     AIOutputValidationException,
     IdempotencyInProgressException,
@@ -32,6 +41,26 @@ from exceptions.service_exceptions import (
 
 
 class TestExecutionService:
+    _TEST_USER_ID = "test-user"
+
+    @staticmethod
+    def _minimal_graph_snapshot() -> dict[str, object]:
+        compiled = EdgeEvaluator.compile_condition("1 == 1")
+        return {
+            "start_node": "a",
+            "nodes": {
+                "a": {"id": "a", "type": "IntentClassifier"},
+                "b": {"id": "b", "type": "ResponseBuilder"},
+            },
+            "edges": [
+                {
+                    "from_node": "a",
+                    "to_node": "b",
+                    "compiled_condition": compiled,
+                }
+            ],
+        }
+
     class _FakeTracer:
         def observe(self, *, as_type, name, input, metadata=None):
             return contextlib.nullcontext()
@@ -40,12 +69,50 @@ class TestExecutionService:
             return contextlib.nullcontext()
 
         def start_flow_trace(self, **kwargs):
-            return SimpleNamespace(root_observation_id=None)
+            return TraceContext(
+                trace_id=kwargs["trace_id"],
+                flow_run_id=kwargs["flow_run_id"],
+                tenant_id=kwargs["tenant_id"],
+                session_id=kwargs.get("session_id"),
+                user_id=kwargs.get("user_id"),
+                root_observation_id=None,
+                flow_id=kwargs.get("flow_id"),
+                flow_version_id=kwargs.get("flow_version_id"),
+                interaction_id=kwargs.get("interaction_id"),
+                correlation_id=kwargs.get("correlation_id"),
+                channel=kwargs.get("channel"),
+                external_message_id=kwargs.get("external_message_id"),
+                graph_snapshot_id=kwargs.get("graph_snapshot_id"),
+                execution_plan_hash=kwargs.get("execution_plan_hash"),
+                flow_name=kwargs.get("flow_name"),
+            )
 
     @pytest.fixture
     def repository(self):
-        repo = MagicMock(spec=ExecutionRepository)
+        repo = MagicMock()
+        repo.db = MagicMock()
+        repo.cache_adapter = MagicMock()
+        graph_snap_id = uuid4()
+        repo.get_flow_graph_snapshot_by_flow_version = AsyncMock(
+            return_value=SimpleNamespace(
+                graph_hash="test-graph-hash",
+                flow_graph_snapshot_id=graph_snap_id,
+                snapshot=self._minimal_graph_snapshot(),
+            )
+        )
+        repo.get_active_flow_deployment = AsyncMock(return_value=None)
+        repo.get_flow_snapshot_by_id = AsyncMock(return_value=None)
+        repo.get_flow_snapshot_by_flow_version = AsyncMock(return_value=None)
+        repo.get_flow_graph_snapshot = AsyncMock(return_value=None)
+        repo.get_graph_state = AsyncMock(return_value=None)
+        repo.get_session = AsyncMock(return_value=None)
+        repo.create_session = AsyncMock()
+        repo.get_latest_waiting_flow_run_id = AsyncMock(return_value=(None, []))
+        repo.acquire_flow_run_lock = AsyncMock()
+        repo.end_event_batching = AsyncMock()
+        repo.get_active_billing_policy_version_id = AsyncMock(return_value=uuid4())
         repo.create_flow_run = AsyncMock(return_value=uuid4())
+        repo.merge_flow_run_runtime_contract = AsyncMock()
         repo.create_tool_run = AsyncMock(return_value=uuid4())
         repo.create_agent_run = AsyncMock(return_value=uuid4())
         repo.update_agent_run_result = AsyncMock()
@@ -54,7 +121,7 @@ class TestExecutionService:
         repo.get_flow_version = AsyncMock(
             return_value=SimpleNamespace(status="PUBLISHED")
         )
-        repo.get_flow = AsyncMock(return_value=SimpleNamespace(tenant_id=uuid4()))
+        repo.get_flow = AsyncMock(return_value=SimpleNamespace(tenant_id=uuid4(), name="f"))
         repo.get_active_flow_version_id = AsyncMock(return_value=uuid4())
         repo.get_tool_config = AsyncMock(
             return_value=SimpleNamespace(
@@ -71,7 +138,18 @@ class TestExecutionService:
         repo.get_ai_task = AsyncMock(return_value=None)
         repo.append_execution_event = AsyncMock()
         repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=uuid4())
-        repo.get_flow_run = AsyncMock(return_value=SimpleNamespace(session_id=uuid4()))
+        repo.get_flow_run = AsyncMock(
+            return_value=SimpleNamespace(
+                session_id=uuid4(),
+                output={},
+                error={},
+                status=RunStatus.CREATED.value,
+                canonical_status=FlowRunStatus.CREATED.value,
+                started_at=None,
+                finished_at=None,
+                root_observation_id=None,
+            )
+        )
         repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
         return repo
 
@@ -99,6 +177,26 @@ class TestExecutionService:
             tracer=self._FakeTracer(),
         )
         service.llm_executor = MagicMock()
+        service.runtime = MagicMock()
+        service.runtime.run = AsyncMock()
+        service.tools_service.list_available_tools_for_execution = AsyncMock(
+            return_value=[]
+        )
+        service.cache_adapter.get = AsyncMock(return_value=None)
+        service.cache_adapter.set = AsyncMock()
+        service.hook.on_flow_start = AsyncMock()
+        service._rag_repository.get_rag_config = AsyncMock(return_value=None)
+        resolved = ResolvedRuntimePolicy(
+            source=RuntimePolicySource.DEFAULT,
+            runtime_policy_id=None,
+            version="1",
+            definition=RuntimePolicyDefinition.model_validate(
+                service.default_policy["policy_definition"]
+            ),
+            scope=RuntimePolicyScope.TENANT,
+            flow_id=None,
+        )
+        service.policy_resolver.resolve = AsyncMock(return_value=resolved)
         return service
 
     @pytest.mark.asyncio
@@ -112,29 +210,32 @@ class TestExecutionService:
         payload = FlowRunCreate(
             flow_version_id=uuid4(),
             session_id=uuid4(),
-            input={"test": "data"},
+            user_id=self._TEST_USER_ID,
+            input=FlowRunInput(user_input="data"),
         )
         repository.get_flow_version.return_value = SimpleNamespace(
-            status="PUBLISHED", flow_id=flow_id
+            status="PUBLISHED",
+            flow_id=flow_id,
+            flow_version_id=payload.flow_version_id,
+            to_dict=lambda: {},
         )
-        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id)
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
         repository.get_active_flow_version_id.return_value = payload.flow_version_id
 
         result = await execution_service.create_flow_run(
             tenant_id=tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=payload,
+            flow_run=payload,
         )
 
         assert result.status == RunStatus.CREATED
-        assert result.input == payload.input
+        assert result.input == payload.input.model_dump(mode="json")
         assert result.correlation_id is not None
         assert result.interaction_id is not None
         repository.create_flow_run.assert_called_once()
         repository.create_interaction.assert_called_once()
         repository.link_interaction_to_flow_run.assert_called_once()
-        repository.append_execution_event.assert_called_once()
         idempotency_service.try_acquire.assert_called_once()
         idempotency_service.set_result.assert_called_once()
 
@@ -148,7 +249,8 @@ class TestExecutionService:
         existing_flow_run = FlowRunCreate(
             flow_version_id=uuid4(),
             session_id=uuid4(),
-            input={"existing": "data"},
+            user_id=self._TEST_USER_ID,
+            input=FlowRunInput(user_input="existing"),
         )
 
         idempotency_service.try_acquire.return_value = False
@@ -157,22 +259,36 @@ class TestExecutionService:
                 "id": str(uuid4()),
                 "flow_version_id": str(existing_flow_run.flow_version_id),
                 "session_id": str(existing_flow_run.session_id),
+                "user_id": existing_flow_run.user_id,
                 "status": RunStatus.COMPLETED,
+                "canonical_status": "SUCCESS",
                 "correlation_id": str(uuid4()),
                 "started_at": None,
                 "finished_at": None,
-                "input": existing_flow_run.input,
+                "input": existing_flow_run.input.model_dump(mode="json"),
                 "output": {},
                 "error": {},
                 "origin_flow_run_id": None,
             }
         }
 
+        flow_id = uuid4()
+        repository.get_flow_version.return_value = SimpleNamespace(
+            status="PUBLISHED",
+            flow_id=flow_id,
+            flow_version_id=existing_flow_run.flow_version_id,
+            to_dict=lambda: {},
+        )
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
+        repository.get_active_flow_version_id.return_value = (
+            existing_flow_run.flow_version_id
+        )
+
         result = await execution_service.create_flow_run(
             tenant_id=tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=existing_flow_run,
+            flow_run=existing_flow_run,
         )
 
         assert result.status == RunStatus.COMPLETED
@@ -180,22 +296,36 @@ class TestExecutionService:
 
     @pytest.mark.asyncio
     async def test_create_flow_run_raises_when_request_in_progress(
-        self, execution_service, idempotency_service
+        self, execution_service, repository, idempotency_service
     ):
         tenant_id = uuid4()
         endpoint = "/core/v1/flow-runs"
         idempotency_key = "in-progress-key"
-        payload = FlowRunCreate(flow_version_id=uuid4(), session_id=uuid4())
+        payload = FlowRunCreate(
+            flow_version_id=uuid4(),
+            session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
+        )
 
         idempotency_service.try_acquire.return_value = False
         idempotency_service.get.return_value = {"status": "PROCESSING"}
+
+        flow_id = uuid4()
+        repository.get_flow_version.return_value = SimpleNamespace(
+            status="PUBLISHED",
+            flow_id=flow_id,
+            flow_version_id=payload.flow_version_id,
+            to_dict=lambda: {},
+        )
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
+        repository.get_active_flow_version_id.return_value = payload.flow_version_id
 
         with pytest.raises(IdempotencyInProgressException):
             await execution_service.create_flow_run(
                 tenant_id=tenant_id,
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                flow_run=payload,
             )
 
     @pytest.mark.asyncio
@@ -210,20 +340,103 @@ class TestExecutionService:
         payload = FlowRunCreate(
             flow_version_id=uuid4(),
             session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
             origin_flow_run_id=origin_flow_run_id,
-            input={"rerun": "data"},
+            input=FlowRunInput(user_input="rerun"),
         )
         repository.get_flow_version.return_value = SimpleNamespace(
-            status="PUBLISHED", flow_id=flow_id
+            status="PUBLISHED",
+            flow_id=flow_id,
+            flow_version_id=payload.flow_version_id,
+            to_dict=lambda: {},
         )
-        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id)
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
         repository.get_active_flow_version_id.return_value = payload.flow_version_id
+
+        new_run_id = uuid4()
+        repository.create_flow_run.return_value = new_run_id
+        origin_correlation = uuid4()
+
+        async def graph_state_side_effect(fid):
+            if fid == origin_flow_run_id:
+                return SimpleNamespace(
+                    state={
+                        "resume_to_node_id": "node-a",
+                        "state": {},
+                        "memory": [],
+                    }
+                )
+            return None
+
+        repository.get_graph_state = AsyncMock(side_effect=graph_state_side_effect)
+
+        async def flow_run_side_effect(fid):
+            if fid == origin_flow_run_id:
+                return SimpleNamespace(
+                    flow_run_id=origin_flow_run_id,
+                    status=RunStatus.WAITING_INPUT,
+                    canonical_status=FlowRunStatus.WAITING,
+                    flow_version_id=payload.flow_version_id,
+                    session_id=payload.session_id,
+                    correlation_id=origin_correlation,
+                    user_id=payload.user_id,
+                    input={},
+                    output={},
+                    error={},
+                    interaction_id=None,
+                    started_at=None,
+                    finished_at=None,
+                    waiting_reason=None,
+                    waiting_deadline_at=None,
+                    trace_id=uuid4(),
+                    root_observation_id=None,
+                    flow_graph_snapshot_id=uuid4(),
+                    flow_snapshot_id=None,
+                    flow_deployment_id=None,
+                    runtime_contract={},
+                    execution_plan_hash=None,
+                    runtime_policy_hash=None,
+                    tool_catalog_hash=None,
+                    llm_provider_config_hash=None,
+                )
+            if fid == new_run_id:
+                return SimpleNamespace(
+                    flow_run_id=new_run_id,
+                    origin_flow_run_id=origin_flow_run_id,
+                    flow_version_id=payload.flow_version_id,
+                    session_id=payload.session_id,
+                    user_id=payload.user_id,
+                    interaction_id=uuid4(),
+                    status=RunStatus.COMPLETED,
+                    canonical_status=FlowRunStatus.COMPLETED,
+                    correlation_id=uuid4(),
+                    started_at=None,
+                    finished_at=None,
+                    waiting_reason=None,
+                    waiting_deadline_at=None,
+                    input=payload.input.model_dump(mode="json"),
+                    output={},
+                    error={},
+                    trace_id=uuid4(),
+                    root_observation_id=None,
+                    flow_graph_snapshot_id=uuid4(),
+                    flow_snapshot_id=None,
+                    flow_deployment_id=None,
+                    runtime_contract={},
+                    execution_plan_hash=None,
+                    runtime_policy_hash=None,
+                    tool_catalog_hash=None,
+                    llm_provider_config_hash=None,
+                )
+            return None
+
+        repository.get_flow_run = AsyncMock(side_effect=flow_run_side_effect)
 
         result = await execution_service.create_flow_run(
             tenant_id=tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=payload,
+            flow_run=payload,
         )
 
         assert result.origin_flow_run_id == origin_flow_run_id
@@ -251,6 +464,7 @@ class TestExecutionService:
 
         repository.get_flow_run.return_value = SimpleNamespace(
             flow_run_id=flow_run_id,
+            user_id="resume-user",
             origin_flow_run_id=None,
             flow_version_id=flow_version_id,
             session_id=session_id,
@@ -269,18 +483,23 @@ class TestExecutionService:
             trace_id=uuid4(),
             root_observation_id=None,
             flow_graph_snapshot_id=graph_snapshot_id,
+            flow_snapshot_id=None,
+            flow_deployment_id=None,
+            runtime_contract={},
             execution_plan_hash=None,
             runtime_policy_hash=None,
             tool_catalog_hash=None,
             llm_provider_config_hash=None,
         )
-        repository.get_flow_context.return_value = (tenant_id, session_id)
-        repository.get_graph_state.return_value = SimpleNamespace(
-            state={
-                "resume_to_node_id": resume_node_id,
-                "state": {"key": "value"},
-                "memory": [{"memory": "entry"}],
-            }
+        repository.get_flow_context.return_value = (session_id, tenant_id)
+        repository.get_graph_state = AsyncMock(
+            return_value=SimpleNamespace(
+                state={
+                    "resume_to_node_id": resume_node_id,
+                    "state": {"key": "value"},
+                    "memory": [{"memory": "entry"}],
+                }
+            )
         )
         repository.get_flow_version.return_value = SimpleNamespace(
             flow_id=flow_id, flow_version_id=flow_version_id
@@ -304,27 +523,22 @@ class TestExecutionService:
         )
         execution_service.cache_adapter.set = AsyncMock()
         execution_service.runtime.run = AsyncMock()
-        execution_service.policy_resolver = MagicMock()
-        execution_service.policy_resolver.resolve = AsyncMock(return_value=None)
 
         result = await execution_service.resume_flow_run(
             flow_run_id=flow_run_id,
-            input_payload=FlowRunInput(user_input="resume"),
+            input_payload=FlowRunResumeInput(user_id="resume-user", user_input="resume"),
             channel="http",
             headers={},
             external_message_id=None,
             request_id=None,
             trace_id=None,
-            user_id=str(tenant_id),
         )
 
         assert result.id == flow_run_id
         execution_service.runtime.run.assert_called_once()
         _, kwargs = execution_service.runtime.run.call_args
         assert kwargs["start_node_id"] == resume_node_id
-        repository.create_flow_run.assert_called_once()
-        call_args = repository.create_flow_run.call_args
-        assert call_args.kwargs["origin_flow_run_id"] == origin_flow_run_id
+        repository.create_flow_run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_create_tool_run_creates_new_run_when_idempotency_key_not_used(
@@ -346,7 +560,7 @@ class TestExecutionService:
             tenant_id=tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=payload,
+            tool_run=payload,
         )
 
         assert result.status == RunStatus.CREATED
@@ -362,16 +576,22 @@ class TestExecutionService:
         tenant_id = uuid4()
         endpoint = "/core/v1/flow-runs"
         idempotency_key = "blocked-flow"
-        payload = FlowRunCreate(flow_version_id=uuid4(), session_id=uuid4())
+        payload = FlowRunCreate(
+            flow_version_id=uuid4(),
+            session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
+        )
 
-        repository.get_flow_version.return_value = SimpleNamespace(status="DRAFT", flow_id=uuid4())
+        repository.get_flow_version.return_value = SimpleNamespace(
+            status="DRAFT", flow_id=uuid4(), to_dict=lambda: {}
+        )
 
         with pytest.raises(ResourceBlockedServiceException, match="flow_version_not_published"):
             await execution_service.create_flow_run(
                 tenant_id=tenant_id,
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                flow_run=payload,
             )
 
     @pytest.mark.asyncio
@@ -383,12 +603,16 @@ class TestExecutionService:
         idempotency_key = "no-active"
         flow_id = uuid4()
         flow_version_id = uuid4()
-        payload = FlowRunCreate(flow_version_id=flow_version_id, session_id=uuid4())
+        payload = FlowRunCreate(
+            flow_version_id=flow_version_id,
+            session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
+        )
 
         repository.get_flow_version.return_value = SimpleNamespace(
-            status="PUBLISHED", flow_id=flow_id
+            status="PUBLISHED", flow_id=flow_id, to_dict=lambda: {}
         )
-        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id)
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
         repository.get_active_flow_version_id.return_value = None
 
         with pytest.raises(ResourceBlockedServiceException, match="flow_not_active"):
@@ -396,7 +620,7 @@ class TestExecutionService:
                 tenant_id=tenant_id,
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                flow_run=payload,
             )
 
     @pytest.mark.asyncio
@@ -416,7 +640,7 @@ class TestExecutionService:
                 tenant_id=tenant_id,
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                tool_run=payload,
             )
 
     @pytest.mark.asyncio
@@ -448,7 +672,7 @@ class TestExecutionService:
                 tenant_id=tenant_id,
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                tool_run=payload,
             )
 
     @pytest.mark.asyncio
@@ -458,7 +682,7 @@ class TestExecutionService:
                 tenant_id=uuid4(),
                 endpoint="/core/v1/tool-runs",
                 idempotency_key="k",
-                payload=ToolRunCreate(tool_config_id=uuid4()),
+                tool_run=ToolRunCreate(tool_config_id=uuid4()),
             )
 
     @pytest.mark.asyncio
@@ -470,6 +694,7 @@ class TestExecutionService:
         idempotency_key = "agent-run-key"
         node_run_id = uuid4()
         ai_task_id = uuid4()
+        node_id = uuid4()
         agent_version_id = uuid4()
         policy_version_id = uuid4()
         model_id = uuid4()
@@ -477,13 +702,24 @@ class TestExecutionService:
         repository.get_node_run.return_value = SimpleNamespace(
             node_id=uuid4(), flow_run_id=uuid4()
         )
-        repository.get_node.return_value = SimpleNamespace(ai_task_id=ai_task_id)
-        repository.get_ai_task.return_value = SimpleNamespace(name="IntentDetection")
+        repository.get_node.return_value = SimpleNamespace(
+            node_id=node_id,
+            node_prompt_id=uuid4(),
+            ai_task_id=ai_task_id,
+            allow_rag_tenant=False,
+            allow_user_memory_structured=False,
+            allow_user_memory_vector=False,
+            rag_config_id=None,
+            allow_session_context=False,
+            allow_memory_write=False,
+        )
+        repository.get_ai_task.return_value = SimpleNamespace(name="IntentClassifier")
         repository.get_agent_version.return_value = SimpleNamespace(
             status="PUBLISHED",
             agent_id=uuid4(),
             rag_config_id=None,
-            ai_execution_policy_version_id=None,
+            ai_execution_policy_version_id=policy_version_id,
+            system_prompt="",
         )
         repository.get_active_agent_version_id.return_value = agent_version_id
         repository.get_ai_execution_policy_version.return_value = SimpleNamespace(
@@ -502,12 +738,12 @@ class TestExecutionService:
             tenant_id=tenant_id,
             endpoint=endpoint,
             idempotency_key=idempotency_key,
-            payload=payload,
+            agent_run=payload,
         )
 
         assert result.status == RunStatus.CREATED
         assert result.canonical_status == AgentRunStatus.CREATED
-        assert result.ai_task_id == ai_task_id
+        assert result.runtime_snapshot["node_id"] == str(node_id)
         repository.create_agent_run.assert_called_once()
         repository.append_execution_event.assert_called_once()
         idempotency_service.set_result.assert_called_once()
@@ -528,19 +764,37 @@ class TestExecutionService:
         repository.get_node_run.return_value = SimpleNamespace(
             node_id=uuid4(), flow_run_id=uuid4()
         )
-        repository.get_node.return_value = SimpleNamespace(ai_task_id=ai_task_id)
+        rag_cfg = uuid4()
+        repository.get_node.return_value = SimpleNamespace(
+            node_id=uuid4(),
+            node_prompt_id=uuid4(),
+            ai_task_id=ai_task_id,
+            allow_rag_tenant=False,
+            allow_user_memory_structured=False,
+            allow_user_memory_vector=False,
+            rag_config_id=None,
+            allow_session_context=False,
+            allow_memory_write=False,
+        )
         repository.get_ai_task.return_value = SimpleNamespace(name="ContentModeration")
         repository.get_agent_version.return_value = SimpleNamespace(
             status="PUBLISHED",
             agent_id=uuid4(),
-            rag_config_id=uuid4(),
-            ai_execution_policy_version_id=None,
+            rag_config_id=rag_cfg,
+            ai_execution_policy_version_id=policy_version_id,
+            system_prompt="",
         )
         repository.get_active_agent_version_id.return_value = agent_version_id
         repository.get_ai_execution_policy_version.return_value = SimpleNamespace(
             status="PUBLISHED", model_id=model_id
         )
         repository.get_model.return_value = SimpleNamespace(name="gpt-4o")
+        execution_service._rag_repository.get_rag_config = AsyncMock(
+            return_value=SimpleNamespace(
+                tenant_id=tenant_id,
+                corpus_kind=RagCorpusKind.TENANT_KNOWLEDGE.value,
+            )
+        )
 
         payload = AgentRunCreate(
             node_run_id=node_run_id,
@@ -553,7 +807,7 @@ class TestExecutionService:
                 tenant_id=tenant_id,
                 endpoint=endpoint,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                agent_run=payload,
             )
 
     @pytest.mark.asyncio
@@ -579,6 +833,8 @@ class TestExecutionService:
             model="gpt-4o",
             ai_task_id=uuid4(),
             input={"prompt": "ok"},
+            runtime_snapshot={},
+            runtime_snapshot_hash=None,
         )
         repository.get_node_run.return_value = SimpleNamespace(
             node_id=uuid4(), flow_run_id=flow_run_id
@@ -624,6 +880,7 @@ class TestExecutionService:
             origin_flow_run_id=None,
             flow_version_id=uuid4(),
             session_id=session_id,
+            user_id=self._TEST_USER_ID,
             interaction_id=uuid4(),
             status="COMPLETED",
             canonical_status="SUCCESS",
@@ -636,7 +893,11 @@ class TestExecutionService:
             output={"test": "output"},
             error={},
             trace_id=uuid4(),
+            root_observation_id=None,
             flow_graph_snapshot_id=uuid4(),
+            flow_snapshot_id=None,
+            flow_deployment_id=None,
+            runtime_contract={},
             execution_plan_hash="hash1",
             runtime_policy_hash="hash2",
             tool_catalog_hash="hash3",
@@ -812,6 +1073,8 @@ class TestExecutionService:
             input={"test": "input"},
             output={"test": "output"},
             error={},
+            runtime_snapshot={},
+            runtime_snapshot_hash=None,
         )
         repository.list_agent_runs = AsyncMock(return_value=[mock_agent_run])
 

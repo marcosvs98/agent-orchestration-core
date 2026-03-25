@@ -23,7 +23,7 @@ class _FakeTracer:
 async def test_build_template_context_no_longer_performs_retrieval_for_tool_selection():
     """ContextBuilder should not perform tool catalog retrieval anymore.
 
-    Retrieval is now handled directly by ToolSelectionNode.
+    Retrieval is now handled directly by ToolResolver.
     """
     agent_version_id = uuid4()
     tenant_id = uuid4()
@@ -43,6 +43,9 @@ async def test_build_template_context_no_longer_performs_retrieval_for_tool_sele
     agents_repository.get_agent = AsyncMock(
         return_value=SimpleNamespace(tenant_id=tenant_id)
     )
+    agents_repository.resolve_effective_rag_config_id_for_node = AsyncMock(
+        return_value=rag_config_id
+    )
     tools_repository = MagicMock()
 
     context_builder = ContextBuilder(
@@ -52,6 +55,7 @@ async def test_build_template_context_no_longer_performs_retrieval_for_tool_sele
     )
     execution_context = ExecutionContext(
         tenant_id=tenant_id,
+        interaction_id=uuid4(),
         user_id="user-1",
         session_id=uuid4(),
         input_payload={"user_input": "find the right tool"},
@@ -61,7 +65,7 @@ async def test_build_template_context_no_longer_performs_retrieval_for_tool_sele
         correlation_id=uuid4(),
         current_node_id=str(uuid4()),
         available_tools=[tool_a, tool_b],
-        metadata={"current_node_type": NodeType.ToolSelectionNode},
+        metadata={"current_node_type": NodeType.ToolResolver},
     )
 
     result = await context_builder.build_template_context(

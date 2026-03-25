@@ -14,8 +14,8 @@ def _base_definition():
     return FlowGraphDefinition(
         start_node=node_a,
         nodes={
-            node_a: FlowGraphNodeSpec(type="IntentToolSelectionNode"),
-            node_b: FlowGraphNodeSpec(type="ResponseNode"),
+            node_a: FlowGraphNodeSpec(type="ToolResolver"),
+            node_b: FlowGraphNodeSpec(type="ResponseBuilder"),
         },
         edges=[FlowGraphEdge(from_node=node_a, to_node=node_b, condition="1 == 1")],
     )
@@ -35,7 +35,7 @@ def test_compiler_is_deterministic():
 def test_validator_rejects_duplicate_conditions():
     definition = _base_definition()
     node_c = str(uuid.uuid4())
-    definition.nodes[node_c] = FlowGraphNodeSpec(type="ResponseNode")
+    definition.nodes[node_c] = FlowGraphNodeSpec(type="ResponseBuilder")
     definition.edges.append(
         FlowGraphEdge(from_node=definition.start_node, to_node=node_c, condition="1 == 1")
     )
@@ -49,8 +49,8 @@ def test_validator_rejects_unmarked_cycle():
     definition = FlowGraphDefinition(
         start_node=node_a,
         nodes={
-            node_a: FlowGraphNodeSpec(type="IntentToolSelectionNode"),
-            node_b: FlowGraphNodeSpec(type="ResponseNode"),
+            node_a: FlowGraphNodeSpec(type="ToolResolver"),
+            node_b: FlowGraphNodeSpec(type="ResponseBuilder"),
         },
         edges=[
             FlowGraphEdge(from_node=node_a, to_node=node_b, condition="1 == 1"),
@@ -65,7 +65,7 @@ def test_validator_allows_marked_loop():
     node_a = str(uuid.uuid4())
     definition = FlowGraphDefinition(
         start_node=node_a,
-        nodes={node_a: FlowGraphNodeSpec(type="ResponseNode")},
+        nodes={node_a: FlowGraphNodeSpec(type="ResponseBuilder")},
         edges=[
             FlowGraphEdge(from_node=node_a, to_node=node_a, condition="1 == 1", edge_kind="LOOP"),
         ],

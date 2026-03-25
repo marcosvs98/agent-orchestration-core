@@ -1,12 +1,11 @@
 import contextlib
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from domain.execution.services.graph_runtime.nodes.intent_detection import (
-    IntentDetectionNode,
+from domain.execution.services.graph_runtime.nodes.intent_classifier import (
+    IntentClassifier,
 )
 from domain.execution.services.graph_runtime.nodes.intent_examples_retriever import (
     IntentSemanticMatch,
@@ -76,8 +75,10 @@ class _FakeTracer:
 def _make_context(**overrides):
     defaults = dict(
         tenant_id=uuid.uuid4(),
+        interaction_id=uuid.uuid4(),
         user_id="u1",
         session_id=uuid.uuid4(),
+        input_payload={},
         flow_id=uuid.uuid4(),
         flow_version_id=uuid.uuid4(),
         flow_run_id=uuid.uuid4(),
@@ -100,10 +101,10 @@ def _fallback_result(intent_type: str, confidence: float) -> NodeResult:
         "overall_confidence": confidence,
     }
     return NodeResult(
-        node=NodeType.IntentDetectionNode,
+        node=NodeType.IntentClassifier,
         status=NodeExecutionStatus.SUCCESS,
         data=payload,
-        next_state={NodeType.IntentDetectionNode: payload},
+        next_state={NodeType.IntentClassifier.value: payload},
     )
 
 
@@ -117,17 +118,12 @@ def _build_node(
     retriever = MagicMock()
     retriever.retrieve_best_match = AsyncMock(return_value=retriever_match)
     agents_repository = MagicMock()
-    agents_repository.get_agent_version_id_by_node_id = AsyncMock(
-        return_value=uuid.uuid4() if rag_config_id else None
-    )
-    agents_repository.get_agent_version = AsyncMock(
-        return_value=SimpleNamespace(rag_config_id=rag_config_id)
-        if rag_config_id
-        else None
+    agents_repository.resolve_effective_rag_config_id_for_node = AsyncMock(
+        return_value=rag_config_id
     )
     llm_fallback = MagicMock()
     llm_fallback.execute = AsyncMock(return_value=fallback_result)
-    node = IntentDetectionNode(
+    node = IntentClassifier(
         tracer=tracer,
         agents_repository=agents_repository,
         intent_examples_retriever=retriever,

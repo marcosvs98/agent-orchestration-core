@@ -88,3 +88,15 @@ class FlowsServicePort(ABC):
         change_request,
     ):
         raise NotImplementedServiceException()
+
+    @abstractmethod
+    async def compose_deployment(self, *, tenant_id, payload, idempotency_key: str):
+        raise NotImplementedServiceException()
+
+    @abstractmethod
+    async def validate_compose_deployment(self, *, tenant_id, payload):
+        raise NotImplementedServiceException()
+
+    @abstractmethod
+    async def batch_upsert_artifacts(self, *, tenant_id, payload):
+        raise NotImplementedServiceException()

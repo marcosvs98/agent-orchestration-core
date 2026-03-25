@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any, Dict, Literal, Self
+from typing import Any, Dict, Literal
 
 from pydantic import BaseModel, Field, model_validator
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
@@ -14,6 +14,7 @@ class LLMTaskType(StrEnum):
     RESPONSE_RENDER = "response_render"
     MEMORY_EXTRACTION = "memory_extraction"  # Todo: needs-clarification: removing this enum member requires changing MemoryExtractionProcessor task typing and event contracts.
     FALLBACK_RESPONSE = "fallback_response"
+    MEMORY_CONTENT_SUMMARIZE = "memory_payload_summarize"
 
 
 class LLMProviderType(StrEnum):
@@ -74,6 +75,7 @@ class LLMRequest(BaseModel):
     def _default_max_latency_ms(cls, values: dict):
         if values.get("max_latency_ms") is None:
             import settings as app_settings
+
             values["max_latency_ms"] = app_settings.LLM_DEFAULT_MAX_LATENCY_MS
         return values
 

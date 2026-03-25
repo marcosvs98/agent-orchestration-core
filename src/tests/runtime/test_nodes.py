@@ -1,19 +1,17 @@
 import contextlib
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from domain.execution.services.graph_runtime.nodes import (
-    ToolSelectionNode,
-)
+from domain.execution.services.graph_runtime.nodes import ToolResolver
 from domain.execution.services.graph_runtime.types import (
     ExecutionContext,
     NodeExecutionStatus,
     NodeResult,
 )
-from domain.prompts.schemas.prompt import NodeType
+from domain.llm.schemas.llm import LLMResult
+from domain.prompts.schemas.prompt import NodeType, ResolvedPrompt
 from domain.tools.schemas.tools import AvailableTool
 
 
@@ -73,13 +71,17 @@ class _FakeTracer:
 def _make_context(**overrides):
     defaults = dict(
         tenant_id=uuid.uuid4(),
+        interaction_id=uuid.uuid4(),
         user_id="u1",
         session_id=uuid.uuid4(),
+        input_payload={},
         flow_id=uuid.uuid4(),
         flow_version_id=uuid.uuid4(),
         flow_run_id=uuid.uuid4(),
         correlation_id=uuid.uuid4(),
+        trace_id=uuid.uuid4(),
         current_node_id=str(uuid.uuid4()),
+        metadata={"runtime_policy": {"llm": {"model_alias": "test-model"}}},
     )
     defaults.update(overrides)
     return ExecutionContext(**defaults)
@@ -87,9 +89,8 @@ def _make_context(**overrides):
 
 def _build_tool_selection_node(
     retriever_return=None,
-    agent_version=None,
-    agent_version_id=None,
-    llm_fallback=None,
+    rag_config_id=None,
+    llm_output=None,
     tool_catalog_indexer=None,
     tracer=None,
 ):
@@ -101,22 +102,54 @@ def _build_tool_selection_node(
         retriever.retrieve_candidates = AsyncMock(return_value=([], []))
 
     agents_repo = MagicMock()
-    agents_repo.get_agent_version_id_by_node_id = AsyncMock(
-        return_value=agent_version_id or uuid.uuid4()
-    )
-    agents_repo.get_agent_version = AsyncMock(return_value=agent_version)
+    rid = rag_config_id or uuid.uuid4()
+    agents_repo.resolve_effective_rag_config_id_for_node = AsyncMock(return_value=rid)
 
-    return ToolSelectionNode(
+    llm_executor = MagicMock()
+    tool = None
+    if retriever_return and retriever_return[0]:
+        tool = retriever_return[0][0]
+    default_llm_out: dict = {"result": []}
+    if tool is not None:
+        default_llm_out = {
+            "result": [
+                {
+                    "intent_type": "command",
+                    "selected_tool": {
+                        "name": tool.name,
+                        "tool_config_id": str(tool.tool_config_id),
+                    },
+                    "confidence": 0.91,
+                }
+            ]
+        }
+    out = llm_output if llm_output is not None else default_llm_out
+    llm_executor.execute_llm = AsyncMock(return_value=LLMResult(output=out))
+
+    prompt_resolver = MagicMock()
+    prompt_resolver.resolve = AsyncMock(
+        return_value=ResolvedPrompt(
+            prompt_text="select",
+            output_schema={"type": "object"},
+            input_schema={},
+        )
+    )
+
+    node = ToolResolver(
         tracer=tracer,
+        llm_executor=llm_executor,
+        prompt_resolver=prompt_resolver,
+        agent_runtime_resolver=None,
+        completion_budget_policy=None,
         tool_catalog_retriever=retriever,
         agents_repository=agents_repo,
-        llm_fallback=llm_fallback,
         tool_catalog_indexer=tool_catalog_indexer,
-    ), retriever, agents_repo
+    )
+    return node, retriever, agents_repo, llm_executor
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_returns_candidates_from_semantic_retrieval():
+async def test_tool_selection_rag_then_llm_passes_candidates_to_llm():
     tool = AvailableTool(
         name="get-weather",
         tool_id=uuid.uuid4(),
@@ -124,93 +157,95 @@ async def test_tool_selection_returns_candidates_from_semantic_retrieval():
         retrieval_score=0.95,
     )
     rag_config_id = uuid.uuid4()
-    agent_version = SimpleNamespace(rag_config_id=rag_config_id)
 
-    node, retriever, _ = _build_tool_selection_node(
+    node, retriever, _, llm_executor = _build_tool_selection_node(
         retriever_return=([tool], [{"tool_config_id": str(tool.tool_config_id), "score": 0.95}]),
-        agent_version=agent_version,
+        rag_config_id=rag_config_id,
     )
 
-    context = _make_context(
-        input_payload={"user_input": "what is the weather?"},
-        available_tools=[tool],
-    )
+    context = _make_context(input_payload={"user_input": "what is the weather?"})
 
     result = await node.execute(context)
 
     assert result.status == "SUCCESS"
     assert len(result.data["result"]) == 1
     assert result.data["result"][0]["selected_tool"]["name"] == "get-weather"
-    assert result.data["result"][0]["confidence"] == 0.95
-    retriever.retrieve_candidates.assert_not_called()
+    retriever.retrieve_candidates.assert_called_once()
+    rc_kw = retriever.retrieve_candidates.call_args.kwargs
+    assert "available_tools" not in rc_kw
+    assert rc_kw["rag_config_id"] == rag_config_id
+    llm_executor.execute_llm.assert_called_once()
+    req = llm_executor.execute_llm.call_args.kwargs["request"]
+    assert len(req.available_tools) == 1
+    assert req.available_tools[0].tool_config_id == tool.tool_config_id
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_returns_all_tools_when_no_user_input():
-    tool = AvailableTool(
-        name="tool-a", tool_id=uuid.uuid4(), tool_config_id=uuid.uuid4()
+async def test_tool_selection_empty_when_no_user_input():
+    rag_config_id = uuid.uuid4()
+    node, retriever, _, llm_executor = _build_tool_selection_node(
+        rag_config_id=rag_config_id,
     )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
 
-    node, retriever, _ = _build_tool_selection_node(agent_version=agent_version)
-
-    context = _make_context(
-        input_payload={},
-        available_tools=[tool],
-    )
+    context = _make_context(input_payload={})
 
     result = await node.execute(context)
 
     assert result.status == "SUCCESS"
-    assert len(result.data["result"]) == 1
-    assert result.data["result"][0]["confidence"] == 0.5
+    assert result.data["result"] == []
     retriever.retrieve_candidates.assert_not_called()
+    llm_executor.execute_llm.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_returns_all_tools_when_no_rag_config():
-    tool = AvailableTool(
-        name="tool-a", tool_id=uuid.uuid4(), tool_config_id=uuid.uuid4()
+async def test_tool_selection_empty_when_no_rag_config():
+    tracer = _FakeTracer()
+    retriever = MagicMock()
+    retriever.retrieve_candidates = AsyncMock()
+    agents_repo = MagicMock()
+    agents_repo.resolve_effective_rag_config_id_for_node = AsyncMock(return_value=None)
+    llm_executor = MagicMock()
+    llm_executor.execute_llm = AsyncMock()
+    prompt_resolver = MagicMock()
+    prompt_resolver.resolve = AsyncMock(
+        return_value=ResolvedPrompt(prompt_text="x", output_schema={}, input_schema={})
     )
-    node, retriever, _ = _build_tool_selection_node(agent_version=None)
+    node = ToolResolver(
+        tracer=tracer,
+        llm_executor=llm_executor,
+        prompt_resolver=prompt_resolver,
+        agent_runtime_resolver=None,
+        completion_budget_policy=None,
+        tool_catalog_retriever=retriever,
+        agents_repository=agents_repo,
+        tool_catalog_indexer=None,
+    )
 
-    context = _make_context(
-        input_payload={"user_input": "query"},
-        available_tools=[tool],
-    )
+    context = _make_context(input_payload={"user_input": "query"})
 
     result = await node.execute(context)
 
-    assert result.status == "SUCCESS"
-    assert len(result.data["result"]) == 1
+    assert result.data["result"] == []
     retriever.retrieve_candidates.assert_not_called()
+    llm_executor.execute_llm.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_updates_context_available_tools():
-    original_tool = AvailableTool(
-        name="tool-keep", tool_id=uuid.uuid4(), tool_config_id=uuid.uuid4()
-    )
-    filtered_tool = AvailableTool(
+async def test_tool_selection_updates_context_available_tools_with_rag_candidates():
+    tool = AvailableTool(
         name="tool-keep",
-        tool_id=original_tool.tool_id,
-        tool_config_id=original_tool.tool_config_id,
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
         retrieval_score=0.9,
     )
-    other_tool = AvailableTool(
-        name="tool-discard", tool_id=uuid.uuid4(), tool_config_id=uuid.uuid4()
-    )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
+    rag_config_id = uuid.uuid4()
 
-    node, _, _ = _build_tool_selection_node(
-        retriever_return=([filtered_tool], []),
-        agent_version=agent_version,
+    node, _, _, _ = _build_tool_selection_node(
+        retriever_return=([tool], []),
+        rag_config_id=rag_config_id,
     )
 
-    context = _make_context(
-        input_payload={"user_input": "do something"},
-        available_tools=[original_tool, other_tool],
-    )
+    context = _make_context(input_payload={"user_input": "do something"})
 
     await node.execute(context)
 
@@ -219,447 +254,154 @@ async def test_tool_selection_updates_context_available_tools():
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_writes_next_state():
+async def test_tool_selection_writes_next_state_from_llm():
     tool = AvailableTool(
         name="tool-1",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
         retrieval_score=0.8,
     )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
+    rag_config_id = uuid.uuid4()
 
-    node, _, _ = _build_tool_selection_node(
+    node, _, _, _ = _build_tool_selection_node(
         retriever_return=([tool], []),
-        agent_version=agent_version,
+        rag_config_id=rag_config_id,
     )
 
-    context = _make_context(
-        input_payload={"user_input": "find tool"},
-        available_tools=[tool],
-    )
+    context = _make_context(input_payload={"user_input": "find tool"})
 
     result = await node.execute(context)
 
     assert result.next_state is not None
-    assert "ToolSelectionNode" in result.next_state
+    assert NodeType.ToolResolver in result.next_state
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_delegates_to_llm_fallback_when_low_confidence():
-    selected_tool = AvailableTool(
-        name="checkout",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        operation_id="checkout",
-        method="POST",
-        path="/checkout",
-        retrieval_score=0.4,
-    )
-    other_tool = AvailableTool(
-        name="cancel",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        operation_id="cancel",
-        method="POST",
-        path="/cancel",
-        retrieval_score=0.35,
-    )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    llm_result = NodeResult(
-        node=NodeType.ToolSelectionNode,
-        status=NodeExecutionStatus.SUCCESS,
-        data={
-            "result": [
-                {
-                    "selected_tool": {
-                        "name": selected_tool.name,
-                        "tool_config_id": str(selected_tool.tool_config_id),
-                    },
-                    "confidence": 0.91,
-                }
-            ]
-        },
-        next_state={},
-    )
-    llm_fallback = MagicMock()
-    llm_fallback.execute = AsyncMock(return_value=llm_result)
-    tool_catalog_indexer = MagicMock()
-    tool_catalog_indexer.index_document = AsyncMock(return_value=None)
-
-    node, retriever, _ = _build_tool_selection_node(
-        retriever_return=(
-            [selected_tool, other_tool],
-            [{"tool_config_id": str(selected_tool.tool_config_id), "score": 0.4}],
-        ),
-        agent_version=agent_version,
-        llm_fallback=llm_fallback,
-        tool_catalog_indexer=tool_catalog_indexer,
-    )
-
-    context = _make_context(
-        input_payload={"user_input": "execute o checkout dos debitos"},
-        available_tools=[selected_tool, other_tool],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
-    )
-    result = await node.execute(context)
-
-    assert result == llm_result
-    assert retriever.retrieve_candidates.called
-    llm_fallback.execute.assert_called_once()
-    tool_catalog_indexer.index_document.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_tool_selection_passes_filtered_tools_to_llm_fallback_when_below_confidence():
-    low_score_tool = AvailableTool(
-        name="tool-a",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="POST",
-        retrieval_score=0.4,
-    )
-    tool_b = AvailableTool(
-        name="tool-b",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="POST",
-        retrieval_score=None,
-    )
-    tool_c = AvailableTool(
-        name="tool-c",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="POST",
-        retrieval_score=None,
-    )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    llm_result = NodeResult(
-        node=NodeType.ToolSelectionNode,
-        status=NodeExecutionStatus.SUCCESS,
-        data={
-            "result": [
-                {
-                    "selected_tool": {
-                        "name": low_score_tool.name,
-                        "tool_config_id": str(low_score_tool.tool_config_id),
-                    },
-                    "confidence": 0.9,
-                }
-            ]
-        },
-        next_state={},
-    )
-    captured_context = []
-
-    async def capture_context(ctx, config):
-        captured_context.append(ctx)
-        return llm_result
-
-    llm_fallback = MagicMock()
-    llm_fallback.execute = AsyncMock(side_effect=capture_context)
-
-    node, retriever, _ = _build_tool_selection_node(
-        retriever_return=(
-            [low_score_tool],
-            [{"tool_config_id": str(low_score_tool.tool_config_id), "score": 0.4}],
-        ),
-        agent_version=agent_version,
-        llm_fallback=llm_fallback,
-    )
-
-    context = _make_context(
-        input_payload={"user_input": "run tool"},
-        available_tools=[low_score_tool, tool_b, tool_c],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
-    )
-    await node.execute(context)
-
-    assert len(captured_context) == 1
-    assert len(captured_context[0].available_tools) == 3
-
-
-@pytest.mark.asyncio
-async def test_tool_selection_does_not_index_llm_selection_when_confidence_below_min():
-    selected_tool = AvailableTool(
+async def test_tool_selection_indexes_when_llm_confidence_above_threshold():
+    tool = AvailableTool(
         name="createExpense",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
         method="POST",
         retrieval_score=0.4,
     )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    llm_result = NodeResult(
-        node=NodeType.ToolSelectionNode,
-        status=NodeExecutionStatus.SUCCESS,
-        data={
-            "result": [
-                {
-                    "selected_tool": {
-                        "name": selected_tool.name,
-                        "tool_config_id": str(selected_tool.tool_config_id),
-                    },
-                    "confidence": 0.5,
-                }
-            ]
-        },
-        next_state={},
-    )
-    llm_fallback = MagicMock()
-    llm_fallback.execute = AsyncMock(return_value=llm_result)
+    rag_config_id = uuid.uuid4()
     tool_catalog_indexer = MagicMock()
     tool_catalog_indexer.index_document = AsyncMock(return_value=None)
 
-    node, retriever, _ = _build_tool_selection_node(
-        retriever_return=(
-            [selected_tool],
-            [{"tool_config_id": str(selected_tool.tool_config_id), "score": 0.4}],
-        ),
-        agent_version=agent_version,
-        llm_fallback=llm_fallback,
+    node, _, _, _ = _build_tool_selection_node(
+        retriever_return=([tool], []),
+        rag_config_id=rag_config_id,
         tool_catalog_indexer=tool_catalog_indexer,
     )
 
-    context = _make_context(
-        input_payload={"user_input": "paguei no cartao"},
-        available_tools=[selected_tool],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
+    context = _make_context(input_payload={"user_input": "paguei no cartao"})
+
+    await node.execute(context)
+
+    tool_catalog_indexer.index_document.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_tool_selection_skips_index_when_llm_confidence_below_threshold():
+    tool = AvailableTool(
+        name="createExpense",
+        tool_id=uuid.uuid4(),
+        tool_config_id=uuid.uuid4(),
+        method="POST",
+        retrieval_score=0.4,
     )
+    rag_config_id = uuid.uuid4()
+    llm_output = {
+        "result": [
+            {
+                "intent_type": "command",
+                "selected_tool": {
+                    "name": tool.name,
+                    "tool_config_id": str(tool.tool_config_id),
+                },
+                "confidence": 0.5,
+            }
+        ]
+    }
+    tool_catalog_indexer = MagicMock()
+    tool_catalog_indexer.index_document = AsyncMock(return_value=None)
+
+    node, _, _, _ = _build_tool_selection_node(
+        retriever_return=([tool], []),
+        rag_config_id=rag_config_id,
+        llm_output=llm_output,
+        tool_catalog_indexer=tool_catalog_indexer,
+    )
+
+    context = _make_context(input_payload={"user_input": "paguei no cartao"})
+
     await node.execute(context)
 
     tool_catalog_indexer.index_document.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_instrumentation_contains_scores_and_evidence():
-    selected_tool = AvailableTool(
+async def test_tool_selection_semantic_retrieval_instrumentation():
+    tool = AvailableTool(
         name="createExpense",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
         method="POST",
         retrieval_score=0.92,
     )
-    other_tool = AvailableTool(
+    other = AvailableTool(
         name="deleteExpense",
         tool_id=uuid.uuid4(),
         tool_config_id=uuid.uuid4(),
         method="DELETE",
         retrieval_score=0.61,
     )
-    evidence = [{"tool_config_id": str(selected_tool.tool_config_id), "score": 0.92}]
+    evidence = [{"tool_config_id": str(tool.tool_config_id), "score": 0.92}]
     tracer = _FakeTracer()
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    node, _, _ = _build_tool_selection_node(
-        retriever_return=([selected_tool, other_tool], evidence),
-        agent_version=agent_version,
+    rag_config_id = uuid.uuid4()
+    node, _, _, _ = _build_tool_selection_node(
+        retriever_return=([tool, other], evidence),
+        rag_config_id=rag_config_id,
         tracer=tracer,
     )
-    context = _make_context(
-        input_payload={"user_input": "paguei no cartao"},
-        available_tools=[selected_tool, other_tool],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
-    )
+    context = _make_context(input_payload={"user_input": "paguei no cartao"})
 
     await node.execute(context)
 
     retrieval_record = next(
-        record
-        for record in tracer.records
-        if record["name"] == "domain.execution.nodes.tool_selection.semantic_retrieval"
+        r
+        for r in tracer.records
+        if r["name"] == "domain.execution.nodes.tool_selection.semantic_retrieval"
     )
     execute_record = next(
-        record
-        for record in tracer.records
-        if record["name"] == "domain.execution.nodes.tool_selection.execute"
+        r
+        for r in tracer.records
+        if r["name"] == "domain.execution.nodes.tool_selection.execute"
     )
     assert retrieval_record["output"]["candidate_count"] == 2
     assert retrieval_record["output"]["evidence"] == evidence
     assert retrieval_record["output"]["selected_tools"][0]["retrieval_score"] == 0.92
-    assert execute_record["output"]["selection_mode"] == "heuristic_auto_select"
-    assert execute_record["output"]["best_score"] == 0.92
-    assert execute_record["output"]["selected_tools"][0]["name"] == "createExpense"
+    assert execute_record["output"]["selection_mode"] == "rag_with_llm"
+    assert execute_record["output"]["reason"] == "llm_selection"
 
 
 @pytest.mark.asyncio
-async def test_tool_selection_instrumentation_contains_fallback_reason():
-    selected_tool = AvailableTool(
-        name="createExpense",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        operation_id="createExpense",
-        method="POST",
-        path="/expenses",
-        retrieval_score=0.31,
+async def test_tool_selection_empty_when_rag_returns_no_candidates():
+    rag_config_id = uuid.uuid4()
+    node, retriever, _, llm_executor = _build_tool_selection_node(
+        retriever_return=([], []),
+        rag_config_id=rag_config_id,
     )
-    other_tool = AvailableTool(
-        name="updateExpense",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        operation_id="updateExpense",
-        method="PATCH",
-        path="/expenses/{id}",
-        retrieval_score=0.22,
-    )
-    tracer = _FakeTracer()
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    llm_result = NodeResult(
-        node=NodeType.ToolSelectionNode,
-        status=NodeExecutionStatus.SUCCESS,
-        data={
-            "result": [
-                {
-                    "selected_tool": {
-                        "name": selected_tool.name,
-                        "tool_config_id": str(selected_tool.tool_config_id),
-                    },
-                    "confidence": 0.95,
-                }
-            ]
-        },
-        next_state={},
-    )
-    llm_fallback = MagicMock()
-    llm_fallback.execute = AsyncMock(return_value=llm_result)
-    tool_catalog_indexer = MagicMock()
-    tool_catalog_indexer.index_document = AsyncMock(return_value=None)
-    node, _, _ = _build_tool_selection_node(
-        retriever_return=([selected_tool, other_tool], []),
-        agent_version=agent_version,
-        llm_fallback=llm_fallback,
-        tool_catalog_indexer=tool_catalog_indexer,
-        tracer=tracer,
-    )
-    context = _make_context(
-        input_payload={"user_input": "paguei no cartao"},
-        available_tools=[selected_tool, other_tool],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
-    )
-
-    await node.execute(context)
-
-    execute_record = next(
-        record
-        for record in tracer.records
-        if record["name"] == "domain.execution.nodes.tool_selection.execute"
-    )
-    assert execute_record["output"]["selection_mode"] == "llm_fallback"
-    assert execute_record["output"]["fallback_reason"] == "below_confidence_threshold"
-    assert execute_record["output"]["semantic_evidence_count"] == 0
-
-
-def test_node_attributes():
-    assert ToolSelectionNode.node_type == "ToolSelectionNode"
-    assert ToolSelectionNode.side_effect is False
-    assert ToolSelectionNode.deterministic is False
-
-
-@pytest.mark.asyncio
-async def test_tool_selection_filters_query_intent_to_get_methods():
-    query_tool_a = AvailableTool(
-        name="listExpenses",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="GET",
-        retrieval_score=0.86,
-    )
-    query_tool_b = AvailableTool(
-        name="getBalance",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="GET",
-        retrieval_score=0.71,
-    )
-    command_tool = AvailableTool(
-        name="createExpense",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="POST",
-        retrieval_score=0.2,
-    )
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    node, retriever, _ = _build_tool_selection_node(
-        retriever_return=(
-            [query_tool_a, query_tool_b],
-            [{"tool_config_id": str(query_tool_a.tool_config_id), "score": 0.86}],
-        ),
-        agent_version=agent_version,
-    )
-    context = _make_context(
-        input_payload={"user_input": "listar meus gastos"},
-        available_tools=[query_tool_a, query_tool_b, command_tool],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "query", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
-    )
-
-    await node.execute(context)
-
-    kwargs = retriever.retrieve_candidates.call_args.kwargs
-    assert kwargs["available_tools"] == [query_tool_a, query_tool_b]
-    assert kwargs["tool_intent_filter"] == "query"
-
-
-@pytest.mark.asyncio
-async def test_tool_selection_falls_back_to_llm_when_no_tools_after_intent_filter():
-    query_tool = AvailableTool(
-        name="listExpenses",
-        tool_id=uuid.uuid4(),
-        tool_config_id=uuid.uuid4(),
-        method="GET",
-    )
-    llm_result = NodeResult(
-        node=NodeType.ToolSelectionNode,
-        status=NodeExecutionStatus.SUCCESS,
-        data={"result": []},
-        next_state={},
-    )
-    llm_fallback = MagicMock()
-    llm_fallback.execute = AsyncMock(return_value=llm_result)
-    agent_version = SimpleNamespace(rag_config_id=uuid.uuid4())
-    node, retriever, _ = _build_tool_selection_node(
-        agent_version=agent_version,
-        llm_fallback=llm_fallback,
-    )
-    context = _make_context(
-        input_payload={"user_input": "criar despesa"},
-        available_tools=[query_tool],
-        state={
-            NodeType.IntentDetectionNode.value: {
-                "result": [{"intent_type": "command", "confidence": 0.9, "priority": 1}],
-                "overall_confidence": 0.9,
-            }
-        },
-    )
+    context = _make_context(input_payload={"user_input": "x"})
 
     result = await node.execute(context)
 
-    assert result == llm_result
-    llm_fallback.execute.assert_called_once()
-    retriever.retrieve_candidates.assert_not_called()
+    assert result.data["result"] == []
+    llm_executor.execute_llm.assert_not_called()
+
+
+def test_node_attributes():
+    assert ToolResolver.node_type == "ToolResolver"
+    assert ToolResolver.side_effect is False
+    assert ToolResolver.deterministic is False

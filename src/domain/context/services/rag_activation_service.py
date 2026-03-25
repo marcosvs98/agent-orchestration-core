@@ -369,7 +369,10 @@ class RagActivationService:
             return False
         if scope == RagActivationScope.TENANT_KNOWLEDGE:
             return bool(task_flags.allow_rag_tenant)
-        return bool(task_flags.allow_user_memory)
+        return bool(
+            task_flags.allow_user_memory_structured
+            or task_flags.allow_user_memory_vector
+        )
 
     async def _tool_scope_metadata(
         self,
@@ -498,8 +501,13 @@ class RagActivationService:
                 "allow_rag_tenant": (
                     bool(task_flags.allow_rag_tenant) if task_flags else None
                 ),
-                "allow_user_memory": (
-                    bool(task_flags.allow_user_memory) if task_flags else None
+                "allow_user_memory_structured": (
+                    bool(task_flags.allow_user_memory_structured)
+                    if task_flags
+                    else None
+                ),
+                "allow_user_memory_vector": (
+                    bool(task_flags.allow_user_memory_vector) if task_flags else None
                 ),
                 "input_len": input_len,
                 "input_kind": input_kind.value,

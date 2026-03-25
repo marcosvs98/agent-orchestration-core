@@ -2,23 +2,37 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
+from typing import Literal, TypedDict
 from uuid import UUID, uuid4
 
 import tiktoken
 
+import settings
+
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.ai_policy.repositories.ai_repository import AIRepository
+from domain.governance.schemas.rag_policy import RagIngestQuotas, ResolvedRagPolicy
+from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.schemas.embedding_job import EmbeddingStatus
 from domain.rag.schemas.rag import (
+    RagChunkingStrategy,
     RagConfigOptions,
+    RagEmbeddingOptions,
     RagContext,
     RagContextReason,
     RagContextItem,
+    RagCorpusKind,
     RagDocument,
     RagDocumentCreate,
     RagChunk,
     RagPreparedDocument,
+    RecursiveCharacterChunkingParams,
+    SemanticChunkingParams,
+    TokenWindowChunkingParams,
+    PerPageChunkingParams,
+    parse_rag_chunking_rule_params,
     SUPPORTED_EMBEDDING_DIMENSIONS,
     DEFAULT_EMBEDDING_DIMENSION,
     EMBEDDING_DIMENSION_REDUCED,
@@ -37,16 +51,22 @@ import numpy as np
 logger = get_logger(__name__)
 
 
-def _query_cache_embedding_to_list(raw: object | None) -> list[float]:
-    if raw is None:
-        return []
-    if isinstance(raw, np.ndarray):
-        return raw.tolist()
-    try:
-        return np.asarray(raw, dtype=float).tolist()
-    except Exception as e:
-        print(f"Error converting query cache embedding to list: {e}")
-        return []
+class UserMemoryVectorDocumentCap(TypedDict):
+    effective_cap: int
+    app_max_user_memory_documents: int
+    tenant_max_documents_per_user: int | None
+    binding: Literal["app", "rag_policy"]
+    reason_code: Literal[
+        "app_max_user_memory_documents", "rag_ingest_quota_user_documents"
+    ]
+
+
+ChunkRuleParams = (
+    TokenWindowChunkingParams
+    | RecursiveCharacterChunkingParams
+    | SemanticChunkingParams
+    | PerPageChunkingParams
+)
 
 
 class RagRuntimeService:
@@ -57,10 +77,28 @@ class RagRuntimeService:
         repository: RagRepository,
         embedding_adapter: OpenAIEmbeddingAdapter,
         tracer: RuntimeTracerPort,
+        rag_policy_service: RagPolicyService,
+        ai_repository: AIRepository | None = None,
     ) -> None:
         self.repository = repository
         self.embedding_adapter = embedding_adapter
         self.tracer = tracer
+        self.rag_policy_service = rag_policy_service
+        self.ai_repository = ai_repository
+
+    async def _resolve_embedding_model_name(
+        self, embedding: RagEmbeddingOptions
+    ) -> str:
+        if embedding.model_id is not None:
+            if self.ai_repository is None:
+                raise DomainValidationException(
+                    message="rag_embedding_model_id_requires_catalog"
+                )
+            row = await self.ai_repository.get_model(embedding.model_id)
+            if row is None:
+                raise NotFoundServiceException(message="embedding_model_not_found")
+            return row.name
+        return str(embedding.model_alias)
 
     async def ingest_document(
         self,
@@ -69,7 +107,7 @@ class RagRuntimeService:
         rag_config_id: UUID,
         document: RagDocumentCreate,
     ) -> RagDocument:
-        prepared = await self.prepare_document_for_embedding(
+        prepared: RagPreparedDocument = await self.prepare_document_for_embedding(
             tenant_id=tenant_id,
             rag_config_id=rag_config_id,
             document=document,
@@ -121,7 +159,7 @@ class RagRuntimeService:
                     logger.error(
                         "RAG documents ingestion item failed",
                         rag_config_id=str(rag_config_id),
-                        doc_type=str(getattr(document, "doc_type", "")),
+                        doc_type=str(document.doc_type or ""),
                         error_type=type(exc).__name__,
                     )
 
@@ -138,15 +176,16 @@ class RagRuntimeService:
             as_type="span",
             name="domain.rag.runtime.prepare_document_for_embedding",
             input={"rag_config_id": str(rag_config_id), "tenant_id": str(tenant_id)},
-        ):
-            options = await self._resolve_rag_options(
+        ) as span:
+            _, rule_params, _ = await self._resolve_rag_ingest_bundle(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
             )
-            if len(document.content) > options.chunking.max_document_chars:
+            max_chars: int = rule_params.max_document_chars
+            if len(document.content) > max_chars:
                 raise DomainValidationException(message="rag_document_too_large")
             content_hash = self._hash_text(document.content)
-            existing = await self.repository.get_document_by_hash(
+            existing: RagDocument | None = await self.repository.get_document_by_hash(
                 tenant_id=tenant_id,
                 content_hash=content_hash,
             )
@@ -166,23 +205,28 @@ class RagRuntimeService:
                     metadata=existing.doc_metadata,
                     embedding_status=status,
                 )
-            doc_rag_config_id = (
+            doc_rag_config_id: UUID = (
                 document.rag_config_id
                 if document.rag_config_id is not None
                 else rag_config_id
             )
-            created = await self.repository.create_document(
+            doc_meta: dict[str, object] = dict(document.metadata or {})
+            if document.doc_type == "tool_catalog":
+                doc_meta.setdefault("category", RagCorpusKind.TOOL_CATALOG.value)
+            if document.pages is not None:
+                doc_meta["ingest_pages"] = list(document.pages)
+            created: RagDocument = await self.repository.create_document(
                 tenant_id=tenant_id,
                 source=document.source,
                 doc_type=document.doc_type,
                 content_hash=content_hash,
                 content=document.content,
                 version=document.version,
-                metadata=document.metadata,
+                metadata=doc_meta,
                 embedding_status=EmbeddingStatus.PENDING,
                 rag_config_id=doc_rag_config_id,
             )
-            return RagPreparedDocument(
+            prepared_document: RagPreparedDocument = RagPreparedDocument(
                 id=created.document_id,
                 source=created.source,
                 doc_type=created.doc_type,
@@ -190,6 +234,9 @@ class RagRuntimeService:
                 metadata=created.doc_metadata,
                 embedding_status=EmbeddingStatus.PENDING,
             )
+            if span:
+                span.update(output=prepared_document.model_dump(mode="json"))
+            return prepared_document
 
     async def embed_document_by_id(
         self,
@@ -207,9 +254,12 @@ class RagRuntimeService:
                 "document_id": str(document_id),
             },
         ) as embedder_handle:
-            options = await self._resolve_rag_options(
+            options, rule_params, corpus_kind = await self._resolve_rag_ingest_bundle(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
+            )
+            embedding_model_name = await self._resolve_embedding_model_name(
+                options.embedding
             )
             document = await self.repository.get_document_by_id(document_id=document_id)
             if document is None or document.tenant_id != tenant_id:
@@ -246,23 +296,35 @@ class RagRuntimeService:
                 started_at=started_at,
                 error_code=None,
             )
-            chunks, truncated = self._chunk_text(
-                document.content,
-                options.chunking.target_tokens,
-                options.chunking.overlap_tokens,
-                options.chunking.max_chunks_per_document,
+            raw_meta = document.doc_metadata or {}
+            ingest_pages: list[str] | None = None
+            raw_pages = raw_meta.get("ingest_pages")
+            if raw_pages is not None and type(raw_pages) is list:
+                ingest_pages = [str(x) for x in raw_pages]
+            chunks, truncated = self._chunks_for_ingest(
+                content=document.content,
+                rule_params=rule_params,
+                ingest_pages=ingest_pages,
             )
-            document_metadata = dict(document.doc_metadata or {})
+            document_metadata = dict(raw_meta)
             if truncated:
                 document_metadata["truncated"] = True
                 document_metadata["truncated_chunks"] = len(chunks)
             try:
-                embeddings = await self.embedding_adapter.generate_embeddings_batch(
+                resolved_policy: ResolvedRagPolicy = (
+                    await self.rag_policy_service.resolve(tenant_id=tenant_id)
+                )
+                quotas: RagIngestQuotas | None = None
+                if resolved_policy.definition is not None:
+                    quotas = resolved_policy.definition.ingest_quotas
+                embeddings: list[
+                    list[float]
+                ] = await self.embedding_adapter.generate_embeddings_batch(
                     chunks,
-                    model=options.embedding.model_alias,
+                    model=embedding_model_name,
                     dimension=options.embedding.dimension,
                 )
-                dim = options.embedding.dimension
+                dim: int = options.embedding.dimension
                 chunk_models: list[RagChunkModel] = []
                 for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_models.append(
@@ -279,18 +341,20 @@ class RagRuntimeService:
                             embedding_512=embedding
                             if dim == EMBEDDING_DIMENSION_REDUCED
                             else None,
-                            embedding_model=options.embedding.model_alias,
+                            embedding_model=embedding_model_name,
                             embedding_dimension=dim,
                             chunk_metadata=document_metadata,
                         )
                     )
-                await self.repository.create_chunks(chunks=chunk_models)
                 completed_at = datetime.now(timezone.utc)
-                await self.repository.update_document_embedding_status(
+                await self.repository.finalize_document_embedding_with_usage(
+                    tenant_id=tenant_id,
+                    rag_config_id=rag_config_id,
+                    corpus_kind=corpus_kind,
                     document_id=document.document_id,
-                    status=EmbeddingStatus.COMPLETED,
+                    chunks=chunk_models,
                     completed_at=completed_at,
-                    error_code=None,
+                    quotas=quotas,
                 )
                 embedder_handle.success(
                     output={
@@ -306,7 +370,7 @@ class RagRuntimeService:
                     error_code=exc.__class__.__name__,
                     completed_at=datetime.now(timezone.utc),
                 )
-                raise
+                raise exc from exc
             return RagDocument(
                 id=document.document_id,
                 source=document.source,
@@ -346,6 +410,54 @@ class RagRuntimeService:
             tenant_id=tenant_id, user_id=user_id
         )
 
+    async def count_user_memory_documents_for_rag_config(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: str,
+        rag_config_id: UUID,
+    ) -> int:
+        return await self.repository.count_user_memory_documents_for_rag_config(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            rag_config_id=rag_config_id,
+        )
+
+    async def resolve_user_memory_vector_document_cap(
+        self, *, tenant_id: UUID
+    ) -> UserMemoryVectorDocumentCap:
+        app_max = int(settings.MAX_USER_MEMORY_DOCUMENTS)
+        resolved = await self.rag_policy_service.resolve(tenant_id=tenant_id)
+        tenant_q: int | None = None
+        definition = resolved.definition
+        if definition is not None and definition.ingest_quotas is not None:
+            raw = definition.ingest_quotas.max_documents_per_user
+            if raw is not None:
+                tenant_q = int(raw)
+        if tenant_q is None:
+            return UserMemoryVectorDocumentCap(
+                effective_cap=app_max,
+                app_max_user_memory_documents=app_max,
+                tenant_max_documents_per_user=None,
+                binding="app",
+                reason_code="app_max_user_memory_documents",
+            )
+        if tenant_q < app_max:
+            return UserMemoryVectorDocumentCap(
+                effective_cap=tenant_q,
+                app_max_user_memory_documents=app_max,
+                tenant_max_documents_per_user=tenant_q,
+                binding="rag_policy",
+                reason_code="rag_ingest_quota_user_documents",
+            )
+        return UserMemoryVectorDocumentCap(
+            effective_cap=app_max,
+            app_max_user_memory_documents=app_max,
+            tenant_max_documents_per_user=tenant_q,
+            binding="app",
+            reason_code="app_max_user_memory_documents",
+        )
+
     async def list_chunks(self, *, document_id: UUID, limit: int) -> list[RagChunk]:
         """List chunks for a stored document."""
         items = await self.repository.list_chunks(document_id=document_id, limit=limit)
@@ -369,6 +481,7 @@ class RagRuntimeService:
         user_input: str,
         filters_override: dict[str, object] | None = None,
         top_k_override: int | None = None,
+        similarity_threshold_cap: float | None = None,
     ) -> RagContext:
         """Retrieve eligible context for a user query."""
 
@@ -383,20 +496,25 @@ class RagRuntimeService:
                 generation_contract=None,
             )
 
-        options = RagConfigOptions.model_validate(config.options or {})
+        options: RagConfigOptions = RagConfigOptions.model_validate(
+            config.options or {}
+        )
         if options.embedding.dimension not in SUPPORTED_EMBEDDING_DIMENSIONS:
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )
-        query_hash = self._hash_text(user_input)
-        cached = await self.repository.get_query_cache(
+        embedding_model_name = await self._resolve_embedding_model_name(
+            options.embedding
+        )
+        query_hash: str = self._hash_text(user_input)
+        cached: RagQueryCacheModel = await self.repository.get_query_cache(
             tenant_id=tenant_id, query_hash=query_hash
         )
-        dim = options.embedding.dimension
+        dim: int = options.embedding.dimension
         embedding: list[float]
         if (
             cached
-            and cached.embedding_model == options.embedding.model_alias
+            and cached.embedding_model == embedding_model_name
             and cached.embedding_dimension == options.embedding.dimension
         ):
             raw_vec = (
@@ -404,51 +522,72 @@ class RagRuntimeService:
                 if dim == EMBEDDING_DIMENSION_REDUCED
                 else cached.embedding
             )
-            embedding = _query_cache_embedding_to_list(raw_vec)
+            embedding = self._query_cache_embedding_to_list(raw_vec)
             await self.repository.update_query_cache_usage(
                 cache_id=cached.query_cache_id
             )
         else:
-            embedding = await self.embedding_adapter.generate_embedding(
+            embedding: list[float] = await self.embedding_adapter.generate_embedding(
                 user_input,
-                model=options.embedding.model_alias,
+                model=embedding_model_name,
                 dimension=options.embedding.dimension,
             )
-            cache_entry = RagQueryCacheModel(
+            cache_entry: RagQueryCacheModel = RagQueryCacheModel(
                 tenant_id=tenant_id,
                 query_hash=query_hash,
                 embedding=embedding if dim == DEFAULT_EMBEDDING_DIMENSION else None,
                 embedding_512=embedding if dim == EMBEDDING_DIMENSION_REDUCED else None,
-                embedding_model=options.embedding.model_alias,
+                embedding_model=embedding_model_name,
                 embedding_dimension=dim,
             )
             await self.repository.save_query_cache(cache_entry=cache_entry)
 
-        effective_filters = dict(options.retrieval.filters or {})
+        effective_filters: dict = dict(options.retrieval.filters or {})
         if filters_override:
             effective_filters.update(filters_override)
         effective_top_k = int(options.retrieval.top_k)
         if top_k_override is not None:
             effective_top_k = max(1, int(top_k_override))
+        effective_similarity_threshold = float(options.retrieval.similarity_threshold)
+        if similarity_threshold_cap is not None:
+            effective_similarity_threshold = min(
+                effective_similarity_threshold, float(similarity_threshold_cap)
+            )
+        scope_raw = config.corpus_kind
+        try:
+            scope_trace = RagCorpusKind(scope_raw).value
+        except ValueError:
+            scope_trace = scope_raw
         with self.tracer.observe(
             as_type="retriever",
             name="domain.rag.runtime.search_similar_chunks",
             input={
                 "tenant_id": str(tenant_id),
-                "top_k": effective_top_k,
-                "similarity_threshold": options.retrieval.similarity_threshold,
+                "rag_config_id": str(rag_config_id),
+                "scope": scope_trace,
+                "user_id_present": bool(user_id),
             },
         ) as retriever_handle:
-            results = await self.repository.search_similar_chunks(
+            results: list[
+                tuple[RagChunkModel, float, datetime | None, str | None]
+            ] = await self.repository.search_similar_chunks(
                 tenant_id=tenant_id,
+                rag_config_id=rag_config_id,
                 user_id=user_id,
                 query_embedding=embedding,
                 embedding_dimension=dim,
                 top_k=effective_top_k,
-                similarity_threshold=options.retrieval.similarity_threshold,
+                similarity_threshold=effective_similarity_threshold,
                 filters=effective_filters,
             )
-            retriever_handle.success(output={"chunk_count": len(results)})
+            if retriever_handle:
+                retriever_handle.success(
+                    output={
+                        "chunk_count": len(results),
+                        "top_k": effective_top_k,
+                        "similarity_threshold": effective_similarity_threshold,
+                    }
+                )
         if not results:
             return RagContext(
                 context_items=[],
@@ -483,6 +622,118 @@ class RagRuntimeService:
     def _encode_tokens(self, text: str) -> list[int]:
         encoder = tiktoken.get_encoding("cl100k_base")
         return encoder.encode(text)
+
+    async def _resolve_rag_ingest_bundle(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_config_id: UUID,
+    ) -> tuple[RagConfigOptions, ChunkRuleParams, str]:
+        config = await self.repository.get_rag_config(rag_config_id)
+        if config is None or config.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="rag_config_not_found")
+        rule = await self.repository.get_chunking_rule(
+            tenant_id=tenant_id,
+            rag_chunking_rule_id=config.chunking_rule_id,
+        )
+        if rule is None:
+            raise NotFoundServiceException(message="rag_chunking_rule_not_found")
+        rule_params = parse_rag_chunking_rule_params(rule.params or {})
+        options = RagConfigOptions.model_validate(config.options or {})
+        if options.embedding.dimension not in SUPPORTED_EMBEDDING_DIMENSIONS:
+            raise DomainValidationException(
+                message="rag_embedding_dimension_not_supported"
+            )
+        return options, rule_params, config.corpus_kind
+
+    def _chunks_for_ingest(
+        self,
+        *,
+        content: str,
+        rule_params: ChunkRuleParams,
+        ingest_pages: list[str] | None,
+    ) -> tuple[list[str], bool]:
+        strat = rule_params.strategy
+        if strat == RagChunkingStrategy.PER_PAGE:
+            pages = ingest_pages
+            if pages is None or len(pages) == 0:
+                raise DomainValidationException(
+                    message="rag_per_page_pages_required",
+                    name="RAG_PER_PAGE_PAGES_REQUIRED",  # Todo: Why here don't have a StrEnum ?
+                    input_data={"code": "rag_per_page_pages_required"},
+                    status_code=422,
+                )
+            out: list[str] = []
+            for raw in pages[: rule_params.max_chunks_per_document]:
+                piece = (
+                    raw
+                    if len(raw) <= rule_params.max_document_chars
+                    else raw[: rule_params.max_document_chars]
+                )
+                if piece:
+                    out.append(piece)
+            truncated = len(pages) > rule_params.max_chunks_per_document or any(
+                len(p) > rule_params.max_document_chars for p in pages
+            )
+            return out, truncated
+        if strat == RagChunkingStrategy.TOKEN_WINDOW:
+            return self._chunk_text(
+                content,
+                rule_params.target_tokens,
+                rule_params.overlap_tokens,
+                rule_params.max_chunks_per_document,
+            )
+        if strat == RagChunkingStrategy.SEMANTIC:
+            return self._chunk_text(
+                content,
+                rule_params.target_tokens,
+                rule_params.overlap_tokens,
+                rule_params.max_chunks_per_document,
+            )
+        if strat == RagChunkingStrategy.RECURSIVE_CHARACTER:
+            return self._recursive_character_chunks(
+                content,
+                rule_params.chunk_size,
+                rule_params.chunk_overlap,
+                rule_params.max_chunks_per_document,
+                rule_params.separators,
+            )
+        raise DomainValidationException(message="rag_chunking_strategy_unsupported")
+
+    def _recursive_character_chunks(
+        self,
+        text: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        max_chunks: int,
+        separators: list[str],
+    ) -> tuple[list[str], bool]:
+        if len(text) <= chunk_size:
+            return [text], False
+        parts: list[str] = []
+        idx = 0
+        while idx < len(text) and len(parts) < max_chunks:
+            window = text[idx : idx + chunk_size]
+            if len(window) < chunk_size:
+                tail = window.strip()
+                if tail:
+                    parts.append(tail)
+                break
+            cut = len(window)
+            for sep in separators:
+                if sep == "":
+                    continue
+                pos = window.rfind(sep)
+                if pos >= chunk_size // 2:
+                    cut = pos + len(sep)
+                    break
+            segment = text[idx : idx + cut].strip()
+            if segment:
+                parts.append(segment)
+            nxt = idx + cut - chunk_overlap
+            idx = nxt if nxt > idx else idx + cut
+        truncated = idx < len(text) and len(parts) >= max_chunks
+        return parts, truncated
 
     def _chunk_text(
         self,
@@ -528,18 +779,14 @@ class RagRuntimeService:
         except ValueError:
             return EmbeddingStatus.PENDING
 
-    async def _resolve_rag_options(
-        self,
-        *,
-        tenant_id: UUID,
-        rag_config_id: UUID,
-    ) -> RagConfigOptions:
-        config = await self.repository.get_rag_config(rag_config_id)
-        if config is None or config.tenant_id != tenant_id:
-            raise NotFoundServiceException(message="rag_config_not_found")
-        options = RagConfigOptions.model_validate(config.options or {})
-        if options.embedding.dimension not in SUPPORTED_EMBEDDING_DIMENSIONS:
-            raise DomainValidationException(
-                message="rag_embedding_dimension_not_supported"
-            )
-        return options
+    @staticmethod
+    def _query_cache_embedding_to_list(raw: object | None) -> list[float]:
+        if raw is None:
+            return []
+        if isinstance(raw, np.ndarray):
+            return raw.tolist()
+        try:
+            return np.asarray(raw, dtype=float).tolist()
+        except Exception:
+            logger.warning("Failed to convert query cache embedding to list")
+            return []

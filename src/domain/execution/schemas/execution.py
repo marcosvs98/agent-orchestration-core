@@ -52,6 +52,9 @@ class FlowRun(BaseModel):
     trace_id: UUID | None = None
     root_observation_id: str | None = None
     flow_graph_snapshot_id: UUID | None = None
+    flow_snapshot_id: UUID | None = None
+    flow_deployment_id: UUID | None = None
+    runtime_contract: dict[str, object] = {}
     execution_plan_hash: str | None = None
     runtime_policy_hash: str | None = None
     tool_catalog_hash: str | None = None
@@ -84,6 +87,9 @@ class FlowRun(BaseModel):
             trace_id=model.trace_id,
             root_observation_id=model.root_observation_id,
             flow_graph_snapshot_id=model.flow_graph_snapshot_id,
+            flow_snapshot_id=model.flow_snapshot_id,
+            flow_deployment_id=model.flow_deployment_id,
+            runtime_contract=model.runtime_contract or {},
             execution_plan_hash=model.execution_plan_hash,
             runtime_policy_hash=model.runtime_policy_hash,
             tool_catalog_hash=model.tool_catalog_hash,

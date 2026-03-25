@@ -4,15 +4,20 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-project_root = Path(__file__).resolve().parents[3]
-src_path = project_root / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
+for _repo in Path(__file__).resolve().parents:
+    if (_repo / "pyproject.toml").exists():
+        sys.path.insert(0, str(_repo / "src"))
+        sys.path.insert(0, str(_repo / "resources" / "scripts"))
+        sys.path.insert(0, str(_repo))
+        break
+else:
+    raise RuntimeError("repository root not found")
 
 from sqlalchemy import select, update
 
 from domain.common.schemas.versioning import VersionStatus
 from domain.governance.schemas.rag_policy import (
+    RagIngestQuotas,
     RagPolicyDefinition,
     RagScopePolicy,
     RagTaskDefaults,
@@ -56,6 +61,13 @@ async def seed_rag_policy() -> None:
                             allowed_tool_config_ids=[TOOL_CONFIG_DEMO_ID],
                         ),
                     ),
+                    LLMTaskType.MEMORY_EXTRACTION: RagTaskDefaults(
+                        tenant_knowledge=RagScopePolicy(enabled=True),
+                        user_memory_vector=RagScopePolicy(
+                            enabled=True,
+                            allowed_tool_config_ids=[TOOL_CONFIG_DEMO_ID],
+                        ),
+                    ),
                     LLMTaskType.SLOT_FILLING: RagTaskDefaults(
                         tenant_knowledge=RagScopePolicy(enabled=True),
                         user_memory_vector=RagScopePolicy(enabled=True),
@@ -76,6 +88,7 @@ async def seed_rag_policy() -> None:
                     "USER_MEMORY_VECTOR": 8,
                 },
                 "allow_structured_input": False,
+                "ingest_quotas": RagIngestQuotas(max_documents_per_user=10),
             }
         ).model_dump(mode="json")
         result = await session.execute(

@@ -60,8 +60,12 @@ class LLMNodeExecutor:
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
     ) -> NodeResult:
-        config = config or {}
-        llm_cfg = config.get("llm")
+        return await self._run_llm_after_setup(context, config or {})
+
+    async def _run_llm_after_setup(
+        self, context: ExecutionContext, config: Dict[str, Any]
+    ) -> NodeResult:
+        llm_cfg = config.get("llm") or {}
         runtime_policy = (
             (context.metadata or {}).get("runtime_policy", {})
             if context.metadata

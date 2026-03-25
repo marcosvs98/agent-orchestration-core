@@ -20,7 +20,7 @@ class TestPromptEvents:
         tenant_id = uuid4()
 
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Test prompt",
             description="Test",
             created_by="test_user",
@@ -57,6 +57,6 @@ class TestPromptEvents:
         assert call_args.kwargs["tenant_id"] == tenant_id
         payload = call_args.kwargs["payload"]
         assert payload["prompt_id"] == str(prompt_id)
-        assert payload["node_type"] == NodeType.IntentToolSelectionNode.value
+        assert payload["node_type"] == NodeType.ToolResolver.value
         assert payload["version"] == 1
         assert payload["frozen_hash"] == created_prompt.frozen_hash

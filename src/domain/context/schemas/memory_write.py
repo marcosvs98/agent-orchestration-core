@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from domain.governance.schemas.memory_policy import MemoryWriteTarget
+
+
+class MemoryPreferenceWriteOutcome(StrEnum):
+    IGNORED = "ignored"
+    APPLIED = "applied"
+
+
+class PreferenceKeyDerivationReason(StrEnum):
+    NO_POLICY = "no_policy"
+    FIXED_KEY_USED = "fixed_key_used"
+    KEY_ALLOWED = "key_allowed"
+    KEY_NOT_ALLOWED = "key_not_allowed"
+    MISSING_VALUE = "missing_value"
+    SOURCE_PRIORITY_DENIED = "source_priority_denied"
 
 
 class MemoryWriteEventContext(BaseModel):

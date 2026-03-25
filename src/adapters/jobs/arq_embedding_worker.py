@@ -8,7 +8,9 @@ import settings
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
+from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.execution.repositories.execution_repository import ExecutionRepository
+from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.execution.schemas.events import ExecutionEventType
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.schemas.embedding_job import EmbeddingJobPayload
@@ -39,20 +41,23 @@ async def process_embedding_job(
             "attempt": attempt,
         },
         metadata={"event_type": ExecutionEventType.MemoryEmbeddingStarted.value},
-    ):
+    ) as event_span:
+        event_payload: dict = {
+            "document_id": str(payload.document_id),
+            "rag_config_id": str(payload.rag_config_id),
+            "flow_run_id": str(payload.flow_run_id)
+            if payload.flow_run_id
+            else None,
+            "attempt": attempt,
+        }
         await _append_execution_event(
             repository=execution_repository,
             payload=payload,
             event_type=ExecutionEventType.MemoryEmbeddingStarted,
-            event_payload={
-                "document_id": str(payload.document_id),
-                "rag_config_id": str(payload.rag_config_id),
-                "flow_run_id": str(payload.flow_run_id)
-                if payload.flow_run_id
-                else None,
-                "attempt": attempt,
-            },
+            event_payload=event_payload,
         )
+        if event_span:
+            event_span.update(output=event_payload)
     try:
         await rag_runtime_service.embed_document_by_id(
             tenant_id=payload.tenant_id,
@@ -67,7 +72,7 @@ async def process_embedding_job(
                 "rag_config_id": str(payload.rag_config_id),
             },
             metadata={"event_type": ExecutionEventType.MemoryEmbeddingCompleted.value},
-        ):
+        ) as event_span:
             embedded_payload = {
                 "scope": "USER_MEMORY",
                 "target": "USER_MEMORY_VECTOR",
@@ -98,6 +103,8 @@ async def process_embedding_job(
                     else None,
                 },
             )
+            if event_span:
+                event_span.update(output=embedded_payload)
     except Exception as exc:
         document = await rag_repository.get_document_by_id(
             document_id=payload.document_id
@@ -114,22 +121,25 @@ async def process_embedding_job(
                 "error_code": error_code,
             },
             metadata={"event_type": ExecutionEventType.MemoryEmbeddingFailed.value},
-        ):
+        ) as event_span:
+            event_payload: dict = {
+                "document_id": str(payload.document_id),
+                "rag_config_id": str(payload.rag_config_id),
+                "flow_run_id": str(payload.flow_run_id)
+                if payload.flow_run_id
+                else None,
+                "attempt": attempt,
+                "error_code": error_code,
+            }
             await _append_execution_event(
                 repository=execution_repository,
                 payload=payload,
                 event_type=ExecutionEventType.MemoryEmbeddingFailed,
-                event_payload={
-                    "document_id": str(payload.document_id),
-                    "rag_config_id": str(payload.rag_config_id),
-                    "flow_run_id": str(payload.flow_run_id)
-                    if payload.flow_run_id
-                    else None,
-                    "attempt": attempt,
-                    "error_code": error_code,
-                },
+                event_payload=event_payload,
             )
-        raise
+            if event_span:
+                event_span.update(output=event_payload)
+        raise exc from exc
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -140,6 +150,8 @@ async def startup(ctx: dict[str, Any]) -> None:
         db, tracer=tracer, cache_adapter=cache_adapter
     )
     rag_repository = RagRepository(db, tracer=tracer, cache_adapter=cache_adapter)
+
+    # Todo: check the simple form to became this generic selector of embedding adapter
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",
@@ -147,10 +159,15 @@ async def startup(ctx: dict[str, Any]) -> None:
         tracer=tracer,
         cache_adapter=cache_adapter,
     )
+
+    rag_policy_service = RagPolicyService(repository=execution_repository)
+    ai_repository = AIRepository(db, tracer=tracer)
     rag_runtime_service = RagRuntimeService(
         repository=rag_repository,
         embedding_adapter=embedding_adapter,
         tracer=tracer,
+        rag_policy_service=rag_policy_service,
+        ai_repository=ai_repository,
     )
     ctx["tracer"] = tracer
     ctx["execution_repository"] = execution_repository

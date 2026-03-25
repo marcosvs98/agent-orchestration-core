@@ -6,8 +6,8 @@ from domain.llm.schemas.llm import LLMTaskType
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
 
 
-class ClarificationNode(LLMNodeExecutor):
-    node_type = NodeType.ClarificationNode
+class QueryClarifier(LLMNodeExecutor):
+    node_type = NodeType.QueryClarifier
     llm_task = LLMTaskType.CLARIFICATION
     prompt_intent = PromptIntent.CLARIFICATION
     deterministic = True

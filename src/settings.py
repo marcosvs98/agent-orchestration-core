@@ -93,3 +93,6 @@ JWT_TENANT_TOKEN_EXPIRES_SECONDS: int = config(
 )
 PUBLIC_BASE_URL: str = config("PUBLIC_BASE_URL", default="", cast=str)
 IDEMPOTENCY_TTL_SECONDS: int = config("IDEMPOTENCY_TTL_SECONDS", default=3600, cast=int)
+RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED: bool = config(
+    "RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED", default=True, cast=bool
+)

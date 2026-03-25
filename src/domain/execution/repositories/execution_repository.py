@@ -17,9 +17,6 @@ from infra.database.models.conversation.user import User as UserModel
 from infra.database.models.conversation.user_memory_profile import (
     UserMemoryProfile as UserMemoryProfileModel,
 )
-from infra.database.models.conversation.user_preference import (
-    UserPreference as UserPreferenceModel,
-)
 from exceptions.service_exceptions import (
     DomainConflictException,
     DomainValidationException,
@@ -56,6 +53,10 @@ from infra.database.models.flow.flow_graph import FlowGraph as FlowGraphModel
 from infra.database.models.flow.flow_graph_snapshot import (
     FlowGraphSnapshot as FlowGraphSnapshotModel,
 )
+from infra.database.models.flow.flow_snapshot import FlowSnapshot as FlowSnapshotModel
+from infra.database.models.flow.flow_deployment import (
+    FlowDeployment as FlowDeploymentModel,
+)
 from infra.database.models.tool.tool_config import ToolConfig as ToolConfigModel
 from infra.database.models.conversation.interaction import (
     Interaction as InteractionModel,
@@ -75,6 +76,40 @@ from infra.database.models.governance.rag_policy_version import (
 from infra.database.models.execution.graph_state import GraphState as GraphStateModel
 
 DEFAULT_EVENT_BATCH_SIZE = 20
+
+_PROFILE_SCHEMA_MIN = 1
+_PROFILE_SCHEMA_MAX = 1
+_MEMORY_PREFS_KEY = "memory_preferences"
+
+
+def _preferences_dict_from_profile(profile: dict[str, object]) -> dict[str, object]:
+    raw = profile.get(_MEMORY_PREFS_KEY)
+    if type(raw) != dict:
+        return {}
+    out: dict[str, object] = {}
+    for key, entry in raw.items():
+        key_str = str(key)
+        if type(entry) is dict and "value" in entry:
+            out[key_str] = entry["value"]
+        else:
+            out[key_str] = entry
+    return out
+
+
+def _validate_profile_schema_version(profile: dict[str, object]) -> None:
+    raw = profile.get("profile_schema_version")
+    if raw is None:
+        return
+    try:
+        sv = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise DomainValidationException(
+            message="user_memory_profile_schema_invalid"
+        ) from exc
+    if sv < _PROFILE_SCHEMA_MIN or sv > _PROFILE_SCHEMA_MAX:
+        raise DomainValidationException(
+            message="user_memory_profile_schema_unsupported"
+        )
 
 
 class ExecutionRepository:
@@ -179,6 +214,9 @@ class ExecutionRepository:
         input_payload: FlowRunInput,
         interaction_id: UUID | None = None,
         flow_graph_snapshot_id: UUID | None = None,
+        flow_snapshot_id: UUID | None = None,
+        flow_deployment_id: UUID | None = None,
+        runtime_contract: dict[str, object] | None = None,
         execution_plan_hash: str | None = None,
         runtime_policy_hash: str | None = None,
         tool_catalog_hash: str | None = None,
@@ -196,6 +234,10 @@ class ExecutionRepository:
                 "session_id": str(session_id),
                 "interaction_id": str(interaction_id),
                 "flow_graph_snapshot_id": str(flow_graph_snapshot_id),
+                "flow_snapshot_id": str(flow_snapshot_id) if flow_snapshot_id else None,
+                "flow_deployment_id": str(flow_deployment_id)
+                if flow_deployment_id
+                else None,
                 "execution_plan_hash": execution_plan_hash,
                 "runtime_policy_hash": runtime_policy_hash,
                 "tool_catalog_hash": tool_catalog_hash,
@@ -214,6 +256,9 @@ class ExecutionRepository:
                         input=input_payload.model_dump(mode="json"),
                         interaction_id=interaction_id,
                         flow_graph_snapshot_id=flow_graph_snapshot_id,
+                        flow_snapshot_id=flow_snapshot_id,
+                        flow_deployment_id=flow_deployment_id,
+                        runtime_contract=runtime_contract or {},
                         execution_plan_hash=execution_plan_hash,
                         runtime_policy_hash=runtime_policy_hash,
                         tool_catalog_hash=tool_catalog_hash,
@@ -234,6 +279,53 @@ class ExecutionRepository:
                 if tool_handle:
                     tool_handle.success(output={"flow_run_id": str(flow_run_id)})
         return flow_run_id
+
+    async def merge_flow_run_runtime_contract(
+        self, *, flow_run_id: UUID, patch: dict[str, object]
+    ) -> None:
+        async with self.db.get_session() as session:
+            row = await session.get(FlowRunModel, flow_run_id)
+            if row is None:
+                return
+            current = dict(row.runtime_contract or {})
+            current.update(patch)
+            row.runtime_contract = current
+            await session.commit()
+
+    async def get_active_flow_deployment(
+        self, *, flow_id: UUID, environment: str = "default"
+    ) -> FlowDeploymentModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(FlowDeploymentModel).where(
+                    FlowDeploymentModel.flow_id == flow_id,
+                    FlowDeploymentModel.environment == environment,
+                    FlowDeploymentModel.status == "ACTIVE",
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_flow_snapshot_by_id(
+        self, flow_snapshot_id: UUID
+    ) -> FlowSnapshotModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(FlowSnapshotModel).where(
+                    FlowSnapshotModel.flow_snapshot_id == flow_snapshot_id
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_flow_snapshot_by_flow_version(
+        self, flow_version_id: UUID
+    ) -> FlowSnapshotModel | None:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(FlowSnapshotModel).where(
+                    FlowSnapshotModel.flow_version_id == flow_version_id
+                )
+            )
+            return result.scalar_one_or_none()
 
     async def set_root_observation_id(
         self, *, flow_run_id: UUID, root_observation_id: str
@@ -465,34 +557,22 @@ class ExecutionRepository:
             return flow_run.session_id, session_record.tenant_id
 
     async def get_user_preferences(self, *, tenant_id: UUID, user_id: str) -> dict:
-        async with self.db.get_session() as session:
-            stmt = select(UserPreferenceModel).where(
-                UserPreferenceModel.tenant_id == tenant_id,
-                UserPreferenceModel.user_id == user_id,
-            )
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
-            return {
-                row.preference_key: row.preference_value
-                for row in rows
-                if row.preference_key
-            }
+        profile = await self.get_user_memory_profile(
+            tenant_id=tenant_id, user_id=user_id
+        )
+        _validate_profile_schema_version(profile)
+        return _preferences_dict_from_profile(profile)
 
-    async def get_user_preference(
-        self,
-        *,
-        tenant_id: UUID,
-        user_id: str,
-        preference_key: str,
-    ) -> UserPreferenceModel | None:
-        async with self.db.get_session() as session:
-            stmt = select(UserPreferenceModel).where(
-                UserPreferenceModel.tenant_id == tenant_id,
-                UserPreferenceModel.user_id == user_id,
-                UserPreferenceModel.preference_key == preference_key,
-            )
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none()
+    async def get_user_memory_preferences_and_profile(
+        self, *, tenant_id: UUID, user_id: str
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        """Return preference map and full profile after a single load and schema check."""
+
+        profile = await self.get_user_memory_profile(
+            tenant_id=tenant_id, user_id=user_id
+        )
+        _validate_profile_schema_version(profile)
+        return _preferences_dict_from_profile(profile), profile
 
     async def get_user_memory_profile(self, *, tenant_id: UUID, user_id: str) -> dict:
         async with self.db.get_session() as session:
@@ -540,47 +620,83 @@ class ExecutionRepository:
         incoming_priority = int(source_priority_map.get(source, 0))
         async with self.db.get_session() as session:
             lock_stmt = (
-                select(UserPreferenceModel)
+                select(UserMemoryProfileModel)
                 .where(
-                    UserPreferenceModel.tenant_id == tenant_id,
-                    UserPreferenceModel.user_id == user_id,
-                    UserPreferenceModel.preference_key == preference_key,
+                    UserMemoryProfileModel.tenant_id == tenant_id,
+                    UserMemoryProfileModel.user_id == user_id,
                 )
                 .with_for_update()
             )
             existing_result = await session.execute(lock_stmt)
-            existing = existing_result.scalar_one_or_none()
+            row = existing_result.scalar_one_or_none()
 
-            if existing is None:
-                insert_stmt = (
-                    pg_insert(UserPreferenceModel)
-                    .values(
-                        tenant_id=tenant_id,
-                        user_id=user_id,
-                        preference_key=preference_key,
-                        preference_value=preference_value,
-                        source=source,
-                        version=1,
-                    )
-                    .returning(UserPreferenceModel.version)
+            profile: dict[str, object] = (
+                dict(row.profile) if row is not None and row.profile else {}
+            )
+            _validate_profile_schema_version(profile)
+            if not profile.get("profile_schema_version"):
+                profile["profile_schema_version"] = _PROFILE_SCHEMA_MIN
+
+            prefs_raw = profile.get(_MEMORY_PREFS_KEY)
+            prefs: dict[str, object] = (
+                dict(prefs_raw) if type(prefs_raw) is dict else {}
+            )
+
+            existing_entry = prefs.get(preference_key)
+            previous_source: str | None = None
+            previous_priority = 0
+            previous_version = 0
+            previous_value: object | None = None
+            if type(existing_entry) is dict:
+                previous_source = (
+                    str(existing_entry["source"])
+                    if existing_entry.get("source") is not None
+                    else None
                 )
-                insert_result = await session.execute(insert_stmt)
-                version = int(insert_result.scalar_one())
+                previous_value = existing_entry.get("value")
+                pv = existing_entry.get("version")
+                if type(pv) is int:
+                    previous_version = pv
+                elif pv is not None:
+                    try:
+                        previous_version = int(pv)
+                    except (TypeError, ValueError):
+                        previous_version = 0
+                if previous_source is not None:
+                    previous_priority = int(source_priority_map.get(previous_source, 0))
+
+            if existing_entry is None:
+                prefs[preference_key] = {
+                    "value": preference_value,
+                    "source": source,
+                    "version": 1,
+                }
+                profile[_MEMORY_PREFS_KEY] = prefs
+                if row is None:
+                    session.add(
+                        UserMemoryProfileModel(
+                            tenant_id=tenant_id,
+                            user_id=user_id,
+                            profile=profile,
+                            profile_version=1,
+                        )
+                    )
+                else:
+                    row.profile = profile
+                    row.profile_version = int(row.profile_version) + 1
                 await session.commit()
                 return UserPreferenceUpsertResult(
                     updated=True,
-                    version=version,
+                    version=1,
                     previous_source=None,
                     reason="inserted",
                 )
 
-            previous_source = existing.source
-            previous_priority = int(source_priority_map.get(previous_source, 0))
-            if ignore_if_unchanged and existing.preference_value == preference_value:
+            if ignore_if_unchanged and previous_value == preference_value:
                 await session.commit()
                 return UserPreferenceUpsertResult(
                     updated=False,
-                    version=int(existing.version),
+                    version=previous_version or 1,
                     previous_source=previous_source,
                     reason="unchanged",
                 )
@@ -588,31 +704,23 @@ class ExecutionRepository:
                 await session.commit()
                 return UserPreferenceUpsertResult(
                     updated=False,
-                    version=int(existing.version),
+                    version=previous_version or 1,
                     previous_source=previous_source,
                     reason="source_priority_denied",
                 )
-            update_stmt = (
-                sa.update(UserPreferenceModel)
-                .where(
-                    UserPreferenceModel.tenant_id == tenant_id,
-                    UserPreferenceModel.user_id == user_id,
-                    UserPreferenceModel.preference_key == preference_key,
-                )
-                .values(
-                    preference_value=preference_value,
-                    source=source,
-                    version=UserPreferenceModel.version + 1,
-                    updated_at=sa.func.now(),
-                )
-                .returning(UserPreferenceModel.version)
-            )
-            update_result = await session.execute(update_stmt)
-            version = int(update_result.scalar_one())
+            next_version = (previous_version or 0) + 1
+            prefs[preference_key] = {
+                "value": preference_value,
+                "source": source,
+                "version": next_version,
+            }
+            profile[_MEMORY_PREFS_KEY] = prefs
+            row.profile = profile
+            row.profile_version = int(row.profile_version) + 1
             await session.commit()
             return UserPreferenceUpsertResult(
                 updated=True,
-                version=version,
+                version=next_version,
                 previous_source=previous_source,
                 reason="updated",
             )
@@ -2088,6 +2196,16 @@ class ExecutionRepository:
             return None
         await self.cache_adapter.set(key, snapshot.to_dict())
         return snapshot
+
+    async def get_flow_graph_snapshot(
+        self, flow_graph_snapshot_id: UUID
+    ) -> FlowGraphSnapshotModel | None:
+        async with self.db.get_session() as session:
+            stmt = select(FlowGraphSnapshotModel).where(
+                FlowGraphSnapshotModel.flow_graph_snapshot_id == flow_graph_snapshot_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def get_tool_config(self, tool_config_id: UUID) -> ToolConfigModel | None:
         key = f"tool_config:{tool_config_id}"

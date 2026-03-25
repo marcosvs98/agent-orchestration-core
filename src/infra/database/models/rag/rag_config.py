@@ -18,6 +18,16 @@ class RagConfig(ORMBaseModel):
         ForeignKey("vector_store.vector_store_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    chunking_rule_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("rag_chunking_rule.rag_chunking_rule_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    corpus_kind = Column(
+        String(length=32),
+        nullable=False,
+        server_default="TENANT_KNOWLEDGE",
+    )
     status = Column(String(length=16), nullable=False, server_default="DRAFT")
     version_major = Column(Integer, nullable=False, server_default="1")
     version_minor = Column(Integer, nullable=False, server_default="0")

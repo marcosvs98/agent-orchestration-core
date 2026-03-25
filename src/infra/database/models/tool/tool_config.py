@@ -36,4 +36,9 @@ class ToolConfig(ORMBaseModel):
             name="uq_tool_config_semver",
         ),
         Index("ix_tool_config_status", "status"),
+        Index(
+            "ix_tool_config_tenant_id_tool_config_id",
+            "tenant_id",
+            "tool_config_id",
+        ),
     )

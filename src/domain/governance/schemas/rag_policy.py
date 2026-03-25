@@ -30,6 +30,13 @@ class RagTaskDefaults(BaseModel):
     user_memory_vector: RagScopePolicy = Field(default_factory=RagScopePolicy)
 
 
+class RagIngestQuotas(BaseModel):
+    max_documents_per_tenant: int | None = None
+    max_chunks_per_tenant: int | None = None
+    max_documents_per_user: int | None = None
+    max_chunks_per_user: int | None = None
+
+
 class RagPolicyDefinition(BaseModel):
     defaults: dict[LLMTaskType, RagTaskDefaults] = Field(default_factory=dict)
     require_published_rag_config: bool = True
@@ -41,6 +48,7 @@ class RagPolicyDefinition(BaseModel):
         }
     )
     allow_structured_input: bool = False
+    ingest_quotas: RagIngestQuotas | None = None
 
 
 class ResolvedRagPolicySource(StrEnum):

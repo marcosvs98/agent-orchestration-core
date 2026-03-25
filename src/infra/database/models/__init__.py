@@ -24,7 +24,6 @@ from infra.database.models.conversation import (
     Session,
     User,
     UserMemoryProfile,
-    UserPreference,
 )
 from infra.database.models.conversation.response_artifact import ResponseArtifact
 from infra.database.models.flow import (
@@ -35,6 +34,10 @@ from infra.database.models.flow import (
     FlowGraph,
     FlowGraphDraft,
     FlowGraphSnapshot,
+    FlowSnapshot,
+    FlowDeployment,
+    SnapshotEffectivePolicy,
+    SnapshotBinding,
 )
 from infra.database.models.routing import ConditionExpression, RoutingRule
 from infra.database.models.agent import (
@@ -50,11 +53,13 @@ from infra.database.models.ai_policy import (
 )
 from infra.database.models.tool import AgentVersionToolBinding, Tool, ToolConfig
 from infra.database.models.rag import (
-    RagConfig,
-    VectorStore,
-    RagDocument,
     RagChunk,
+    RagChunkingRule,
+    RagConfig,
+    RagDocument,
     RagQueryCache,
+    RagUsageCounter,
+    VectorStore,
 )
 from infra.database.models.llm import SemanticAnswerCache
 from infra.database.models.execution import (
@@ -102,7 +107,6 @@ __all__ = [
     "RagPolicyVersion",
     "Session",
     "User",
-    "UserPreference",
     "UserMemoryProfile",
     "Interaction",
     "ResponseArtifact",
@@ -112,6 +116,13 @@ __all__ = [
     "FlowVersion",
     "Node",
     "Router",
+    "FlowGraph",
+    "FlowGraphDraft",
+    "FlowGraphSnapshot",
+    "FlowSnapshot",
+    "FlowDeployment",
+    "SnapshotEffectivePolicy",
+    "SnapshotBinding",
     "ConditionExpression",
     "RoutingRule",
     "Agent",
@@ -125,10 +136,12 @@ __all__ = [
     "ToolConfig",
     "AgentVersionToolBinding",
     "VectorStore",
+    "RagChunkingRule",
     "RagConfig",
     "RagDocument",
     "RagChunk",
     "RagQueryCache",
+    "RagUsageCounter",
     "SemanticAnswerCache",
     "FlowRun",
     "NodeRun",

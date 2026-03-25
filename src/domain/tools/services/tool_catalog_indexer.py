@@ -100,6 +100,7 @@ class ToolCatalogIndexer:
             "category": "TOOL_CATALOG",
             "tool_id": str(document.tool_id),
             "tool_config_id": str(document.tool_config_id),
+            "tool_name": document.tool_name or "",
             "operation_id": document.operation_id,
             "method": document.method,
             "path": document.path,

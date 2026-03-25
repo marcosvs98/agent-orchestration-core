@@ -49,7 +49,7 @@ async def test_llm_executor_uses_dynamic_prompt_when_available():
     prompt_id = uuid4()
     prompt = NodePrompt(
         prompt_id=prompt_id,
-        node_type=NodeType.IntentToolSelectionNode.value,
+        node_type=NodeType.ToolResolver.value,
         template_text="Dynamic prompt: {user_input}",
         input_schema=None,
         output_schema=None,
@@ -101,7 +101,7 @@ async def test_llm_executor_uses_dynamic_prompt_when_available():
         (e for e in repo.events if e[0] == "NodePromptExecuted"), None
     )
     assert node_prompt_executed is not None
-    assert node_prompt_executed[1]["node_type"] == NodeType.IntentToolSelectionNode.value
+    assert node_prompt_executed[1]["node_type"] == NodeType.ToolResolver.value
     assert node_prompt_executed[1]["prompt_version"] == 1
     assert node_prompt_executed[1]["frozen_hash"] == "hash123"
 

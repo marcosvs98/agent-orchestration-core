@@ -21,7 +21,7 @@ class TestPromptController:
         prompt_id = uuid4()
         prompt = NodePrompt(
             prompt_id=prompt_id,
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="Test prompt",
             input_schema=None,
             output_schema=None,
@@ -49,13 +49,13 @@ class TestPromptController:
         )
 
         result = await controller.get_prompt(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             _=auth,
         )
 
         assert result is not None
         assert result.prompt_id == prompt_id
-        service.get_prompt.assert_called_once_with(NodeType.IntentToolSelectionNode.value)
+        service.get_prompt.assert_called_once_with(NodeType.ToolResolver.value)
 
     @pytest.mark.asyncio
     async def test_get_prompt_raises_when_not_found(self):
@@ -75,7 +75,7 @@ class TestPromptController:
 
         with pytest.raises(DomainValidationException):
             await controller.get_prompt(
-                node_type=NodeType.IntentToolSelectionNode.value,
+                node_type=NodeType.ToolResolver.value,
                 _=auth,
             )
 
@@ -83,7 +83,7 @@ class TestPromptController:
     async def test_create_or_update_prompt_creates_prompt(self):
         prompt_id = uuid4()
         create = NodePromptCreate(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             template_text="New prompt",
             description="Test",
         )
@@ -118,7 +118,7 @@ class TestPromptController:
         )
 
         result = await controller.create_or_update_prompt(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             create=create,
             auth=auth,
         )
@@ -130,7 +130,7 @@ class TestPromptController:
     @pytest.mark.asyncio
     async def test_create_or_update_prompt_raises_when_node_type_mismatch(self):
         create = NodePromptCreate(
-            node_type=NodeType.ParamExtractionNode.value,
+            node_type=NodeType.ToolInputFiller.value,
             template_text="Prompt",
         )
 
@@ -149,7 +149,7 @@ class TestPromptController:
 
         with pytest.raises(DomainValidationException):
             await controller.create_or_update_prompt(
-                node_type=NodeType.IntentToolSelectionNode.value,
+                node_type=NodeType.ToolResolver.value,
                 create=create,
                 auth=auth,
             )
@@ -171,11 +171,11 @@ class TestPromptController:
         )
 
         await controller.delete_prompt(
-            node_type=NodeType.IntentToolSelectionNode.value,
+            node_type=NodeType.ToolResolver.value,
             auth=auth,
         )
 
         service.deactivate_prompt.assert_called_once_with(
-            NodeType.IntentToolSelectionNode.value,
+            NodeType.ToolResolver.value,
             tenant_id=auth.tenant_id,
         )

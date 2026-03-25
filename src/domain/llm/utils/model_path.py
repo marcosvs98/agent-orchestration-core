@@ -3,6 +3,13 @@ from pathlib import Path
 from exceptions.service_exceptions import DomainValidationException
 
 
+def _repository_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    return Path(__file__).resolve().parents[4]
+
+
 def resolve_slm_model_path(path: str) -> str:
     """Return an absolute path to an existing GGUF file.
 
@@ -21,7 +28,7 @@ def resolve_slm_model_path(path: str) -> str:
     cwd = Path.cwd()
     if (cwd / path).is_file():
         return str((cwd / path).resolve())
-    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    project_root = _repository_root()
     if (project_root / path).is_file():
         return str((project_root / path).resolve())
     dir_candidate = project_root / path if (project_root / path).is_dir() else None

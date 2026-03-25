@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from domain.execution.services.graph_runtime.nodes.clarification import ClarificationNode
+from domain.execution.services.graph_runtime.nodes.query_clarifier import QueryClarifier
 from domain.execution.services.graph_runtime.types import ExecutionContext
 from domain.llm.schemas.llm import LLMResult
 from domain.prompts.schemas.prompt import ResolvedPrompt
@@ -65,7 +65,7 @@ async def test_extra_system_context_merged_into_llm_request(
     llm_executor.execute_llm = AsyncMock(
         return_value=LLMResult(output={"message": "ok"})
     )
-    node = ClarificationNode(
+    node = QueryClarifier(
         tracer=tracer,
         llm_executor=llm_executor,
         prompt_resolver=prompt_resolver,
@@ -93,7 +93,7 @@ async def test_extra_system_context_appended_to_existing_context(
     llm_executor.execute_llm = AsyncMock(
         return_value=LLMResult(output={})
     )
-    node = ClarificationNode(
+    node = QueryClarifier(
         tracer=tracer,
         llm_executor=llm_executor,
         prompt_resolver=prompt_resolver,

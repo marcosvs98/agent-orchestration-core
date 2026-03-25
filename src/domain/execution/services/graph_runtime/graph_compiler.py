@@ -52,8 +52,8 @@ class GraphCompiler:
                         for node_id, spec in nodes.items()
                         if spec.get("type")
                         in {
-                            NodeType.ResponseComposer,
-                            NodeType.FallbackNodeSLA,
+                            NodeType.ResponseBuilder,
+                            NodeType.HumanFallback,
                         }
                     ]
                 )

@@ -191,15 +191,24 @@ async def router_http_exception_handler(
 
 
 async def format_exception(
-    reason: str, correlation_id: str, exc: BaseServiceException
+    reason: str, correlation_id: str, exc: BaseException
 ) -> dict:
+    if isinstance(exc, BaseServiceException):
+        return {
+            "correlation_id": correlation_id,
+            "reason": reason,
+            "code": exc.name,
+            "message": exc.message,
+            "errors": exc.errors(),
+            "input_data": exc.input_data,
+        }
     return {
         "correlation_id": correlation_id,
         "reason": reason,
-        "code": exc.name,
-        "message": exc.message,
-        "errors": exc.errors(),
-        "input_data": exc.input_data,
+        "code": type(exc).__name__,
+        "message": str(exc),
+        "errors": [],
+        "input_data": {},
     }
 
 

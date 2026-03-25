@@ -263,44 +263,6 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
-        "user_preference",
-        sa.Column("user_preference_id", sa.UUID(), nullable=False),
-        sa.Column("tenant_id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.String(length=255), nullable=False),
-        sa.Column("preference_key", sa.String(length=128), nullable=False),
-        sa.Column(
-            "preference_value",
-            postgresql.JSONB(astext_type=sa.Text()),
-            nullable=False,
-        ),
-        sa.Column("source", sa.String(length=32), nullable=False),
-        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["tenant_id", "user_id"],
-            ["end_user.tenant_id", "end_user.user_id"],
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("user_preference_id", name=op.f("pk_user_preference")),
-        sa.UniqueConstraint(
-            "tenant_id",
-            "user_id",
-            "preference_key",
-            name="uq_user_preference_key",
-        ),
-    )
-    op.create_table(
         "user_memory_profile",
         sa.Column("user_memory_profile_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
@@ -384,6 +346,54 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_vector_store_tenant_id"),
         "vector_store",
+        ["tenant_id"],
+        unique=False,
+    )
+    op.create_table(
+        "rag_chunking_rule",
+        sa.Column("rag_chunking_rule_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column(
+            "status", sa.String(length=16), server_default="ACTIVE", nullable=False
+        ),
+        sa.Column("strategy", sa.String(length=64), nullable=False),
+        sa.Column(
+            "params",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+        ),
+        sa.Column("config_hash", sa.String(length=128), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_rag_chunking_rule_tenant_id_tenant"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint(
+            "rag_chunking_rule_id", name=op.f("pk_rag_chunking_rule")
+        ),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "name",
+            name="uq_rag_chunking_rule_tenant_name",
+        ),
+    )
+    op.create_index(
+        op.f("ix_rag_chunking_rule_tenant_id"),
+        "rag_chunking_rule",
         ["tenant_id"],
         unique=False,
     )
@@ -742,6 +752,13 @@ def upgrade() -> None:
         sa.Column("rag_config_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("vector_store_id", sa.UUID(), nullable=False),
+        sa.Column("chunking_rule_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "corpus_kind",
+            sa.String(length=32),
+            server_default="TENANT_KNOWLEDGE",
+            nullable=False,
+        ),
         sa.Column(
             "status", sa.String(length=16), server_default="DRAFT", nullable=False
         ),
@@ -774,6 +791,12 @@ def upgrade() -> None:
             name=op.f("fk_rag_config_vector_store_id_vector_store"),
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["chunking_rule_id"],
+            ["rag_chunking_rule.rag_chunking_rule_id"],
+            name=op.f("fk_rag_config_chunking_rule_id_rag_chunking_rule"),
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint("rag_config_id", name=op.f("pk_rag_config")),
         sa.UniqueConstraint(
             "tenant_id",
@@ -784,6 +807,78 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_rag_config_status", "rag_config", ["status"], unique=False)
+    op.create_table(
+        "rag_usage_counter",
+        sa.Column("rag_usage_counter_id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("scope", sa.String(length=16), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=True),
+        sa.Column("rag_config_id", sa.UUID(), nullable=False),
+        sa.Column("document_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("chunk_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "(scope = 'TENANT' AND user_id IS NULL) OR "
+            "(scope = 'USER' AND user_id IS NOT NULL)",
+            name="ck_rag_usage_counter_scope_user",
+        ),
+        sa.CheckConstraint(
+            "document_count >= 0 AND chunk_count >= 0",
+            name="ck_rag_usage_counter_counts_non_negative",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenant.tenant_id"],
+            name=op.f("fk_rag_usage_counter_tenant_id_tenant"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["rag_config_id"],
+            ["rag_config.rag_config_id"],
+            name=op.f("fk_rag_usage_counter_rag_config_id_rag_config"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["end_user.tenant_id", "end_user.user_id"],
+            name=op.f("fk_rag_usage_counter_tenant_user_end_user"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "rag_usage_counter_id", name=op.f("pk_rag_usage_counter")
+        ),
+    )
+    op.create_index(
+        "uq_rag_usage_counter_tenant_scope_null_user",
+        "rag_usage_counter",
+        ["tenant_id", "rag_config_id"],
+        unique=True,
+        postgresql_where=sa.text("scope = 'TENANT' AND user_id IS NULL"),
+    )
+    op.create_index(
+        "uq_rag_usage_counter_tenant_user_scope",
+        "rag_usage_counter",
+        ["tenant_id", "user_id", "rag_config_id"],
+        unique=True,
+        postgresql_where=sa.text("scope = 'USER' AND user_id IS NOT NULL"),
+    )
+    op.create_index(
+        op.f("ix_rag_usage_counter_tenant_id"),
+        "rag_usage_counter",
+        ["tenant_id"],
+        unique=False,
+    )
     op.create_table(
         "rag_document",
         sa.Column("document_id", sa.UUID(), nullable=False),
@@ -1119,6 +1214,12 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_tool_config_status", "tool_config", ["status"], unique=False)
+    op.create_index(
+        "ix_tool_config_tenant_id_tool_config_id",
+        "tool_config",
+        ["tenant_id", "tool_config_id"],
+        unique=False,
+    )
     op.create_table(
         "access_policy_version",
         sa.Column("access_policy_version_id", sa.UUID(), nullable=False),
@@ -1746,6 +1847,14 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("flow_graph_snapshot_id", sa.UUID(), nullable=True),
+        sa.Column("flow_snapshot_id", sa.UUID(), nullable=True),
+        sa.Column("flow_deployment_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "runtime_contract",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default="{}",
+            nullable=False,
+        ),
         sa.Column("execution_plan_hash", sa.String(length=128), nullable=True),
         sa.Column("runtime_policy_hash", sa.String(length=128), nullable=True),
         sa.Column("tool_catalog_hash", sa.String(length=128), nullable=True),
@@ -2278,12 +2387,31 @@ def upgrade() -> None:
         sa.Column("node_id", sa.UUID(), nullable=False),
         sa.Column("flow_version_id", sa.UUID(), nullable=False),
         sa.Column("node_prompt_id", sa.UUID(), nullable=False),
-        sa.Column("allow_rag_tenant", sa.Boolean(), server_default="false", nullable=False),
-        sa.Column("allow_user_memory", sa.Boolean(), server_default="false", nullable=False),
         sa.Column(
-            "allow_session_context", sa.Boolean(), server_default="false", nullable=False
+            "allow_rag_tenant", sa.Boolean(), server_default="false", nullable=False
         ),
-        sa.Column("allow_memory_write", sa.Boolean(), server_default="false", nullable=False),
+        sa.Column(
+            "allow_user_memory_structured",
+            sa.Boolean(),
+            server_default="false",
+            nullable=False,
+        ),
+        sa.Column(
+            "allow_user_memory_vector",
+            sa.Boolean(),
+            server_default="false",
+            nullable=False,
+        ),
+        sa.Column("rag_config_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "allow_session_context",
+            sa.Boolean(),
+            server_default="false",
+            nullable=False,
+        ),
+        sa.Column(
+            "allow_memory_write", sa.Boolean(), server_default="false", nullable=False
+        ),
         sa.Column("node_type", sa.String(length=128), nullable=True),
         sa.Column(
             "config",
@@ -2319,6 +2447,12 @@ def upgrade() -> None:
             ["source_node_template_id"],
             ["node_template.node_template_id"],
             name=op.f("fk_node_source_node_template_id_node_template"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["rag_config_id"],
+            ["rag_config.rag_config_id"],
+            name=op.f("fk_node_rag_config_id_rag_config"),
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("node_id", name=op.f("pk_node")),
@@ -3185,6 +3319,8 @@ def upgrade() -> None:
             server_default=sa.text("1"),
             nullable=False,
         ),
+        sa.Column("flow_snapshot_id", sa.UUID(), nullable=True),
+        sa.Column("flow_deployment_id", sa.UUID(), nullable=True),
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column(
             "created_at",
@@ -3312,11 +3448,179 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("revoked_at IS NULL"),
     )
+    op.create_table(
+        "flow_snapshot",
+        sa.Column("flow_snapshot_id", sa.UUID(), nullable=False),
+        sa.Column("flow_version_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "snapshot_schema_version", sa.Integer(), nullable=False, server_default="1"
+        ),
+        sa.Column("snapshot_hash", sa.String(length=64), nullable=False),
+        sa.Column("snapshot", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("frozen_rag_config_id", sa.UUID(), nullable=True),
+        sa.Column("frozen_rag_chunking_rule_id", sa.UUID(), nullable=True),
+        sa.Column("frozen_rag_policy_version_id", sa.UUID(), nullable=True),
+        sa.Column(
+            "frozen_rag_materialization_hash", sa.String(length=64), nullable=True
+        ),
+        sa.Column(
+            "runtime_policy",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default="{}",
+        ),
+        sa.Column(
+            "tool_catalog",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default="{}",
+        ),
+        sa.Column("llm_provider_config_hash", sa.String(length=128), nullable=True),
+        sa.Column("created_by", sa.String(length=128), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_version_id"],
+            ["flow_version.flow_version_id"],
+            name=op.f("fk_flow_snapshot_flow_version_id_flow_version"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("flow_snapshot_id", name=op.f("pk_flow_snapshot")),
+        sa.UniqueConstraint(
+            "flow_version_id", name=op.f("uq_flow_snapshot_flow_version_id")
+        ),
+        sa.UniqueConstraint(
+            "snapshot_hash", name=op.f("uq_flow_snapshot_snapshot_hash")
+        ),
+    )
+    op.create_table(
+        "snapshot_effective_policy",
+        sa.Column("flow_snapshot_id", sa.UUID(), nullable=False),
+        sa.Column("policy_hash", sa.String(length=64), nullable=False),
+        sa.Column(
+            "definition", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_snapshot_id"],
+            ["flow_snapshot.flow_snapshot_id"],
+            name=op.f("fk_snapshot_effective_policy_flow_snapshot_id_flow_snapshot"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "flow_snapshot_id", name=op.f("pk_snapshot_effective_policy")
+        ),
+    )
+    op.create_table(
+        "snapshot_binding",
+        sa.Column("flow_snapshot_id", sa.UUID(), nullable=False),
+        sa.Column("binding_key", sa.String(length=128), nullable=False),
+        sa.Column("value_type", sa.String(length=32), nullable=False),
+        sa.Column("source_kind", sa.String(length=32), nullable=False),
+        sa.Column("value", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_snapshot_id"],
+            ["flow_snapshot.flow_snapshot_id"],
+            name=op.f("fk_snapshot_binding_flow_snapshot_id_flow_snapshot"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "flow_snapshot_id", "binding_key", name=op.f("pk_snapshot_binding")
+        ),
+    )
+    op.create_table(
+        "flow_deployment",
+        sa.Column("flow_deployment_id", sa.UUID(), nullable=False),
+        sa.Column("flow_id", sa.UUID(), nullable=False),
+        sa.Column("flow_version_id", sa.UUID(), nullable=False),
+        sa.Column("flow_snapshot_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "environment",
+            sa.String(length=64),
+            nullable=False,
+            server_default="default",
+        ),
+        sa.Column(
+            "status", sa.String(length=16), nullable=False, server_default="ACTIVE"
+        ),
+        sa.Column("deployed_by", sa.String(length=128), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_id"],
+            ["flow.flow_id"],
+            name=op.f("fk_flow_deployment_flow_id_flow"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_version_id"],
+            ["flow_version.flow_version_id"],
+            name=op.f("fk_flow_deployment_flow_version_id_flow_version"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["flow_snapshot_id"],
+            ["flow_snapshot.flow_snapshot_id"],
+            name=op.f("fk_flow_deployment_flow_snapshot_id_flow_snapshot"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("flow_deployment_id", name=op.f("pk_flow_deployment")),
+        sa.UniqueConstraint(
+            "flow_id", "environment", "status", name="uq_flow_deployment_slot"
+        ),
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_table("flow_deployment")
+    op.drop_table("snapshot_binding")
+    op.drop_table("snapshot_effective_policy")
+    op.drop_table("flow_snapshot")
     op.drop_index(
         "uq_mcp_credential_active_per_server",
         table_name="mcp_server_credential",
@@ -3466,10 +3770,13 @@ def downgrade() -> None:
         "ix_authoring_event_tenant_resource_type_occurred_at",
         table_name="authoring_event",
     )
+    op.drop_index(
+        "ix_tool_config_tenant_id_tool_config_id",
+        table_name="tool_config",
+    )
     op.drop_index("ix_tool_config_status", table_name="tool_config")
     op.drop_table("tool_config")
     op.drop_table("user_memory_profile")
-    op.drop_table("user_preference")
     op.drop_index("ix_session_tenant_id_user_id", table_name="session")
     op.drop_index("ix_session_tenant_id", table_name="session")
     op.drop_table("session")
@@ -3487,8 +3794,26 @@ def downgrade() -> None:
     op.drop_index("ix_rag_chunk_document_id", table_name="rag_chunk")
     op.drop_table("rag_chunk")
     op.drop_table("rag_document")
+    op.drop_index(
+        op.f("ix_rag_usage_counter_tenant_id"), table_name="rag_usage_counter"
+    )
+    op.drop_index(
+        "uq_rag_usage_counter_tenant_user_scope",
+        table_name="rag_usage_counter",
+        postgresql_where=sa.text("scope = 'USER' AND user_id IS NOT NULL"),
+    )
+    op.drop_index(
+        "uq_rag_usage_counter_tenant_scope_null_user",
+        table_name="rag_usage_counter",
+        postgresql_where=sa.text("scope = 'TENANT' AND user_id IS NULL"),
+    )
+    op.drop_table("rag_usage_counter")
     op.drop_index("ix_rag_config_status", table_name="rag_config")
     op.drop_table("rag_config")
+    op.drop_index(
+        op.f("ix_rag_chunking_rule_tenant_id"), table_name="rag_chunking_rule"
+    )
+    op.drop_table("rag_chunking_rule")
     op.drop_table("onboarding")
     op.drop_table("llm_provider_config")
     op.drop_table("llm_model_mapping")

@@ -19,12 +19,35 @@ class McpServerCreateRequest(BaseModel):
     vector_store_ids: list[UUID] = Field(default_factory=list)
     user_prompt_ids: list[UUID] = Field(default_factory=list)
     name: str | None = None
+    flow_snapshot_id: UUID | None = None
+    flow_deployment_id: UUID | None = None
 
 
 class McpServerCreateResponse(BaseModel):
     endpoint: str
     api_key: str
     mcp_server_id: UUID
+
+
+class McpServerSummary(BaseModel):
+    mcp_server_id: UUID
+    name: str
+    status: str
+    endpoint: str
+    flow_snapshot_id: UUID | None = None
+    flow_deployment_id: UUID | None = None
+
+
+class McpServerDetail(BaseModel):
+    mcp_server_id: UUID
+    name: str
+    status: str
+    endpoint: str
+    flow_snapshot_id: UUID | None = None
+    flow_deployment_id: UUID | None = None
+    tool_config_ids: list[UUID] = Field(default_factory=list)
+    vector_store_ids: list[UUID] = Field(default_factory=list)
+    user_prompt_ids: list[UUID] = Field(default_factory=list)
 
 
 class McpBindingState(BaseModel):
@@ -35,6 +58,8 @@ class McpBindingState(BaseModel):
     tool_config_ids: frozenset[UUID]
     vector_store_ids: frozenset[UUID]
     user_prompt_ids: frozenset[UUID]
+    flow_snapshot_id: UUID | None = None
+    flow_deployment_id: UUID | None = None
 
 
 class McpServerBuildSpec(BaseModel):
@@ -45,3 +70,5 @@ class McpServerBuildSpec(BaseModel):
     tools: tuple[McpServerToolBinding, ...]
     vector_store_ids: tuple[UUID, ...]
     prompts: tuple[tuple[UUID, str, str, str], ...]
+    flow_snapshot_id: UUID | None = None
+    flow_deployment_id: UUID | None = None

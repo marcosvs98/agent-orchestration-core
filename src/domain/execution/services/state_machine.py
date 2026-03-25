@@ -1,3 +1,4 @@
+import contextlib
 from enum import StrEnum
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
@@ -80,11 +81,16 @@ class ToolRunStatus(StrEnum):
     TIMEOUT = "TIMEOUT"
 
 
+class _NoopRuntimeTracer:
+    def observe(self, **kwargs):
+        return contextlib.nullcontext()
+
+
 class RunLifecycleStateMachine:
     """Canonical lifecycle (Planning 10) with closed transitions per run type."""
 
-    def __init__(self, tracer: RuntimeTracerPort) -> None:
-        self.tracer = tracer
+    def __init__(self, tracer: RuntimeTracerPort | None = None) -> None:
+        self.tracer = tracer or _NoopRuntimeTracer()
 
     flow_transitions: dict[FlowRunStatus, set[FlowRunStatus]] = {
         FlowRunStatus.CREATED: {FlowRunStatus.RUNNING, FlowRunStatus.FAILED},

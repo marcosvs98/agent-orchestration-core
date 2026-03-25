@@ -7,7 +7,7 @@ import pytest
 from domain.common.schemas.change import ChangeRequest
 from domain.common.schemas.versioning import VersionStatus
 from domain.rag.repositories.rag_repository import RagRepository
-from domain.rag.schemas.rag import RagConfigCreate
+from domain.rag.schemas.rag import RagConfigCreate, RagCorpusKind
 from domain.rag.services.rag_service import RagService
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -80,9 +80,12 @@ class TestRagService:
         tenant_id = uuid4()
         config_id = uuid4()
         vector_store_id = uuid4()
+        chunking_rule_id = uuid4()
         mock_config = SimpleNamespace(
             rag_config_id=config_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status="DRAFT",
             version_major=1,
@@ -108,8 +111,12 @@ class TestRagService:
         tenant_id = uuid4()
         config_id = uuid4()
         vector_store_id = uuid4()
+        chunking_rule_id = uuid4()
         config_create = RagConfigCreate(
-            vector_store_id=vector_store_id, options={"chunk_size": 512}
+            vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind=RagCorpusKind.TENANT_KNOWLEDGE,
+            options={"chunk_size": 512},
         )
         principal_id = "user-123"
 
@@ -117,6 +124,8 @@ class TestRagService:
         mock_config = SimpleNamespace(
             rag_config_id=config_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status="DRAFT",
             version_major=1,
@@ -154,7 +163,12 @@ class TestRagService:
     ):
         tenant_id = uuid4()
         vector_store_id = uuid4()
-        config_create = RagConfigCreate(vector_store_id=vector_store_id)
+        chunking_rule_id = uuid4()
+        config_create = RagConfigCreate(
+            vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind=RagCorpusKind.TENANT_KNOWLEDGE,
+        )
         principal_id = "user-123"
 
         repository.get_vector_store = AsyncMock(return_value=None)
@@ -173,12 +187,15 @@ class TestRagService:
         tenant_id = uuid4()
         config_id = uuid4()
         vector_store_id = uuid4()
+        chunking_rule_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Ready for production")
 
         mock_config = SimpleNamespace(
             rag_config_id=config_id,
             tenant_id=tenant_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status=VersionStatus.VALIDATED,
             version_major=1,
@@ -190,6 +207,8 @@ class TestRagService:
             rag_config_id=config_id,
             tenant_id=tenant_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status=VersionStatus.PUBLISHED,
             version_major=1,
@@ -250,12 +269,15 @@ class TestRagService:
         tenant_id = uuid4()
         config_id = uuid4()
         vector_store_id = uuid4()
+        chunking_rule_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Replaced by v2")
 
         mock_config = SimpleNamespace(
             rag_config_id=config_id,
             tenant_id=tenant_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status=VersionStatus.PUBLISHED,
             version_major=1,
@@ -267,6 +289,8 @@ class TestRagService:
             rag_config_id=config_id,
             tenant_id=tenant_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status=VersionStatus.DEPRECATED,
             version_major=1,
@@ -327,12 +351,15 @@ class TestRagService:
         tenant_id = uuid4()
         config_id = uuid4()
         vector_store_id = uuid4()
+        chunking_rule_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Security issue")
 
         mock_config = SimpleNamespace(
             rag_config_id=config_id,
             tenant_id=tenant_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status=VersionStatus.PUBLISHED,
             version_major=1,
@@ -344,6 +371,8 @@ class TestRagService:
             rag_config_id=config_id,
             tenant_id=tenant_id,
             vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
             options={"chunk_size": 512},
             status=VersionStatus.DISABLED,
             version_major=1,

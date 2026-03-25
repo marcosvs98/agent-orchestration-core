@@ -6,8 +6,8 @@ from domain.llm.schemas.llm import LLMTaskType
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
 
 
-class ResponseComposer(LLMNodeExecutor):
-    node_type = NodeType.ResponseComposer
+class ResponseBuilder(LLMNodeExecutor):
+    node_type = NodeType.ResponseBuilder
     llm_task = LLMTaskType.RESPONSE_RENDER
     prompt_intent = PromptIntent.RESPONSE_RENDER
     resolve_prompt_passes_node_type = True

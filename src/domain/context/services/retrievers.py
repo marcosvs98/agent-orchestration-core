@@ -18,6 +18,7 @@ from domain.governance.services.memory_policy_service import MemoryPolicyService
 from domain.context.services.rag_activation_service import RagActivationService
 from domain.ai_policy.schemas.ai import AITaskContextFlags
 from domain.llm.schemas.llm import LLMTaskType
+from domain.rag.schemas import RagContext
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 
 
@@ -37,7 +38,7 @@ class TenantKnowledgeRetriever:
             user_id=None,
             filters_override=filters_override,
         )
-        rag_context = await self.rag_runtime_service.get_context(
+        rag_context: RagContext = await self.rag_runtime_service.get_context(
             tenant_id=query.tenant_id,
             rag_config_id=query.rag_config_id,
             user_id=search_user_id,
@@ -83,11 +84,10 @@ class UserMemoryReader:
         context_metadata: dict[str, object] | None = None,
         top_k_override: int | None = None,
     ) -> UserMemoryContext:
-        preferences = await self.get_preferences(
-            tenant_id=query.tenant_id,
-            user_id=query.user_id,
-        )
-        profile = await self.get_profile(
+        (
+            preferences,
+            profile,
+        ) = await self.repository.get_user_memory_preferences_and_profile(
             tenant_id=query.tenant_id,
             user_id=query.user_id,
         )

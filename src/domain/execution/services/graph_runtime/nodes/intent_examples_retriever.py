@@ -106,4 +106,6 @@ class IntentExamplesRetriever:
             return IntentType.COMMAND
         if normalized == "conversation":
             return IntentType.CONVERSATION
+        if normalized == "update_user_preferences":
+            return IntentType.UPDATE_USER_PREFERENCES
         return None

@@ -6,12 +6,12 @@ from domain.llm.schemas.llm import LLMTaskType
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
 
 
-class IntentDetectionLLMFallback(LLMNodeExecutor):
-    node_type = NodeType.IntentDetectionNode
-    llm_task = LLMTaskType.INTENT_SELECTION
-    prompt_intent = PromptIntent.INTENT_TOOL_SELECTION
-    resolve_prompt_passes_node_type = True
-    include_available_tools = True
+class ToolInputFiller(LLMNodeExecutor):
+    node_type = NodeType.ToolInputFiller
+    llm_task = LLMTaskType.SLOT_FILLING
+    prompt_intent = PromptIntent.SLOT_FILLING
+    resolve_prompt_passes_node_type = False
+    include_available_tools = False
     result_status = NodeExecutionStatus.SUCCESS
     write_next_state = True
-    state_key_use_value = False
+    state_key_use_value = True

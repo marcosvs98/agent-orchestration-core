@@ -11,6 +11,7 @@ from domain.rag.schemas.rag import (
     RagDocumentCreate,
 )
 from domain.rag.services.rag_runtime_service import RagRuntimeService
+from exceptions.service_exceptions import NotFoundServiceException
 
 
 class TestRagRuntimeServiceEmbeddingDimension:
@@ -38,16 +39,27 @@ class TestRagRuntimeServiceEmbeddingDimension:
         return tracer
 
     @pytest.fixture
+    def rag_policy_service(self) -> MagicMock:
+        svc = MagicMock()
+        resolved = SimpleNamespace(
+            definition=SimpleNamespace(ingest_quotas=None),
+        )
+        svc.resolve = AsyncMock(return_value=resolved)
+        return svc
+
+    @pytest.fixture
     def rag_runtime_service(
         self,
         repository: MagicMock,
         embedding_adapter: MagicMock,
         tracer: MagicMock,
+        rag_policy_service: MagicMock,
     ) -> RagRuntimeService:
         return RagRuntimeService(
             repository=repository,
             embedding_adapter=embedding_adapter,
             tracer=tracer,
+            rag_policy_service=rag_policy_service,
         )
 
     @pytest.mark.asyncio
@@ -64,12 +76,13 @@ class TestRagRuntimeServiceEmbeddingDimension:
                 "model_alias": "text-embedding-3-small",
                 "dimension": DEFAULT_EMBEDDING_DIMENSION,
             },
-            "chunking": {"target_tokens": 500, "overlap_tokens": 50},
             "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
             "generation_contract": {"allow_extrapolation": False},
         }
         repository.get_rag_config.return_value = SimpleNamespace(
             tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
             options=config_options,
         )
 
@@ -98,12 +111,13 @@ class TestRagRuntimeServiceEmbeddingDimension:
                 "model_alias": "text-embedding-3-small",
                 "dimension": DEFAULT_EMBEDDING_DIMENSION,
             },
-            "chunking": {"target_tokens": 500, "overlap_tokens": 50},
             "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
             "generation_contract": {"allow_extrapolation": False},
         }
         repository.get_rag_config.return_value = SimpleNamespace(
             tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
             options=config_options,
         )
         repository.get_query_cache.return_value = SimpleNamespace(
@@ -125,6 +139,7 @@ class TestRagRuntimeServiceEmbeddingDimension:
         call_kw = repository.search_similar_chunks.await_args.kwargs
         assert len(call_kw["query_embedding"]) == DEFAULT_EMBEDDING_DIMENSION
         assert call_kw["query_embedding"][0] == pytest.approx(1.0)
+        assert call_kw["rag_config_id"] == rag_config_id
 
     @pytest.mark.asyncio
     async def test_ingest_documents_batch_counts_failures_and_continues(
@@ -174,3 +189,248 @@ class TestRagRuntimeServiceEmbeddingDimension:
         assert succeeded_count == 2
         assert failed_count == 1
         assert rag_runtime_service.ingest_document.await_count == 3
+
+
+class TestRagRuntimeServiceEmbeddingModelCatalog:
+    @pytest.fixture
+    def repository(self) -> MagicMock:
+        repo = MagicMock(spec=RagRepository)
+        repo.get_rag_config = AsyncMock()
+        repo.get_query_cache = AsyncMock(return_value=None)
+        repo.save_query_cache = AsyncMock()
+        repo.search_similar_chunks = AsyncMock(return_value=[])
+        return repo
+
+    @pytest.fixture
+    def embedding_adapter(self) -> MagicMock:
+        adapter = MagicMock()
+        adapter.generate_embedding = AsyncMock(
+            return_value=[0.1] * DEFAULT_EMBEDDING_DIMENSION
+        )
+        return adapter
+
+    @pytest.fixture
+    def tracer(self) -> MagicMock:
+        tracer = MagicMock()
+        tracer.observe = MagicMock(
+            return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock())
+        )
+        return tracer
+
+    @pytest.fixture
+    def rag_policy_service(self) -> MagicMock:
+        svc = MagicMock()
+        resolved = SimpleNamespace(
+            definition=SimpleNamespace(ingest_quotas=None),
+        )
+        svc.resolve = AsyncMock(return_value=resolved)
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_get_context_resolves_embedding_model_id_via_catalog(
+        self,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+        tracer: MagicMock,
+        rag_policy_service: MagicMock,
+    ) -> None:
+        model_id = uuid4()
+        ai_repo = MagicMock()
+        ai_repo.get_model = AsyncMock(
+            return_value=SimpleNamespace(name="text-embedding-3-large")
+        )
+        svc = RagRuntimeService(
+            repository=repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+            rag_policy_service=rag_policy_service,
+            ai_repository=ai_repo,
+        )
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+        config_options = {
+            "embedding": {
+                "provider": "OPENAI",
+                "model_alias": "text-embedding-3-small",
+                "dimension": DEFAULT_EMBEDDING_DIMENSION,
+                "model_id": str(model_id),
+            },
+            "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
+            "generation_contract": {"allow_extrapolation": False},
+        }
+        repository.get_rag_config.return_value = SimpleNamespace(
+            tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
+            options=config_options,
+        )
+
+        await svc.get_context(
+            tenant_id=tenant_id,
+            rag_config_id=rag_config_id,
+            user_input="q",
+        )
+
+        ai_repo.get_model.assert_awaited_once_with(model_id)
+        embedding_adapter.generate_embedding.assert_awaited_once()
+        assert (
+            embedding_adapter.generate_embedding.await_args.kwargs["model"]
+            == "text-embedding-3-large"
+        )
+        save_kw = repository.save_query_cache.await_args.kwargs["cache_entry"]
+        assert save_kw.embedding_model == "text-embedding-3-large"
+
+    @pytest.mark.asyncio
+    async def test_get_context_model_id_missing_row_raises(
+        self,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+        tracer: MagicMock,
+        rag_policy_service: MagicMock,
+    ) -> None:
+        model_id = uuid4()
+        ai_repo = MagicMock()
+        ai_repo.get_model = AsyncMock(return_value=None)
+        svc = RagRuntimeService(
+            repository=repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+            rag_policy_service=rag_policy_service,
+            ai_repository=ai_repo,
+        )
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+        config_options = {
+            "embedding": {
+                "provider": "OPENAI",
+                "model_alias": "text-embedding-3-small",
+                "dimension": DEFAULT_EMBEDDING_DIMENSION,
+                "model_id": str(model_id),
+            },
+            "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
+            "generation_contract": {"allow_extrapolation": False},
+        }
+        repository.get_rag_config.return_value = SimpleNamespace(
+            tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
+            options=config_options,
+        )
+
+        with pytest.raises(NotFoundServiceException):
+            await svc.get_context(
+                tenant_id=tenant_id,
+                rag_config_id=rag_config_id,
+                user_input="q",
+            )
+
+
+class TestRagRuntimeServiceUserMemoryVectorDocumentCap:
+    @pytest.fixture
+    def repository(self) -> MagicMock:
+        return MagicMock(spec=RagRepository)
+
+    @pytest.fixture
+    def embedding_adapter(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def tracer(self) -> MagicMock:
+        tracer = MagicMock()
+        tracer.observe = MagicMock(
+            return_value=MagicMock(
+                __enter__=MagicMock(), __exit__=MagicMock()
+            )
+        )
+        return tracer
+
+    @pytest.fixture
+    def rag_policy_service(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def rag_runtime_service(
+        self,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+        tracer: MagicMock,
+        rag_policy_service: MagicMock,
+    ) -> RagRuntimeService:
+        return RagRuntimeService(
+            repository=repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+            rag_policy_service=rag_policy_service,
+        )
+
+    @pytest.mark.asyncio
+    async def test_resolve_cap_uses_app_when_no_ingest_quota(
+        self,
+        rag_runtime_service: RagRuntimeService,
+        rag_policy_service: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import domain.rag.services.rag_runtime_service as cap_mod
+
+        monkeypatch.setattr(cap_mod.settings, "MAX_USER_MEMORY_DOCUMENTS", 800)
+        rag_policy_service.resolve = AsyncMock(
+            return_value=SimpleNamespace(
+                definition=SimpleNamespace(ingest_quotas=None),
+            )
+        )
+        out = await rag_runtime_service.resolve_user_memory_vector_document_cap(
+            tenant_id=uuid4(),
+        )
+        assert out["effective_cap"] == 800
+        assert out["app_max_user_memory_documents"] == 800
+        assert out["tenant_max_documents_per_user"] is None
+        assert out["binding"] == "app"
+        assert out["reason_code"] == "app_max_user_memory_documents"
+
+    @pytest.mark.asyncio
+    async def test_resolve_cap_uses_min_when_tenant_quota_stricter(
+        self,
+        rag_runtime_service: RagRuntimeService,
+        rag_policy_service: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import domain.rag.services.rag_runtime_service as cap_mod
+
+        monkeypatch.setattr(cap_mod.settings, "MAX_USER_MEMORY_DOCUMENTS", 800)
+        quotas = SimpleNamespace(max_documents_per_user=120)
+        rag_policy_service.resolve = AsyncMock(
+            return_value=SimpleNamespace(
+                definition=SimpleNamespace(ingest_quotas=quotas),
+            )
+        )
+        out = await rag_runtime_service.resolve_user_memory_vector_document_cap(
+            tenant_id=uuid4(),
+        )
+        assert out["effective_cap"] == 120
+        assert out["tenant_max_documents_per_user"] == 120
+        assert out["binding"] == "rag_policy"
+        assert out["reason_code"] == "rag_ingest_quota_user_documents"
+
+    @pytest.mark.asyncio
+    async def test_resolve_cap_uses_app_when_tenant_quota_looser(
+        self,
+        rag_runtime_service: RagRuntimeService,
+        rag_policy_service: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import domain.rag.services.rag_runtime_service as cap_mod
+
+        monkeypatch.setattr(cap_mod.settings, "MAX_USER_MEMORY_DOCUMENTS", 200)
+        quotas = SimpleNamespace(max_documents_per_user=900)
+        rag_policy_service.resolve = AsyncMock(
+            return_value=SimpleNamespace(
+                definition=SimpleNamespace(ingest_quotas=quotas),
+            )
+        )
+        out = await rag_runtime_service.resolve_user_memory_vector_document_cap(
+            tenant_id=uuid4(),
+        )
+        assert out["effective_cap"] == 200
+        assert out["tenant_max_documents_per_user"] == 900
+        assert out["binding"] == "app"
+        assert out["reason_code"] == "app_max_user_memory_documents"

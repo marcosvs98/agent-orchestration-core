@@ -4,15 +4,19 @@ from uuid import uuid4
 
 import pytest
 
+from domain.execution.adapters.idempotency_service import IdempotencyService
+from domain.common.schemas.change import ChangeRequest
 from domain.flows.repositories.flows_repository import FlowsRepository
 from domain.flows.schemas.flows import (
     ConditionExpressionCreate,
     FlowCreate,
+    DeploymentComposeRequest,
     FlowVersionCreate,
     NodeCreate,
     RouterCreate,
     RoutingRuleCreate,
 )
+from domain.flows.schemas.graph import FlowGraphDefinition, FlowGraphEdge, FlowGraphNodeSpec
 from domain.flows.services.flows_service import FlowsService
 from exceptions.service_exceptions import (
     NotFoundServiceException,
@@ -45,11 +49,23 @@ class TestFlowsService:
         return events
 
     @pytest.fixture
-    def flows_service(self, repository, limit_policy_repository, authoring_events):
+    def flows_idempotency(self):
+        svc = MagicMock(spec=IdempotencyService)
+        svc.build_key = MagicMock(return_value="flows-compose-idem")
+        svc.try_acquire = AsyncMock(return_value=True)
+        svc.get = AsyncMock(return_value=None)
+        svc.set_result = AsyncMock()
+        return svc
+
+    @pytest.fixture
+    def flows_service(
+        self, repository, limit_policy_repository, authoring_events, flows_idempotency
+    ):
         return FlowsService(
             repository=repository,
             limit_policy_repository=limit_policy_repository,
             authoring_events=authoring_events,
+            idempotency=flows_idempotency,
         )
 
     @pytest.mark.asyncio
@@ -376,8 +392,17 @@ class TestFlowsService:
         node_id = uuid4()
         mock_flow = SimpleNamespace(flow_id=flow_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(flow_version_id=version_id, flow_id=flow_id)
+        prompt_id = uuid4()
         mock_node = SimpleNamespace(
-            node_id=node_id, flow_version_id=version_id, ai_task_id=None
+            node_id=node_id,
+            flow_version_id=version_id,
+            node_prompt_id=prompt_id,
+            allow_rag_tenant=False,
+            allow_user_memory_structured=False,
+            allow_user_memory_vector=False,
+            rag_config_id=None,
+            allow_session_context=False,
+            allow_memory_write=False,
         )
         repository.get_flow = AsyncMock(return_value=mock_flow)
         repository.get_flow_version = AsyncMock(return_value=mock_version)
@@ -390,6 +415,7 @@ class TestFlowsService:
         assert len(result) == 1
         assert result[0].id == node_id
         assert result[0].flow_version_id == version_id
+        assert result[0].node_prompt_id == prompt_id
 
     @pytest.mark.asyncio
     async def test_create_node_creates_node_with_success(
@@ -399,15 +425,24 @@ class TestFlowsService:
         flow_id = uuid4()
         version_id = uuid4()
         node_id = uuid4()
+        prompt_id = uuid4()
         mock_flow = SimpleNamespace(flow_id=flow_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(flow_version_id=version_id, flow_id=flow_id)
         mock_node = SimpleNamespace(
-            node_id=node_id, flow_version_id=version_id, ai_task_id=None
+            node_id=node_id,
+            flow_version_id=version_id,
+            node_prompt_id=prompt_id,
+            allow_rag_tenant=False,
+            allow_user_memory_structured=False,
+            allow_user_memory_vector=False,
+            rag_config_id=None,
+            allow_session_context=False,
+            allow_memory_write=False,
         )
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow = AsyncMock(return_value=mock_flow)
         repository.create_node = AsyncMock(return_value=mock_node)
-        node_create = NodeCreate(flow_version_id=version_id, ai_task_id=None)
+        node_create = NodeCreate(flow_version_id=version_id, node_prompt_id=prompt_id)
 
         result = await flows_service.create_node(
             tenant_id=tenant_id, node_create=node_create, principal_id="user-123"
@@ -415,8 +450,86 @@ class TestFlowsService:
 
         assert result.id == node_id
         assert result.flow_version_id == version_id
+        assert result.node_prompt_id == prompt_id
         repository.create_node.assert_called_once()
         authoring_events.append_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_node_rejects_second_allow_memory_write(
+        self, flows_service, repository
+    ):
+        tenant_id = uuid4()
+        flow_id = uuid4()
+        version_id = uuid4()
+        prompt_id = uuid4()
+        existing_id = uuid4()
+        mock_flow = SimpleNamespace(flow_id=flow_id, tenant_id=tenant_id)
+        mock_version = SimpleNamespace(flow_version_id=version_id, flow_id=flow_id)
+        existing_node = SimpleNamespace(
+            node_id=existing_id,
+            flow_version_id=version_id,
+            allow_memory_write=True,
+        )
+        repository.get_flow_version = AsyncMock(return_value=mock_version)
+        repository.get_flow = AsyncMock(return_value=mock_flow)
+        repository.list_nodes_for_flow_version = AsyncMock(
+            return_value=[existing_node]
+        )
+        node_create = NodeCreate(
+            flow_version_id=version_id,
+            node_prompt_id=prompt_id,
+            allow_memory_write=True,
+        )
+
+        with pytest.raises(DomainValidationException) as exc:
+            await flows_service.create_node(
+                tenant_id=tenant_id, node_create=node_create, principal_id="user-123"
+            )
+
+        assert exc.value.message == "multiple_nodes_allow_memory_write"
+        repository.create_node.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_validate_flow_version_fails_when_multiple_memory_write_nodes(
+        self, flows_service, repository, limit_policy_repository
+    ):
+        tenant_id = uuid4()
+        flow_id = uuid4()
+        version_id = uuid4()
+        mock_flow = SimpleNamespace(flow_id=flow_id, tenant_id=tenant_id)
+        mock_version = SimpleNamespace(
+            flow_version_id=version_id,
+            flow_id=flow_id,
+            status=VersionStatus.DRAFT,
+        )
+        mock_draft = SimpleNamespace(
+            flow_version_id=version_id,
+            status="VALIDATED",
+        )
+        mock_policy = SimpleNamespace(execution_limit_policy_id=uuid4())
+        mock_policy_version = SimpleNamespace()
+        repository.get_flow = AsyncMock(return_value=mock_flow)
+        repository.get_flow_version = AsyncMock(return_value=mock_version)
+        repository.get_flow_graph_draft = AsyncMock(return_value=mock_draft)
+        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(
+            return_value=mock_policy
+        )
+        limit_policy_repository.get_published_policy_version = AsyncMock(
+            return_value=mock_policy_version
+        )
+        repository.list_nodes_for_flow_version = AsyncMock(
+            return_value=[
+                SimpleNamespace(allow_memory_write=True),
+                SimpleNamespace(allow_memory_write=True),
+            ]
+        )
+
+        with pytest.raises(DomainValidationException) as exc:
+            await flows_service.validate_flow_version(
+                tenant_id=tenant_id, flow_id=str(flow_id), flow_version_id=str(version_id)
+            )
+
+        assert exc.value.message == "multiple_nodes_allow_memory_write"
 
     @pytest.mark.asyncio
     async def test_list_routers_returns_routers_filtered_by_tenant(
@@ -679,3 +792,100 @@ class TestFlowsService:
                 flow_id=str(flow_id),
                 flow_version_id=str(version_id),
             )
+
+    @pytest.mark.asyncio
+    async def test_publish_flow_version_materializes_flow_snapshot(
+        self, flows_service, repository
+    ):
+        tenant_id = uuid4()
+        flow_id = uuid4()
+        version_id = uuid4()
+        repository.get_flow = AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
+        published = SimpleNamespace(
+            flow_version_id=version_id,
+            flow_id=flow_id,
+            status=VersionStatus.PUBLISHED,
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            min_agent_version_major=None,
+            min_agent_version_minor=None,
+            min_agent_version_patch=None,
+        )
+        validated = SimpleNamespace(
+            flow_version_id=version_id,
+            flow_id=flow_id,
+            status=VersionStatus.VALIDATED,
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            min_agent_version_major=None,
+            min_agent_version_minor=None,
+            min_agent_version_patch=None,
+        )
+        repository.get_flow_version = AsyncMock(side_effect=[validated, published])
+        repository.set_flow_version_status = AsyncMock()
+        repository.get_flow_graph_snapshot_by_flow_version = AsyncMock(
+            return_value=SimpleNamespace(
+                flow_graph_snapshot_id=uuid4(),
+                graph_hash="gh_mat",
+                snapshot={"start_node": "a", "nodes": {}, "edges": []},
+            )
+        )
+        repository.upsert_flow_snapshot = AsyncMock(
+            return_value=SimpleNamespace(flow_snapshot_id=uuid4())
+        )
+        repository.upsert_snapshot_effective_policy = AsyncMock()
+        repository.replace_snapshot_bindings = AsyncMock()
+
+        await flows_service.publish_flow_version(
+            tenant_id=tenant_id,
+            flow_id=str(flow_id),
+            flow_version_id=str(version_id),
+            principal_id="principal-1",
+            change_request=ChangeRequest(change_type="publish", justification="publish"),
+        )
+
+        repository.upsert_flow_snapshot.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_compose_deployment_snapshot_hash_stable(
+        self, flows_service, repository
+    ):
+        tenant_id = uuid4()
+        flow_id = uuid4()
+        version_id = uuid4()
+        node_a = str(uuid4())
+        node_b = str(uuid4())
+        graph = FlowGraphDefinition(
+            start_node=node_a,
+            nodes={
+                node_a: FlowGraphNodeSpec(type="ToolResolver"),
+                node_b: FlowGraphNodeSpec(type="ResponseBuilder"),
+            },
+            edges=[
+                FlowGraphEdge(from_node=node_a, to_node=node_b, condition="1 == 1"),
+            ],
+        )
+        repository.get_flow = AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
+        repository.get_flow_version = AsyncMock(
+            return_value=SimpleNamespace(flow_id=flow_id, flow_version_id=version_id)
+        )
+        payload = DeploymentComposeRequest(
+            flow_id=flow_id,
+            flow_version_id=version_id,
+            principal_id="p",
+            graph_definition=graph.model_dump(),
+            runtime_policy_definition={"limits": {"max_nodes": 10}},
+            tool_catalog={"t": 1},
+            bindings=[],
+        )
+        first = await flows_service.validate_compose_deployment(
+            tenant_id=tenant_id, payload=payload
+        )
+        second = await flows_service.validate_compose_deployment(
+            tenant_id=tenant_id, payload=payload
+        )
+        assert first.snapshot_hash == second.snapshot_hash

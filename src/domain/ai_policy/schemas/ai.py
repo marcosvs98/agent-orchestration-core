@@ -5,7 +5,9 @@ from pydantic import BaseModel
 
 class AITaskContextFlags(BaseModel):
     allow_rag_tenant: bool = False
-    allow_user_memory: bool = False
+    allow_user_memory_structured: bool = False
+    allow_user_memory_vector: bool = False
+    rag_config_id: UUID | None = None
     allow_session_context: bool = False
     allow_memory_write: bool = False
 
