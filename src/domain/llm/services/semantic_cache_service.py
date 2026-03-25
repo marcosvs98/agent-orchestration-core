@@ -4,13 +4,11 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4, UUID
 
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.llm.repositories.semantic_cache_repository import SemanticCacheRepository
-from domain.rag.schemas.rag import (
-    DEFAULT_EMBEDDING_DIMENSION,
-    EMBEDDING_DIMENSION_REDUCED,
-)
+from domain.rag.schemas.rag import DEFAULT_EMBEDDING_DIMENSION
+from domain.rag.schemas.embedding import EmbeddingContract, EmbeddingExecutionRequest
+from domain.rag.services.embedding_executor import EmbeddingExecutor
 from domain.llm.schemas.inference_cache import CacheLookupResult, SemanticCacheEntry
 from infra.database.models.llm.semantic_answer_cache import (
     SemanticAnswerCache as SemanticAnswerCacheModel,
@@ -22,14 +20,21 @@ class SemanticCacheService:
         self,
         *,
         repository: SemanticCacheRepository,
-        embedding_adapter: OpenAIEmbeddingAdapter,
+        embedding_executor: EmbeddingExecutor,
         tracer: RuntimeTracerPort,
         embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION,
     ) -> None:
         self.repository = repository
-        self.embedding_adapter = embedding_adapter
+        self.embedding_executor = embedding_executor
         self.tracer = tracer
         self.embedding_dimension = embedding_dimension
+        self.embedding_contract = EmbeddingContract(
+            provider="openai",
+            model="text-embedding-3-small",
+            dimension=embedding_dimension,
+            metric="cosine",
+            version=1,
+        )
 
     async def lookup(
         self,
@@ -48,9 +53,13 @@ class SemanticCacheService:
                 "similarity_threshold": similarity_threshold,
             },
         ) as retriever_handle:
-            query_embedding = await self.embedding_adapter.generate_embedding(
-                user_query,
-                dimension=self.embedding_dimension,
+            query_embedding = await self.embedding_executor.execute(
+                EmbeddingExecutionRequest(
+                    text=user_query,
+                    contract=self.embedding_contract,
+                    use_case="retrieval",
+                    allow_fallback=False,
+                )
             )
             now = datetime.now(UTC)
             cache_entry = await self.repository.search_similar(
@@ -117,24 +126,22 @@ class SemanticCacheService:
         ) as chain_handle:
             effective_embedding = query_embedding
             if effective_embedding is None:
-                effective_embedding = await self.embedding_adapter.generate_embedding(
-                    user_query,
-                    dimension=self.embedding_dimension,
+                effective_embedding = await self.embedding_executor.execute(
+                    EmbeddingExecutionRequest(
+                        text=user_query,
+                        contract=self.embedding_contract,
+                        use_case="indexing",
+                        allow_fallback=False,
+                    )
                 )
             now = datetime.now(UTC)
             expires_at = now + timedelta(seconds=ttl_seconds)
-            dim = self.embedding_dimension
             entry = SemanticAnswerCacheModel(
                 cache_id=uuid4(),
                 tenant_id=tenant_id,
                 task_type=task_type,
                 query_hash=self._hash_text(user_query),
-                embedding=effective_embedding
-                if dim == DEFAULT_EMBEDDING_DIMENSION
-                else None,
-                embedding_512=effective_embedding
-                if dim == EMBEDDING_DIMENSION_REDUCED
-                else None,
+                embedding=effective_embedding,
                 response_json=response,
                 model_alias=model_alias,
                 inference_layer=inference_layer,

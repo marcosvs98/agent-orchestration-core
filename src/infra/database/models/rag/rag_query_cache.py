@@ -7,8 +7,6 @@ from infra.database.models.base import ORMBaseModel, uuid_pk
 
 
 class RagQueryCache(ORMBaseModel):
-    """Store cached query embeddings for retrieval reuse."""
-
     __tablename__ = "rag_query_cache"
 
     query_cache_id = uuid_pk()
@@ -17,11 +15,15 @@ class RagQueryCache(ORMBaseModel):
         ForeignKey("tenant.tenant_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    vector_store_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("vector_store.vector_store_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    vector_store_version = Column(Integer, nullable=False, server_default="1")
+    contract_hash = Column(String(length=64), nullable=False)
     query_hash = Column(String(length=128), nullable=False)
-    embedding = Column(Vector(1536), nullable=True)
-    embedding_512 = Column(Vector(512), nullable=True)
-    embedding_model = Column(String(length=128), nullable=False)
-    embedding_dimension = Column(Integer, nullable=False)
+    embedding = Column(Vector(), nullable=True)
     use_count = Column(Integer, nullable=False, server_default="0")
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
@@ -34,7 +36,10 @@ class RagQueryCache(ORMBaseModel):
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
+            "vector_store_id",
+            "vector_store_version",
+            "contract_hash",
             "query_hash",
-            name="uq_rag_query_cache_tenant_id_query_hash",
+            name="uq_rag_query_cache_tenant_vector_store_version_hash_query_hash",
         ),
     )

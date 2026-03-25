@@ -39,8 +39,8 @@ class ToolCatalogRetriever:
         k = MAX_TOOL_CATALOG_TOP_K
         if top_k is not None:
             k = min(max(1, top_k), MAX_TOOL_CATALOG_TOP_K)
-        if not user_input:
-            return [], []
+        #if not user_input:
+        #    return [], []
         with self.tracer.observe(
             as_type="retriever",
             name="domain.tools.tool_catalog_retriever.retrieve_candidates",
@@ -63,10 +63,11 @@ class ToolCatalogRetriever:
                 user_id=None,
                 user_input=user_input,
                 filters_override=filters_override,
-                top_k_override=max(
-                    k * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER,
-                    k,
-                ),
+                #top_k_override=max(
+                #    k * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER,
+                #    k,
+                #),
+                top_k_override=top_k,
                 similarity_threshold_cap=TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP,
             )
             ranked: list[ToolDiscoveryCandidate] = self._rank_from_rag_global(

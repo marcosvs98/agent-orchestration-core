@@ -243,9 +243,7 @@ class ToolsRepository:
                 return instance
 
     @staticmethod
-    def _published_batch_cache_key(
-        tenant_id: UUID, tool_config_ids: list[UUID]
-    ) -> str:
+    def _published_batch_cache_key(tenant_id: UUID, tool_config_ids: list[UUID]) -> str:
         sorted_ids = "|".join(sorted(str(x) for x in tool_config_ids))
         return f"tools:pub_cfg_batch:{tenant_id}:{sorted_ids}"
 

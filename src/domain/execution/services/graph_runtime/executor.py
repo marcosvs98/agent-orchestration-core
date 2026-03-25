@@ -266,8 +266,7 @@ class RuntimeExecutor:
                         exc=exc,
                     )
                     return
-                # self._validate_node_output(spec, node_result)
-                if node_handle:
+                if node_handle and node_result is not None:
                     node_handle.success(output=node_result.model_dump(mode="json"))
             context.node_output = node_result.data
 

@@ -11,7 +11,7 @@ from domain.rag.schemas.rag import (
     RagDocumentCreate,
 )
 from domain.rag.services.rag_runtime_service import RagRuntimeService
-from exceptions.service_exceptions import NotFoundServiceException
+from exceptions.service_exceptions import DomainValidationException, NotFoundServiceException
 
 
 class TestRagRuntimeServiceEmbeddingDimension:
@@ -19,6 +19,14 @@ class TestRagRuntimeServiceEmbeddingDimension:
     def repository(self) -> MagicMock:
         repo = MagicMock(spec=RagRepository)
         repo.get_rag_config = AsyncMock()
+        repo.get_vector_store = AsyncMock(
+            return_value=SimpleNamespace(
+                embedding_model="text-embedding-3-small",
+                embedding_dimension=DEFAULT_EMBEDDING_DIMENSION,
+                metric="cosine",
+                version=1,
+            )
+        )
         repo.get_query_cache = AsyncMock(return_value=None)
         repo.save_query_cache = AsyncMock()
         repo.search_similar_chunks = AsyncMock(return_value=[])
@@ -70,6 +78,7 @@ class TestRagRuntimeServiceEmbeddingDimension:
     ) -> None:
         tenant_id = uuid4()
         rag_config_id = uuid4()
+        vector_store_id = uuid4()
         config_options = {
             "embedding": {
                 "provider": "OPENAI",
@@ -84,6 +93,7 @@ class TestRagRuntimeServiceEmbeddingDimension:
             chunking_rule_id=uuid4(),
             corpus_kind="TENANT_KNOWLEDGE",
             options=config_options,
+            vector_store_id=vector_store_id,
         )
 
         result = await rag_runtime_service.get_context(
@@ -105,6 +115,7 @@ class TestRagRuntimeServiceEmbeddingDimension:
         np = pytest.importorskip("numpy")
         tenant_id = uuid4()
         rag_config_id = uuid4()
+        vector_store_id = uuid4()
         config_options = {
             "embedding": {
                 "provider": "OPENAI",
@@ -119,13 +130,11 @@ class TestRagRuntimeServiceEmbeddingDimension:
             chunking_rule_id=uuid4(),
             corpus_kind="TENANT_KNOWLEDGE",
             options=config_options,
+            vector_store_id=vector_store_id,
         )
         repository.get_query_cache.return_value = SimpleNamespace(
             query_cache_id=uuid4(),
-            embedding_model="text-embedding-3-small",
-            embedding_dimension=DEFAULT_EMBEDDING_DIMENSION,
             embedding=np.ones(DEFAULT_EMBEDDING_DIMENSION, dtype=np.float64),
-            embedding_512=None,
         )
         repository.update_query_cache_usage = AsyncMock()
 
@@ -136,10 +145,15 @@ class TestRagRuntimeServiceEmbeddingDimension:
         )
 
         embedding_adapter.generate_embedding.assert_not_called()
+        repository.get_query_cache.assert_awaited_once()
+        qc_kw = repository.get_query_cache.await_args.kwargs
+        assert qc_kw["tenant_id"] == tenant_id
+        assert qc_kw["vector_store_id"] == vector_store_id
         call_kw = repository.search_similar_chunks.await_args.kwargs
         assert len(call_kw["query_embedding"]) == DEFAULT_EMBEDDING_DIMENSION
         assert call_kw["query_embedding"][0] == pytest.approx(1.0)
         assert call_kw["rag_config_id"] == rag_config_id
+        assert call_kw["vector_store_id"] == vector_store_id
 
     @pytest.mark.asyncio
     async def test_ingest_documents_batch_counts_failures_and_continues(
@@ -196,6 +210,14 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
     def repository(self) -> MagicMock:
         repo = MagicMock(spec=RagRepository)
         repo.get_rag_config = AsyncMock()
+        repo.get_vector_store = AsyncMock(
+            return_value=SimpleNamespace(
+                embedding_model="text-embedding-3-large",
+                embedding_dimension=DEFAULT_EMBEDDING_DIMENSION,
+                metric="cosine",
+                version=1,
+            )
+        )
         repo.get_query_cache = AsyncMock(return_value=None)
         repo.save_query_cache = AsyncMock()
         repo.search_similar_chunks = AsyncMock(return_value=[])
@@ -237,7 +259,12 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
         model_id = uuid4()
         ai_repo = MagicMock()
         ai_repo.get_model = AsyncMock(
-            return_value=SimpleNamespace(name="text-embedding-3-large")
+            return_value=SimpleNamespace(
+                name="text-embedding-3-large",
+                is_active=True,
+                type="EMBEDDING",
+                provider="openai",
+            )
         )
         svc = RagRuntimeService(
             repository=repository,
@@ -248,6 +275,7 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
         )
         tenant_id = uuid4()
         rag_config_id = uuid4()
+        vector_store_id = uuid4()
         config_options = {
             "embedding": {
                 "provider": "OPENAI",
@@ -263,6 +291,7 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
             chunking_rule_id=uuid4(),
             corpus_kind="TENANT_KNOWLEDGE",
             options=config_options,
+            vector_store_id=vector_store_id,
         )
 
         await svc.get_context(
@@ -278,7 +307,8 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
             == "text-embedding-3-large"
         )
         save_kw = repository.save_query_cache.await_args.kwargs["cache_entry"]
-        assert save_kw.embedding_model == "text-embedding-3-large"
+        assert save_kw.vector_store_id == vector_store_id
+        assert save_kw.tenant_id == tenant_id
 
     @pytest.mark.asyncio
     async def test_get_context_model_id_missing_row_raises(
@@ -300,6 +330,7 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
         )
         tenant_id = uuid4()
         rag_config_id = uuid4()
+        vector_store_id = uuid4()
         config_options = {
             "embedding": {
                 "provider": "OPENAI",
@@ -315,6 +346,7 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
             chunking_rule_id=uuid4(),
             corpus_kind="TENANT_KNOWLEDGE",
             options=config_options,
+            vector_store_id=vector_store_id,
         )
 
         with pytest.raises(NotFoundServiceException):
@@ -323,6 +355,168 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
                 rag_config_id=rag_config_id,
                 user_input="q",
             )
+
+    @pytest.mark.asyncio
+    async def test_get_context_model_id_inactive_raises(
+        self,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+        tracer: MagicMock,
+        rag_policy_service: MagicMock,
+    ) -> None:
+        model_id = uuid4()
+        ai_repo = MagicMock()
+        ai_repo.get_model = AsyncMock(
+            return_value=SimpleNamespace(
+                name="text-embedding-3-large",
+                is_active=False,
+                type="EMBEDDING",
+                provider="openai",
+            )
+        )
+        svc = RagRuntimeService(
+            repository=repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+            rag_policy_service=rag_policy_service,
+            ai_repository=ai_repo,
+        )
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+        repository.get_rag_config.return_value = SimpleNamespace(
+            tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
+            options={
+                "embedding": {
+                    "provider": "OPENAI",
+                    "model_alias": "text-embedding-3-small",
+                    "dimension": DEFAULT_EMBEDDING_DIMENSION,
+                    "model_id": str(model_id),
+                },
+                "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
+                "generation_contract": {"allow_extrapolation": False},
+            },
+            vector_store_id=uuid4(),
+        )
+        with pytest.raises(DomainValidationException):
+            await svc.get_context(
+                tenant_id=tenant_id,
+                rag_config_id=rag_config_id,
+                user_input="q",
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_context_model_id_provider_missing_raises(
+        self,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+        tracer: MagicMock,
+        rag_policy_service: MagicMock,
+    ) -> None:
+        model_id = uuid4()
+        ai_repo = MagicMock()
+        ai_repo.get_model = AsyncMock(
+            return_value=SimpleNamespace(
+                name="text-embedding-3-large",
+                is_active=True,
+                type="EMBEDDING",
+                provider="",
+            )
+        )
+        svc = RagRuntimeService(
+            repository=repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+            rag_policy_service=rag_policy_service,
+            ai_repository=ai_repo,
+        )
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+        repository.get_rag_config.return_value = SimpleNamespace(
+            tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
+            options={
+                "embedding": {
+                    "provider": "OPENAI",
+                    "model_alias": "text-embedding-3-small",
+                    "dimension": DEFAULT_EMBEDDING_DIMENSION,
+                    "model_id": str(model_id),
+                },
+                "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
+                "generation_contract": {"allow_extrapolation": False},
+            },
+            vector_store_id=uuid4(),
+        )
+        with pytest.raises(DomainValidationException):
+            await svc.get_context(
+                tenant_id=tenant_id,
+                rag_config_id=rag_config_id,
+                user_input="q",
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_context_retrieval_dimension_vector_store_mismatch_raises(
+        self,
+        repository: MagicMock,
+        embedding_adapter: MagicMock,
+        tracer: MagicMock,
+        rag_policy_service: MagicMock,
+    ) -> None:
+        repository.get_vector_store = AsyncMock(
+            return_value=SimpleNamespace(
+                embedding_model="text-embedding-3-large",
+                embedding_dimension=3072,
+                metric="cosine",
+                version=1,
+            )
+        )
+        ai_repo = MagicMock()
+        model_id = uuid4()
+        ai_repo.get_model = AsyncMock(
+            return_value=SimpleNamespace(
+                name="text-embedding-3-small",
+                is_active=True,
+                type="EMBEDDING",
+                provider="openai",
+            )
+        )
+        svc = RagRuntimeService(
+            repository=repository,
+            embedding_adapter=embedding_adapter,
+            tracer=tracer,
+            rag_policy_service=rag_policy_service,
+            ai_repository=ai_repo,
+        )
+        tenant_id = uuid4()
+        rag_config_id = uuid4()
+        repository.get_rag_config.return_value = SimpleNamespace(
+            tenant_id=tenant_id,
+            chunking_rule_id=uuid4(),
+            corpus_kind="TENANT_KNOWLEDGE",
+            options={
+                "embedding": {
+                    "provider": "OPENAI",
+                    "model_alias": "text-embedding-3-small",
+                    "dimension": DEFAULT_EMBEDDING_DIMENSION,
+                    "model_id": str(model_id),
+                },
+                "retrieval": {"top_k": 5, "similarity_threshold": 0.5},
+                "generation_contract": {"allow_extrapolation": False},
+            },
+            vector_store_id=uuid4(),
+        )
+        with pytest.raises(DomainValidationException) as excinfo:
+            await svc.get_context(
+                tenant_id=tenant_id,
+                rag_config_id=rag_config_id,
+                user_input="q",
+            )
+        assert (
+            excinfo.value.message
+            == "rag_retrieval_embedding_dimension_vector_store_mismatch"
+        )
 
 
 class TestRagRuntimeServiceUserMemoryVectorDocumentCap:

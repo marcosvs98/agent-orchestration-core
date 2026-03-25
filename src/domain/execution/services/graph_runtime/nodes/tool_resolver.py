@@ -64,6 +64,7 @@ class ToolResolver(LLMNodeExecutor):
     async def execute(
         self, context: ExecutionContext, config: dict[str, Any] | None = None
     ) -> NodeResult:
+        print('CHEGIOU AQUI ???')
         config = config or {}
         top_k = config.get("top_k", DEFAULT_TOP_K)
         user_input = (context.input_payload or {}).get("user_input", "") or ""
@@ -76,7 +77,7 @@ class ToolResolver(LLMNodeExecutor):
                 "node_id": str(context.current_node_id),
             },
         ) as execution_handle:
-            #if not user_input:
+            # if not user_input:
             #    result = self._build_result([], context)
             #    self._report_success(
             #        execution_handle,
@@ -89,7 +90,7 @@ class ToolResolver(LLMNodeExecutor):
             #    return result
 
             rag_config_id = await self._resolve_rag_config_id(context)
-            #if rag_config_id is None:
+            # if rag_config_id is None:
             #    result = self._build_result([], context)
             #    self._report_success(
             #        execution_handle,
@@ -110,7 +111,10 @@ class ToolResolver(LLMNodeExecutor):
                     "top_k": top_k,
                 },
             ) as retrieval_handle:
-                candidates, evidence = await self.tool_catalog_retriever.retrieve_candidates(
+                (
+                    candidates,
+                    evidence,
+                ) = await self.tool_catalog_retriever.retrieve_candidates(
                     tenant_id=context.tenant_id,
                     rag_config_id=rag_config_id,
                     user_input=user_input,

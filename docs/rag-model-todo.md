@@ -1,4 +1,48 @@
+# RAG model — target DDL and decisions
 
+Cross-references: [rag-analysis.md](./rag-analysis.md), [rag-orchestration-layer.md](./rag-orchestration-layer.md).
+
+## Migration strategy
+
+Non-production: schema lives in a single revision — `src/infra/database/migrations/versions/861cb744f4f0_initial_schema.py`. ORM sources of truth: `src/infra/database/models/rag/`, `src/infra/database/models/llm/semantic_answer_cache.py`, `src/infra/database/models/ai_policy/model.py`.
+
+## Target ER (consolidated)
+
+```mermaid
+erDiagram
+    tenant ||--o{ vector_store : owns
+    tenant ||--o{ rag_config : owns
+    tenant ||--o{ rag_query_cache : caches
+    vector_store ||--o{ rag_config : backs
+    vector_store ||--o{ rag_chunk : governs
+    vector_store ||--o{ rag_query_cache : governs
+    rag_config ||--o{ rag_document : contains
+    rag_document ||--o{ rag_chunk : splits_into
+
+    vector_store {
+        uuid vector_store_id PK
+        string embedding_model
+        int embedding_dimension
+        string metric
+        int version
+        bool active
+    }
+
+    rag_chunk {
+        uuid chunk_id PK
+        uuid vector_store_id FK
+        vector embedding
+    }
+
+    rag_query_cache {
+        uuid query_cache_id PK
+        uuid vector_store_id FK
+        vector embedding
+        string query_hash
+    }
+```
+
+Decisions: `VectorStore.embedding_model` is a string (operational name), not an FK to `model.model_id`. `RagDocument` does not get `vector_store_id`; reach the store via `rag_config.vector_store_id`. `SemanticAnswerCache` keeps a single `embedding` plus `model_alias` and no `vector_store_id`.
 
 ### VectorStore (vira fonte da verdade)
 ```python
@@ -94,9 +138,6 @@ class RagQueryCache(ORMBaseModel):
     query_hash = Column(String(length=128), nullable=False)
 
     embedding = Column(Vector, nullable=False)
-    
-    embedding_model = Column(String(length=128), nullable=False)
-    embedding_dimension = Column(Integer, nullable=False)
 
     use_count = Column(Integer, nullable=False, server_default="0")
     last_used_at = Column(DateTime(timezone=True), nullable=True)
@@ -140,25 +181,19 @@ class RagDocument(ORMBaseModel):
         index=True,
     )
 
-    vector_store_id = Column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("vector_store.vector_store_id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    
     source = Column(String(length=255), nullable=True)
     doc_type = Column(String(length=128), nullable=True)
 
     content_hash = Column(String(length=128), nullable=False)
     content = Column(Text(), nullable=True)
-    
+
     version = Column(String(length=64), nullable=True)
 
     embedding_status = Column(
         String(length=32), nullable=False, server_default="PENDING"
     )
     embedding_attempts = Column(Integer, nullable=False, server_default="0")
-    
+
     last_embedding_error_code = Column(String(length=128), nullable=True)
     embedding_started_at = Column(DateTime(timezone=True), nullable=True)
     embedding_completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -323,12 +358,6 @@ class RagDocument(ORMBaseModel):
         index=True,
     )
 
-    vector_store_id = Column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("vector_store.vector_store_id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-
     content_hash = Column(String(length=128), nullable=False)
     content = Column(Text(), nullable=True)
 
@@ -407,6 +436,14 @@ class Model(ORMBaseModel):
 ```
 
 
+
+---
+
+## Impacto em `RagRuntimeService` e `RagRepository`
+
+- `get_context`: carrega `VectorStore`, valida modelo/dimensão vs `options.embedding`, `get_query_cache(tenant_id, vector_store_id, query_hash)`, grava cache só com `tenant_id`, `vector_store_id`, `query_hash`, `embedding`; `search_similar_chunks` filtra por `vector_store_id` e usa uma coluna de embedding.
+- Ingest / `embed_document_by_id`: chunks com `vector_store_id` e vetor único.
+- Removidos: `list_chunks_pending_embedding_512`, `update_chunk_embedding_512`.
 
 ---
 

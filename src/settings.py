@@ -58,6 +58,26 @@ EMBEDDING_DIMENSION: int = config(
     default=1536,
     cast=int,
 )
+EMBEDDING_REQUEST_TIMEOUT_SECONDS: int = config(
+    "EMBEDDING_REQUEST_TIMEOUT_SECONDS",
+    default=15,
+    cast=int,
+)
+EMBEDDING_MAX_RETRIES: int = config(
+    "EMBEDDING_MAX_RETRIES",
+    default=2,
+    cast=int,
+)
+EMBEDDING_RETRY_BASE_DELAY_MS: int = config(
+    "EMBEDDING_RETRY_BASE_DELAY_MS",
+    default=200,
+    cast=int,
+)
+EMBEDDING_FALLBACK_MODEL: str = config(
+    "EMBEDDING_FALLBACK_MODEL",
+    default="",
+    cast=str,
+)
 SLM_MODEL_PATH: str = config(
     "SLM_MODEL_PATH", default="models/Qwen2.5-1.5B-Instruct-GGUF", cast=str
 )
@@ -65,7 +85,7 @@ SLM_INFERENCE_TIMEOUT_MS: int = config(
     "SLM_INFERENCE_TIMEOUT_MS", default=500, cast=int
 )
 LLM_DEFAULT_MAX_LATENCY_MS: int = config(
-    "LLM_DEFAULT_MAX_LATENCY_MS", default=5000, cast=int
+    "LLM_DEFAULT_MAX_LATENCY_MS", default=15000, cast=int
 )
 
 LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)

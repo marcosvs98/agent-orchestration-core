@@ -50,7 +50,15 @@ class TestRagService:
     async def test_list_vector_stores_returns_stores(self, rag_service, repository):
         tenant_id = uuid4()
         store_id = uuid4()
-        mock_store = SimpleNamespace(vector_store_id=store_id, name="Pinecone")
+        mock_store = SimpleNamespace(
+            vector_store_id=store_id,
+            name="Pinecone",
+            embedding_model="text-embedding-3-small",
+            embedding_dimension=1536,
+            metric="cosine",
+            version=1,
+            active=True,
+        )
         repository.list_vector_stores = AsyncMock(return_value=[mock_store])
 
         result = await rag_service.list_vector_stores(tenant_id=tenant_id)

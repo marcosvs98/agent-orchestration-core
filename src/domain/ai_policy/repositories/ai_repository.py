@@ -99,9 +99,16 @@ class AIRepository:
 
                 return items
 
-    async def create_model(self, *, name: str) -> ModelModel:
+    async def create_model(
+        self, *, name: str, provider: str, model_type: str
+    ) -> ModelModel:
         async with self.db.get_session() as session:
-            instance = ModelModel(name=name)
+            instance = ModelModel(
+                name=name,
+                provider=provider,
+                type=model_type,
+                is_active=True,
+            )
             session.add(instance)
             await session.commit()
             await session.refresh(instance)

@@ -9,20 +9,28 @@ from domain.common.schemas.change import ChangeRequest
 from domain.llm.schemas.llm import LLMProviderType
 from domain.rag.schemas.embedding_job import EmbeddingStatus
 
-SUPPORTED_EMBEDDING_DIMENSIONS: tuple[int, ...] = (512, 1024, 1536)
+SUPPORTED_EMBEDDING_DIMENSIONS: tuple[int, ...] = (512, 1024, 1536, 3072)
 DEFAULT_EMBEDDING_DIMENSION: int = 1536
 EMBEDDING_DIMENSION_REDUCED: int = 512
 
 
 class VectorStore(BaseModel):
-    """Represent an available vector store entry."""
-
     id: UUID
     name: str | None = None
+    embedding_model: str
+    embedding_dimension: int
+    metric: str = "cosine"
+    version: int = 1
+    active: bool = True
 
 
 class VectorStoreCreate(BaseModel):
     name: str
+    embedding_model: str
+    embedding_dimension: int
+    metric: str = "cosine"
+    version: int = 1
+    active: bool = True
 
 
 class RagCorpusKind(StrEnum):
@@ -40,6 +48,7 @@ class RagChunkingStrategy(StrEnum):
 
 class RagEmbeddingModelAlias(StrEnum):
     TEXT_EMBEDDING_3_SMALL = "text-embedding-3-small"
+    TEXT_EMBEDDING_3_LARGE = "text-embedding-3-large"
 
 
 class RagNoContextBehavior(StrEnum):
@@ -55,7 +64,7 @@ class RagEmbeddingOptions(BaseModel):
 
     provider: LLMProviderType = LLMProviderType.OPENAI
     model_alias: RagEmbeddingModelAlias = RagEmbeddingModelAlias.TEXT_EMBEDDING_3_SMALL
-    dimension: Literal[512, 1024, 1536] = 1536
+    dimension: Literal[512, 1024, 1536, 3072] = 1536
     model_id: UUID | None = None
 
 
@@ -134,6 +143,7 @@ class RagConfigOptions(BaseModel):
     """Define the full RAG options contract."""
 
     embedding: RagEmbeddingOptions = RagEmbeddingOptions()
+    indexing_embedding: RagEmbeddingOptions | None = None
     retrieval: RagRetrievalOptions = RagRetrievalOptions()
     generation_contract: RagGenerationContract = RagGenerationContract()
 
@@ -215,10 +225,9 @@ class RagPreparedDocument(BaseModel):
 
 
 class RagChunk(BaseModel):
-    """Represent a chunk stored in the RAG repository."""
-
     id: UUID
     document_id: UUID
+    vector_store_id: UUID
     chunk_index: int
     content: str
     score: float | None = None

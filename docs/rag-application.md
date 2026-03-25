@@ -240,17 +240,19 @@ erDiagram
   rag_chunk {
     uuid chunk_id PK
     uuid document_id FK
+    uuid vector_store_id FK
     int chunk_index
     text content
     vector embedding
-    vector embedding_512
     json metadata
   }
 
   rag_query_cache {
     uuid query_cache_id PK
     uuid tenant_id FK
+    uuid vector_store_id FK
     string query_hash
+    vector embedding
   }
 
   rag_policy {

@@ -25,5 +25,4 @@ class ContextSummarizer(LLMNodeExecutor):
 
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
-    ) -> NodeResult:
-        ...
+    ) -> NodeResult: ...

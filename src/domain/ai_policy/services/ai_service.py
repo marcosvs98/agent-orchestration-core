@@ -158,7 +158,11 @@ class AIService(AIServicePort):
         return [Model(id=model.model_id, name=model.name) for model in models]
 
     async def create_model(self, *, model_create: ModelCreate) -> Model:
-        created = await self.repository.create_model(name=model_create.name)
+        created = await self.repository.create_model(
+            name=model_create.name,
+            provider=model_create.provider,
+            model_type=str(model_create.type),
+        )
         return Model(id=created.model_id, name=created.name)
 
     async def list_ai_execution_policy_versions(

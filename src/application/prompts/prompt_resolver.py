@@ -141,6 +141,7 @@ class PromptResolver:
         if node_type:
             return node_type
 
+        # Todo: gambiarra isso (não precisa
         mapping = {
             PromptIntent.INTENT_TOOL_SELECTION: NodeType.ToolResolver,
             PromptIntent.SLOT_FILLING: NodeType.ToolInputFiller,

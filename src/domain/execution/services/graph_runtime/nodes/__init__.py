@@ -5,7 +5,9 @@ from domain.execution.services.graph_runtime.nodes.context_summarizer import (
     ContextSummarizer,
 )
 from domain.execution.services.graph_runtime.nodes.human_fallback import HumanFallback
-from domain.execution.services.graph_runtime.nodes.tool_input_filler import ToolInputFiller
+from domain.execution.services.graph_runtime.nodes.tool_input_filler import (
+    ToolInputFiller,
+)
 from domain.execution.services.graph_runtime.nodes.intent_classifier import (
     IntentClassifier,
 )

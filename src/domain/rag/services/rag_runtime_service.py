@@ -9,12 +9,18 @@ import tiktoken
 
 import settings
 
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.governance.schemas.rag_policy import RagIngestQuotas, ResolvedRagPolicy
 from domain.governance.services.rag_policy_service import RagPolicyService
+from domain.rag.ports.embedding import EmbeddingPort
 from domain.rag.repositories.rag_repository import RagRepository
+from domain.rag.schemas.embedding import (
+    EmbeddingContract,
+    EmbeddingBatchExecutionRequest,
+    EmbeddingExecutionRequest,
+)
+from domain.rag.services.embedding_executor import EmbeddingExecutor
 from domain.rag.schemas.embedding_job import EmbeddingStatus
 from domain.rag.schemas.rag import (
     RagChunkingStrategy,
@@ -34,8 +40,6 @@ from domain.rag.schemas.rag import (
     PerPageChunkingParams,
     parse_rag_chunking_rule_params,
     SUPPORTED_EMBEDDING_DIMENSIONS,
-    DEFAULT_EMBEDDING_DIMENSION,
-    EMBEDDING_DIMENSION_REDUCED,
 )
 from adapters.observability.logging import get_logger
 from exceptions.service_exceptions import (
@@ -46,6 +50,7 @@ from infra.database.models.rag.rag_chunk import RagChunk as RagChunkModel
 from infra.database.models.rag.rag_query_cache import (
     RagQueryCache as RagQueryCacheModel,
 )
+from infra.database.models.rag.vector_store import VectorStore as VectorStoreModel
 import numpy as np
 
 logger = get_logger(__name__)
@@ -70,35 +75,90 @@ ChunkRuleParams = (
 
 
 class RagRuntimeService:
-    """Provide ingestion and retrieval capabilities for RAG at runtime."""
-
     def __init__(
         self,
         repository: RagRepository,
-        embedding_adapter: OpenAIEmbeddingAdapter,
+        embedding_adapter: EmbeddingPort,
         tracer: RuntimeTracerPort,
         rag_policy_service: RagPolicyService,
-        ai_repository: AIRepository | None = None,
+        ai_repository: AIRepository,
+        embedding_executor: EmbeddingExecutor,
     ) -> None:
         self.repository = repository
         self.embedding_adapter = embedding_adapter
         self.tracer = tracer
         self.rag_policy_service = rag_policy_service
         self.ai_repository = ai_repository
+        self.embedding_executor = embedding_executor
 
-    async def _resolve_embedding_model_name(
+    async def _resolve_embedding_model(
         self, embedding: RagEmbeddingOptions
-    ) -> str:
+    ) -> tuple[str, str]:
         if embedding.model_id is not None:
-            if self.ai_repository is None:
-                raise DomainValidationException(
-                    message="rag_embedding_model_id_requires_catalog"
-                )
             row = await self.ai_repository.get_model(embedding.model_id)
             if row is None:
                 raise NotFoundServiceException(message="embedding_model_not_found")
-            return row.name
-        return str(embedding.model_alias)
+            if not bool(row.is_active):
+                raise DomainValidationException(message="embedding_model_inactive")
+            if str(row.type).upper() != "EMBEDDING":
+                raise DomainValidationException(
+                    message="rag_embedding_model_registry_type_mismatch"
+                )
+            if row.provider is None or not str(row.provider).strip():
+                raise DomainValidationException(
+                    message="rag_embedding_model_registry_provider_missing"
+                )
+            return row.name, str(row.provider).lower()
+        row = await self.ai_repository.get_model_by_name(str(embedding.model_alias))
+        if row is None:
+            raise NotFoundServiceException(message="embedding_model_not_found")
+        if not bool(row.is_active):
+            raise DomainValidationException(message="embedding_model_inactive")
+        if str(row.type).upper() != "EMBEDDING":
+            raise DomainValidationException(
+                message="rag_embedding_model_registry_type_mismatch"
+            )
+        if row.provider is None or not str(row.provider).strip():
+            raise DomainValidationException(
+                message="rag_embedding_model_registry_provider_missing"
+            )
+            return row.name, str(row.provider).lower()
+
+    def _query_embedding_options_for_retrieval(
+        self,
+        *,
+        options: RagConfigOptions,
+        vector_store: VectorStoreModel,
+    ) -> RagEmbeddingOptions:
+        if options.indexing_embedding is None:
+            return options.embedding
+        if int(vector_store.embedding_dimension) != int(
+            options.indexing_embedding.dimension
+        ):
+            return options.embedding
+        if int(options.embedding.dimension) >= int(vector_store.embedding_dimension):
+            return options.embedding
+        return options.indexing_embedding.model_copy(
+            update={"dimension": options.embedding.dimension}
+        )
+
+    def _embedding_contract_from_store(
+        self, *, vector_store: VectorStoreModel, provider: str
+    ) -> EmbeddingContract:
+        return EmbeddingContract(
+            provider=provider,
+            model=str(vector_store.embedding_model),
+            dimension=int(vector_store.embedding_dimension),
+            metric=str(vector_store.metric),
+            version=int(vector_store.version),
+        )
+
+    def _ingest_rag_embedding_options(
+        self, options: RagConfigOptions
+    ) -> RagEmbeddingOptions:
+        if options.indexing_embedding is not None:
+            return options.indexing_embedding
+        return options.embedding
 
     async def ingest_document(
         self,
@@ -177,7 +237,7 @@ class RagRuntimeService:
             name="domain.rag.runtime.prepare_document_for_embedding",
             input={"rag_config_id": str(rag_config_id), "tenant_id": str(tenant_id)},
         ) as span:
-            _, rule_params, _ = await self._resolve_rag_ingest_bundle(
+            _, rule_params, _, _ = await self._resolve_rag_ingest_bundle(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
             )
@@ -254,13 +314,37 @@ class RagRuntimeService:
                 "document_id": str(document_id),
             },
         ) as embedder_handle:
-            options, rule_params, corpus_kind = await self._resolve_rag_ingest_bundle(
+            (
+                options,
+                rule_params,
+                corpus_kind,
+                vector_store_id,
+            ) = await self._resolve_rag_ingest_bundle(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
             )
-            embedding_model_name = await self._resolve_embedding_model_name(
-                options.embedding
+            vector_store = await self.repository.get_vector_store(
+                vector_store_id, tenant_id=tenant_id
             )
+            if vector_store is None:
+                embedder_handle.error(
+                    error_type="vector_store_not_found",
+                    error_message="vector_store_not_found",
+                )
+                raise NotFoundServiceException(message="vector_store_not_found")
+            ingest_embedding = self._ingest_rag_embedding_options(options)
+            (
+                embedding_model_name,
+                embedding_provider,
+            ) = await self._resolve_embedding_model(ingest_embedding)
+            if embedding_model_name != vector_store.embedding_model:
+                raise DomainValidationException(
+                    message="rag_embedding_model_vector_store_mismatch"
+                )
+            if int(ingest_embedding.dimension) != int(vector_store.embedding_dimension):
+                raise DomainValidationException(
+                    message="rag_embedding_dimension_vector_store_mismatch"
+                )
             document = await self.repository.get_document_by_id(document_id=document_id)
             if document is None or document.tenant_id != tenant_id:
                 embedder_handle.error(
@@ -317,32 +401,29 @@ class RagRuntimeService:
                 quotas: RagIngestQuotas | None = None
                 if resolved_policy.definition is not None:
                     quotas = resolved_policy.definition.ingest_quotas
-                embeddings: list[
-                    list[float]
-                ] = await self.embedding_adapter.generate_embeddings_batch(
-                    chunks,
-                    model=embedding_model_name,
-                    dimension=options.embedding.dimension,
+                contract = self._embedding_contract_from_store(
+                    vector_store=vector_store,
+                    provider=embedding_provider,
                 )
-                dim: int = options.embedding.dimension
+                embeddings = await self.embedding_executor.execute_batch(
+                    EmbeddingBatchExecutionRequest(
+                        texts=chunks,
+                        contract=contract,
+                        use_case="indexing",
+                    )
+                )
                 chunk_models: list[RagChunkModel] = []
                 for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_models.append(
                         RagChunkModel(
                             chunk_id=uuid4(),
                             document_id=document.document_id,
+                            vector_store_id=vector_store_id,
                             chunk_index=idx,
                             content=chunk_text,
                             content_hash=self._hash_text(chunk_text),
                             token_count=len(self._encode_tokens(chunk_text)),
-                            embedding=embedding
-                            if dim == DEFAULT_EMBEDDING_DIMENSION
-                            else None,
-                            embedding_512=embedding
-                            if dim == EMBEDDING_DIMENSION_REDUCED
-                            else None,
-                            embedding_model=embedding_model_name,
-                            embedding_dimension=dim,
+                            embedding=embedding,
                             chunk_metadata=document_metadata,
                         )
                     )
@@ -405,6 +486,63 @@ class RagRuntimeService:
             for item in items
         ]
 
+    async def reindex_cutover_vector_store(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_config_id: UUID,
+        target_vector_store_id: UUID,
+    ) -> None:
+        config = await self.repository.get_rag_config(rag_config_id)
+        if config is None or config.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="rag_config_not_found")
+        current_vector_store_id = config.vector_store_id
+        if current_vector_store_id == target_vector_store_id:
+            return
+        in_progress_count = await self.repository.count_documents_by_embedding_status(
+            tenant_id=tenant_id,
+            rag_config_id=rag_config_id,
+            statuses=[
+                EmbeddingStatus.PENDING.value,
+                EmbeddingStatus.PROCESSING.value,
+            ],
+        )
+        if in_progress_count > 0:
+            raise DomainValidationException(
+                message="rag_reindex_cutover_in_progress_documents"
+            )
+        current_store = await self.repository.get_vector_store(
+            current_vector_store_id, tenant_id=tenant_id
+        )
+        target_store = await self.repository.get_vector_store(
+            target_vector_store_id, tenant_id=tenant_id
+        )
+        if current_store is None or target_store is None:
+            raise NotFoundServiceException(message="vector_store_not_found")
+        await self.repository.update_rag_config_vector_store(
+            rag_config_id=rag_config_id,
+            tenant_id=tenant_id,
+            vector_store_id=target_vector_store_id,
+        )
+        await self.repository.set_vector_store_active(
+            vector_store_id=current_vector_store_id,
+            tenant_id=tenant_id,
+            active=False,
+        )
+        await self.repository.set_vector_store_active(
+            vector_store_id=target_vector_store_id,
+            tenant_id=tenant_id,
+            active=True,
+        )
+        await self.repository.invalidate_query_cache_vector_store(
+            tenant_id=tenant_id,
+            vector_store_id=current_vector_store_id,
+        )
+        await self.repository.invalidate_query_cache_vector_store(
+            tenant_id=tenant_id,
+            vector_store_id=target_vector_store_id,
+        )
+
     async def count_documents_for_user(self, *, tenant_id: UUID, user_id: str) -> int:
         return await self.repository.count_documents_for_user(
             tenant_id=tenant_id, user_id=user_id
@@ -465,6 +603,7 @@ class RagRuntimeService:
             RagChunk(
                 id=item.chunk_id,
                 document_id=item.document_id,
+                vector_store_id=item.vector_store_id,
                 chunk_index=item.chunk_index,
                 content=item.content,
                 metadata=item.chunk_metadata,
@@ -503,42 +642,74 @@ class RagRuntimeService:
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )
-        embedding_model_name = await self._resolve_embedding_model_name(
-            options.embedding
+        vector_store = await self.repository.get_vector_store(
+            config.vector_store_id, tenant_id=tenant_id
         )
-        query_hash: str = self._hash_text(user_input)
-        cached: RagQueryCacheModel = await self.repository.get_query_cache(
-            tenant_id=tenant_id, query_hash=query_hash
-        )
-        dim: int = options.embedding.dimension
-        embedding: list[float]
-        if (
-            cached
-            and cached.embedding_model == embedding_model_name
-            and cached.embedding_dimension == options.embedding.dimension
-        ):
-            raw_vec = (
-                cached.embedding_512
-                if dim == EMBEDDING_DIMENSION_REDUCED
-                else cached.embedding
+        if vector_store is None:
+            return RagContext(
+                context_items=[],
+                context_summary=None,
+                eligible=False,
+                reason=RagContextReason.CONFIG_NOT_FOUND,
+                generation_contract=None,
             )
-            embedding = self._query_cache_embedding_to_list(raw_vec)
+        if not options.embedding:
+            raise DomainValidationException(
+                message="rag_retrievel_embedding_not_found"
+            )
+
+        if int(options.embedding.dimension) > int(vector_store.embedding_dimension):
+            raise DomainValidationException(
+                message="rag_retrieval_embedding_dimension_vector_store_mismatch"
+            )
+
+        query_opts = self._query_embedding_options_for_retrieval(
+            options=options,
+            vector_store=vector_store,
+        )
+        resolved_model, provider = await self._resolve_embedding_model(query_opts)
+        embedding_contract = EmbeddingContract(
+            provider=provider,
+            model=resolved_model,
+            dimension=int(query_opts.dimension),
+            metric=str(vector_store.metric),
+            version=int(vector_store.version),
+        )
+
+        query_hash: str = self._hash_text(user_input)
+        await self.repository.invalidate_query_cache_contract(
+            tenant_id=tenant_id,
+            vector_store_id=config.vector_store_id,
+            contract_hash=embedding_contract.contract_hash,
+        )
+        cached: RagQueryCacheModel | None = await self.repository.get_query_cache(
+            tenant_id=tenant_id,
+            vector_store_id=config.vector_store_id,
+            vector_store_version=embedding_contract.version,
+            contract_hash=embedding_contract.contract_hash,
+            query_hash=query_hash,
+        )
+        if cached is not None and cached.embedding is not None:
+            embedding = self._query_cache_embedding_to_list(cached.embedding)
             await self.repository.update_query_cache_usage(
                 cache_id=cached.query_cache_id
             )
         else:
-            embedding: list[float] = await self.embedding_adapter.generate_embedding(
-                user_input,
-                model=embedding_model_name,
-                dimension=options.embedding.dimension,
+            embedding = await self.embedding_executor.execute(
+                EmbeddingExecutionRequest(
+                    text=user_input,
+                    contract=embedding_contract,
+                    use_case="retrieval",
+                    allow_fallback=False,
+                )
             )
-            cache_entry: RagQueryCacheModel = RagQueryCacheModel(
+            cache_entry = RagQueryCacheModel(
                 tenant_id=tenant_id,
+                vector_store_id=config.vector_store_id,
+                vector_store_version=embedding_contract.version,
+                contract_hash=embedding_contract.contract_hash,
                 query_hash=query_hash,
-                embedding=embedding if dim == DEFAULT_EMBEDDING_DIMENSION else None,
-                embedding_512=embedding if dim == EMBEDDING_DIMENSION_REDUCED else None,
-                embedding_model=embedding_model_name,
-                embedding_dimension=dim,
+                embedding=embedding,
             )
             await self.repository.save_query_cache(cache_entry=cache_entry)
 
@@ -573,9 +744,9 @@ class RagRuntimeService:
             ] = await self.repository.search_similar_chunks(
                 tenant_id=tenant_id,
                 rag_config_id=rag_config_id,
+                vector_store_id=config.vector_store_id,
                 user_id=user_id,
                 query_embedding=embedding,
-                embedding_dimension=dim,
                 top_k=effective_top_k,
                 similarity_threshold=effective_similarity_threshold,
                 filters=effective_filters,
@@ -628,7 +799,7 @@ class RagRuntimeService:
         *,
         tenant_id: UUID,
         rag_config_id: UUID,
-    ) -> tuple[RagConfigOptions, ChunkRuleParams, str]:
+    ) -> tuple[RagConfigOptions, ChunkRuleParams, str, UUID]:
         config = await self.repository.get_rag_config(rag_config_id)
         if config is None or config.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rag_config_not_found")
@@ -644,7 +815,15 @@ class RagRuntimeService:
             raise DomainValidationException(
                 message="rag_embedding_dimension_not_supported"
             )
-        return options, rule_params, config.corpus_kind
+        if options.indexing_embedding is not None:
+            if (
+                options.indexing_embedding.dimension
+                not in SUPPORTED_EMBEDDING_DIMENSIONS
+            ):
+                raise DomainValidationException(
+                    message="rag_embedding_dimension_not_supported"
+                )
+        return options, rule_params, config.corpus_kind, config.vector_store_id
 
     def _chunks_for_ingest(
         self,

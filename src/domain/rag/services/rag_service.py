@@ -43,16 +43,39 @@ class RagService(RagServicePort):
     async def list_vector_stores(self, *, tenant_id: UUID) -> list[VectorStore]:
         stores = await self.repository.list_vector_stores(tenant_id=tenant_id)
         return [
-            VectorStore(id=store.vector_store_id, name=store.name) for store in stores
+            VectorStore(
+                id=store.vector_store_id,
+                name=store.name,
+                embedding_model=store.embedding_model,
+                embedding_dimension=store.embedding_dimension,
+                metric=store.metric,
+                version=store.version,
+                active=store.active,
+            )
+            for store in stores
         ]
 
     async def create_vector_store(
         self, *, tenant_id: UUID, vector_store_create: VectorStoreCreate
     ) -> VectorStore:
         created = await self.repository.create_vector_store(
-            tenant_id=tenant_id, name=vector_store_create.name
+            tenant_id=tenant_id,
+            name=vector_store_create.name,
+            embedding_model=vector_store_create.embedding_model,
+            embedding_dimension=vector_store_create.embedding_dimension,
+            metric=vector_store_create.metric,
+            version=vector_store_create.version,
+            active=vector_store_create.active,
         )
-        return VectorStore(id=created.vector_store_id, name=created.name)
+        return VectorStore(
+            id=created.vector_store_id,
+            name=created.name,
+            embedding_model=created.embedding_model,
+            embedding_dimension=created.embedding_dimension,
+            metric=created.metric,
+            version=created.version,
+            active=created.active,
+        )
 
     async def list_rag_configs(
         self,

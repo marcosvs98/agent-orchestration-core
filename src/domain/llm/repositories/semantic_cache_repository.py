@@ -6,10 +6,7 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from domain.rag.schemas.rag import (
-    DEFAULT_EMBEDDING_DIMENSION,
-    EMBEDDING_DIMENSION_REDUCED,
-)
+from domain.rag.schemas.rag import DEFAULT_EMBEDDING_DIMENSION
 from infra.database import DatabaseConnection
 from infra.database.models.llm.semantic_answer_cache import (
     SemanticAnswerCache as SemanticAnswerCacheModel,
@@ -34,14 +31,9 @@ class SemanticCacheRepository:
         similarity_threshold: float,
         now: datetime,
     ) -> SemanticAnswerCacheModel | None:
-        if self.embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
-            distance_expr = SemanticAnswerCacheModel.embedding_512.cosine_distance(
-                query_embedding
-            )
-        else:
-            distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(
-                query_embedding
-            )
+        distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(
+            query_embedding
+        )
         stmt = (
             select(
                 SemanticAnswerCacheModel,
@@ -51,11 +43,8 @@ class SemanticCacheRepository:
             .where(SemanticAnswerCacheModel.task_type == task_type)
             .where(SemanticAnswerCacheModel.expires_at > now)
             .where(distance_expr <= (1.0 - similarity_threshold))
+            .where(SemanticAnswerCacheModel.embedding.is_not(None))
         )
-        if self.embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
-            stmt = stmt.where(SemanticAnswerCacheModel.embedding_512.is_not(None))
-        else:
-            stmt = stmt.where(SemanticAnswerCacheModel.embedding.is_not(None))
         stmt = stmt.order_by(distance_expr.asc()).limit(1)
         async with self.db.get_session() as session:
             result = await session.execute(stmt)
@@ -74,7 +63,6 @@ class SemanticCacheRepository:
             "task_type": entry.task_type,
             "query_hash": entry.query_hash,
             "embedding": entry.embedding,
-            "embedding_512": getattr(entry, "embedding_512", None),
             "response_json": entry.response_json,
             "model_alias": entry.model_alias,
             "inference_layer": entry.inference_layer,
@@ -92,7 +80,6 @@ class SemanticCacheRepository:
                 constraint="uq_semantic_answer_cache_tenant_task_query",
                 set_={
                     "embedding": entry.embedding,
-                    "embedding_512": getattr(entry, "embedding_512", None),
                     "response_json": entry.response_json,
                     "model_alias": entry.model_alias,
                     "inference_layer": entry.inference_layer,

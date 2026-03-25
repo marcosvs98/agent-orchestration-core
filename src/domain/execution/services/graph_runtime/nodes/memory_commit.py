@@ -202,7 +202,10 @@ class MemoryCommitNode:
             return NodeResult(
                 node=self.node_type,
                 status=NodeExecutionStatus.ERROR,
-                data={"error": reason or "memory_commit_merge_failed", "reason_code": reason},
+                data={
+                    "error": reason or "memory_commit_merge_failed",
+                    "reason_code": reason,
+                },
             )
 
         memory_item = {

@@ -6,7 +6,7 @@ from arq.connections import RedisSettings
 
 import settings
 from adapters.cache.redis_adapter import RedisAdapter
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.execution.repositories.execution_repository import ExecutionRepository
@@ -14,6 +14,9 @@ from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.execution.schemas.events import ExecutionEventType
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.schemas.embedding_job import EmbeddingJobPayload
+from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
+from domain.rag.services.embedding_executor import EmbeddingExecutor
+from domain.rag.services.embedding_provider_selector import EmbeddingProviderSelector
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from infra.database import DatabaseConnection, async_session, engine
 
@@ -45,9 +48,7 @@ async def process_embedding_job(
         event_payload: dict = {
             "document_id": str(payload.document_id),
             "rag_config_id": str(payload.rag_config_id),
-            "flow_run_id": str(payload.flow_run_id)
-            if payload.flow_run_id
-            else None,
+            "flow_run_id": str(payload.flow_run_id) if payload.flow_run_id else None,
             "attempt": attempt,
         }
         await _append_execution_event(
@@ -151,13 +152,22 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     rag_repository = RagRepository(db, tracer=tracer, cache_adapter=cache_adapter)
 
-    # Todo: check the simple form to became this generic selector of embedding adapter
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=settings.OPENAI_API_KEY,
         model="text-embedding-3-small",
         dimension=settings.EMBEDDING_DIMENSION,
         tracer=tracer,
         cache_adapter=cache_adapter,
+    )
+    embedding_selector = EmbeddingProviderSelector(tracer=tracer)
+    embedding_factory = EmbeddingProviderFactory(
+        tracer=tracer,
+        openai_provider=embedding_adapter,
+    )
+    embedding_executor = EmbeddingExecutor(
+        selector=embedding_selector,
+        factory=embedding_factory,
+        tracer=tracer,
     )
 
     rag_policy_service = RagPolicyService(repository=execution_repository)
@@ -168,6 +178,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         tracer=tracer,
         rag_policy_service=rag_policy_service,
         ai_repository=ai_repository,
+        embedding_executor=embedding_executor,
     )
     ctx["tracer"] = tracer
     ctx["execution_repository"] = execution_repository

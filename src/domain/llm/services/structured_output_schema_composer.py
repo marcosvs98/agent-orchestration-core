@@ -35,7 +35,7 @@ class StructuredOutputSchemaComposer:
                 "flow_run_id": str(execution_context.flow_run_id),
                 "current_node_id": execution_context.current_node_id,
             },
-        ): # Todo: não atualiza o span output
+        ):  # Todo: não atualiza o span output
             tool_config_id = self._extract_tool_config_id(execution_context)
             if not tool_config_id:
                 return deepcopy(prompt_output_schema)

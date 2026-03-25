@@ -22,7 +22,7 @@ else:
     raise SystemExit("repository root not found")
 
 from adapters.cache.redis_adapter import RedisAdapter
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.trace import TraceContext

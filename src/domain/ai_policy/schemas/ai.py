@@ -1,6 +1,13 @@
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
+
+
+class CatalogModelType(StrEnum):
+    LLM = "LLM"
+    SLM = "SLM"
+    EMBEDDING = "EMBEDDING"
 
 
 class AITaskContextFlags(BaseModel):
@@ -19,6 +26,8 @@ class Model(BaseModel):
 
 class ModelCreate(BaseModel):
     name: str
+    provider: str
+    type: CatalogModelType
 
 
 class NodeAIExecutionPolicyBinding(BaseModel):

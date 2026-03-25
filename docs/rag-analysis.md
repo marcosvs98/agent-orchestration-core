@@ -1,89 +1,65 @@
-# Análise atual (formatada e consolidada)
+# Análise RAG — estado histórico e encerramento (governança de embedding)
 
----
+Documentos relacionados: [rag-model-todo.md](./rag-model-todo.md), [rag-orchestration-layer.md](./rag-orchestration-layer.md).
 
-## 1. RagChunk — ponto crítico
+## Implementação (referência de código)
 
-Estado atual:
+| Área | Caminho |
+|------|---------|
+| VectorStore ORM | `src/infra/database/models/rag/vector_store.py` |
+| RagChunk ORM | `src/infra/database/models/rag/rag_chunk.py` |
+| RagQueryCache ORM | `src/infra/database/models/rag/rag_query_cache.py` |
+| SemanticAnswerCache ORM | `src/infra/database/models/llm/semantic_answer_cache.py` |
+| Model registry | `src/infra/database/models/ai_policy/model.py` |
+| Runtime RAG | `src/domain/rag/services/rag_runtime_service.py` |
+| Repositório RAG | `src/domain/rag/repositories/rag_repository.py` |
+| Port de embedding | `src/domain/rag/ports/embedding.py` |
+| Adapter OpenAI | `src/domain/rag/adapters/openai_embedding_adapter.py` |
+| Re-export wiring | `src/adapters/rag/embedding_adapter.py` |
 
-```text
-embedding
-embedding_512
-embedding_model
-embedding_dimension
-```
+## ER alvo (pós-refactor)
 
-Problema:
-
-```text
-- governança de embedding no nível do dado
-- inconsistência dentro do mesmo índice
-- quebra garantias de retrieval
-```
-
-Risco prático:
-
-```text
-chunk A → 1536 (model X)
-chunk B → 512  (model Y)
-```
-
-Impacto:
-
-```text
-- busca vetorial inconsistente
-- degradação de ivfflat (dimensão fixa)
-- tuning de recall comprometido
-```
-
-Direção:
-
-```text
-RagChunk NÃO decide embedding
-→ responsabilidade do VectorStore
-```
-
-Manter:
-
-```text
-embedding (único)
-```
-
-Remover:
-
-```text
-embedding_512
-embedding_model
-embedding_dimension
+```mermaid
+erDiagram
+    vector_store ||--o{ rag_chunk : governs
+    vector_store ||--o{ rag_query_cache : governs
+    rag_chunk {
+        vector embedding
+        uuid vector_store_id FK
+    }
+    rag_query_cache {
+        vector embedding
+        uuid vector_store_id FK
+    }
+    semantic_answer_cache {
+        vector embedding
+        string model_alias
+    }
 ```
 
 ---
 
-## 2. VectorStore — gap estrutural
+## 1. RagChunk — era o ponto crítico (resolvido)
 
-Estado atual:
-
-```text
-name
-tenant_id
-```
-
-Faltando:
+Antes havia colunas redundantes e risco de índice inconsistente:
 
 ```text
-embedding_model_id
-dimension
-metric
-version
+embedding + embedding_512 + embedding_model + embedding_dimension
 ```
 
-Impacto:
+Agora: um único `embedding`, `vector_store_id` obrigatório; modelo e dimensão vêm do `VectorStore` validados em `RagRuntimeService` / ingest.
 
-```text
-- ausência de contrato do índice
-- impossibilidade de validar runtime
-- reindex sem controle
-```
+---
+
+## 2. VectorStore — contrato do índice (implementado)
+
+Campos adicionados: `embedding_model` (string), `embedding_dimension`, `metric`, `version`, `active`. O nome do modelo é string operacional; o catálogo `model` (`provider`, `type`, `is_active`) complementa resolução quando `options.embedding.model_id` é usado.
+
+---
+
+## 3. OpenAIEmbeddingAdapter e hexagonal
+
+O adapter deixou `domain/llm` e passou a `domain/rag/adapters`, implementando `EmbeddingPort`. Consumidores usam `adapters.rag.embedding_adapter` (compat: `adapters.llm.embedding_adapter` pode re-exportar).
 
 ---
 
@@ -147,30 +123,15 @@ funciona, mas aumenta acoplamento indireto
 
 ---
 
-## 6. RagQueryCache — bom conceito, risco estrutural
+## 6. RagQueryCache — alinhado ao VectorStore
 
-Estado atual replica problema do RagChunk:
+`vector_store_id` + `embedding` único; unicidade `(tenant_id, vector_store_id, query_hash)`. Sem colunas de modelo/dimensão na linha de cache.
 
-```text
-embedding
-embedding_512
-embedding_model
-embedding_dimension
-```
+---
 
-Risco:
+## 6b. SemanticAnswerCache (domínio LLM)
 
-```text
-- cache inconsistente com índice
-- invalidação difícil após troca de modelo
-```
-
-Direção:
-
-```text
-- adicionar vector_store_id
-- remover múltiplas dimensões
-```
+Removido `embedding_512`; permanece um `embedding` e `model_alias`. Sem `vector_store_id` — não faz parte do pipeline de retrieval RAG.
 
 ---
 
@@ -207,77 +168,11 @@ falta de enforcement de contrato
 
 ---
 
-## 9. Problema central do design
+## 9–11. Encerramento
 
-Situação atual:
-
-```text
-governança de embedding distribuída
-```
-
-Espalhado em:
-
-```text
-- RagChunk
-- RagQueryCache
-- (ausente no VectorStore)
-```
-
-Impacto:
-
-```text
-storage permite divergência
-```
-
-Desalinhamento com runtime:
-
-```text
-Selector decide modelo
-→ storage não garante consistência
-```
+Governança centralizada no `VectorStore`; chunks e query cache carregam `vector_store_id` e uma coluna vetorial; runtime valida modelo e dimensão contra o store antes de embedar e buscar.
 
 ---
-
-## 10. Ajuste mínimo (sem refactor massivo)
-
-Direção:
-
-```text
-1. VectorStore como fonte da verdade:
-   - embedding_model
-   - dimension
-   - metric
-
-2. RagChunk:
-   - 1 embedding único
-
-3. RagQueryCache:
-   - vincular a vector_store_id
-   - alinhar dimensão
-
-4. Runtime:
-   - validar antes de persistir
-```
-
----
-
-## 11. Leitura executiva
-
-Estado:
-
-```text
-+ forte em pipeline
-+ maduro operacionalmente
-- inconsistente no domínio vetorial
-```
-
-Risco aparece quando:
-
-```text
-- troca de modelo
-- aumento de volume
-- tuning de busca
-```
 
 ---
 

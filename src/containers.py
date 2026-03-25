@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
 from domain.llm.adapters.slm_local_provider import SLMLocalProvider
 from domain.llm.adapters.moderation_openai_adapter import ModerationOpenAIAdapter
@@ -40,6 +40,9 @@ from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.rag.controllers.rag_controller import RagController
 from domain.rag.services.rag_service import RagService
 from domain.rag.services.rag_runtime_service import RagRuntimeService
+from domain.rag.services.embedding_executor import EmbeddingExecutor
+from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
+from domain.rag.services.embedding_provider_selector import EmbeddingProviderSelector
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.execution.controllers.execution_controller import ExecutionController
 from domain.execution.controllers.execution_plane_controller import (
@@ -399,6 +402,25 @@ class RAGContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         cache_adapter=adapters.redis_adapter,
     )
+
+    embedding_provider_selector = providers.Factory(
+        EmbeddingProviderSelector,
+        tracer=adapters.tracer,
+    )
+
+    embedding_provider_factory = providers.Factory(
+        EmbeddingProviderFactory,
+        tracer=adapters.tracer,
+        embedding_adapter=embedding_adapter,
+    )
+
+    embedding_executor = providers.Factory(
+        EmbeddingExecutor,
+        selector=embedding_provider_selector,
+        factory=embedding_provider_factory,
+        tracer=adapters.tracer,
+    )
+
     rag_runtime_service = providers.Factory(
         RagRuntimeService,
         repository=rag_repository,
@@ -406,6 +428,7 @@ class RAGContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         rag_policy_service=rag_policy_service,
         ai_repository=ai_repository,
+        embedding_executor=embedding_executor,
     )
     rag_controller = providers.Factory(
         RagController, service=rag_service, runtime_service=rag_runtime_service

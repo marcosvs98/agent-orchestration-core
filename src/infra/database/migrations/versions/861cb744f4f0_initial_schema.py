@@ -79,6 +79,9 @@ def upgrade() -> None:
         "model",
         sa.Column("model_id", sa.UUID(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("provider", sa.String(length=64), nullable=False),
+        sa.Column("type", sa.String(length=32), nullable=False),
+        sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -320,6 +323,13 @@ def upgrade() -> None:
         sa.Column("vector_store_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("embedding_model", sa.String(length=128), nullable=False),
+        sa.Column("embedding_dimension", sa.Integer(), nullable=False),
+        sa.Column(
+            "metric", sa.String(length=32), server_default="cosine", nullable=False
+        ),
+        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("active", sa.Boolean(), server_default="true", nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -954,14 +964,12 @@ def upgrade() -> None:
         "rag_chunk",
         sa.Column("chunk_id", sa.UUID(), nullable=False),
         sa.Column("document_id", sa.UUID(), nullable=False),
+        sa.Column("vector_store_id", sa.UUID(), nullable=False),
         sa.Column("chunk_index", sa.Integer(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("content_hash", sa.String(length=128), nullable=False),
         sa.Column("token_count", sa.Integer(), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=True),
-        sa.Column("embedding_512", Vector(512), nullable=True),
-        sa.Column("embedding_model", sa.String(length=128), nullable=False),
-        sa.Column("embedding_dimension", sa.Integer(), nullable=False),
+        sa.Column("embedding", Vector(), nullable=True),
         sa.Column(
             "metadata",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -985,6 +993,12 @@ def upgrade() -> None:
             name=op.f("fk_rag_chunk_document_id_rag_document"),
             ondelete="CASCADE",
         ),
+        sa.ForeignKeyConstraint(
+            ["vector_store_id"],
+            ["vector_store.vector_store_id"],
+            name=op.f("fk_rag_chunk_vector_store_id_vector_store"),
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("chunk_id", name=op.f("pk_rag_chunk")),
         sa.UniqueConstraint(
             "document_id",
@@ -999,34 +1013,28 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index(
+        op.f("ix_rag_chunk_vector_store_id"),
+        "rag_chunk",
+        ["vector_store_id"],
+        unique=False,
+    )
+    op.create_index(
         "ix_rag_chunk_chunk_index",
         "rag_chunk",
         ["chunk_index"],
         unique=False,
     )
-    op.create_index(
-        "ix_rag_chunk_embedding",
-        "rag_chunk",
-        ["embedding"],
-        unique=False,
-        postgresql_using="ivfflat",
-    )
-    op.create_index(
-        "ix_rag_chunk_embedding_512",
-        "rag_chunk",
-        ["embedding_512"],
-        unique=False,
-        postgresql_using="ivfflat",
-    )
     op.create_table(
         "rag_query_cache",
         sa.Column("query_cache_id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("vector_store_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "vector_store_version", sa.Integer(), server_default="1", nullable=False
+        ),
+        sa.Column("contract_hash", sa.String(length=64), nullable=False),
         sa.Column("query_hash", sa.String(length=128), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=True),
-        sa.Column("embedding_512", Vector(512), nullable=True),
-        sa.Column("embedding_model", sa.String(length=128), nullable=False),
-        sa.Column("embedding_dimension", sa.Integer(), nullable=False),
+        sa.Column("embedding", Vector(), nullable=True),
         sa.Column(
             "use_count",
             sa.Integer(),
@@ -1052,11 +1060,20 @@ def upgrade() -> None:
             name=op.f("fk_rag_query_cache_tenant_id_tenant"),
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["vector_store_id"],
+            ["vector_store.vector_store_id"],
+            name=op.f("fk_rag_query_cache_vector_store_id_vector_store"),
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("query_cache_id", name=op.f("pk_rag_query_cache")),
         sa.UniqueConstraint(
             "tenant_id",
+            "vector_store_id",
+            "vector_store_version",
+            "contract_hash",
             "query_hash",
-            name=op.f("uq_rag_query_cache_tenant_id_query_hash"),
+            name="uq_rag_query_cache_tenant_vector_store_version_hash_query_hash",
         ),
     )
     op.create_table(
@@ -1065,8 +1082,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("task_type", sa.String(length=64), nullable=False),
         sa.Column("query_hash", sa.String(length=128), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=True),
-        sa.Column("embedding_512", Vector(512), nullable=True),
+        sa.Column("embedding", Vector(), nullable=True),
         sa.Column(
             "response_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False
         ),
@@ -1112,20 +1128,6 @@ def upgrade() -> None:
             "query_hash",
             name=op.f("uq_semantic_answer_cache_tenant_task_query"),
         ),
-    )
-    op.create_index(
-        "ix_semantic_answer_cache_embedding",
-        "semantic_answer_cache",
-        ["embedding"],
-        unique=False,
-        postgresql_using="ivfflat",
-    )
-    op.create_index(
-        "ix_semantic_answer_cache_embedding_512",
-        "semantic_answer_cache",
-        ["embedding_512"],
-        unique=False,
-        postgresql_using="ivfflat",
     )
     op.create_index(
         "ix_semantic_answer_cache_tenant_task_expires_at",
@@ -3784,13 +3786,8 @@ def downgrade() -> None:
     op.drop_table("response_artifact")
     op.drop_table("rate_limit_policy")
     op.drop_table("rag_query_cache")
-    op.drop_index(
-        "ix_semantic_answer_cache_embedding_512",
-        table_name="semantic_answer_cache",
-    )
-    op.drop_index("ix_rag_chunk_embedding_512", table_name="rag_chunk")
-    op.drop_index("ix_rag_chunk_embedding", table_name="rag_chunk")
     op.drop_index("ix_rag_chunk_chunk_index", table_name="rag_chunk")
+    op.drop_index(op.f("ix_rag_chunk_vector_store_id"), table_name="rag_chunk")
     op.drop_index("ix_rag_chunk_document_id", table_name="rag_chunk")
     op.drop_table("rag_chunk")
     op.drop_table("rag_document")

@@ -16,23 +16,34 @@ else:
 
 from sqlalchemy import select
 
+from domain.rag.services.embedding_executor import EmbeddingExecutor
+from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
+from domain.rag.services.embedding_provider_selector import EmbeddingProviderSelector
 from adapters.cache.redis_adapter import RedisAdapter
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
+from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.schemas.trace import TraceContext
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.governance.services.rag_policy_service import RagPolicyService
+from domain.llm.schemas.llm import LLMProviderType
 from domain.rag.repositories.rag_repository import RagRepository
-from domain.rag.schemas.rag import RagConfigOptions
+from domain.rag.schemas.rag import (
+    RagConfigOptions,
+    RagEmbeddingModelAlias,
+    RagEmbeddingOptions,
+)
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from infra.database import get_db
 from infra.database import DatabaseConnection, async_session, engine
 from infra.database.models.rag.rag_chunking_rule import RagChunkingRule
 from infra.database.models.rag.rag_config import RagConfig
 from infra.database.models.rag.vector_store import VectorStore
-from settings import EMBEDDING_DIMENSION, OPENAI_API_KEY
+from settings import OPENAI_API_KEY
 
 from seeds.demo.ids import (
+    MODEL_CATALOG_EMBEDDING_INDEXING_ID,
+    MODEL_CATALOG_EMBEDDING_RETRIEVAL_ID,
     RAG_CHUNKING_RULE_DEMO_ID,
     RAG_CONFIG_DEMO_ID,
     TENANT_DEMO_ID,
@@ -126,6 +137,25 @@ class _SeedTracer:
         return None
 
 
+def _demo_rag_options() -> RagConfigOptions:
+    large_3072 = RagEmbeddingOptions(
+        provider=LLMProviderType.OPENAI,
+        model_alias=RagEmbeddingModelAlias.TEXT_EMBEDDING_3_LARGE,
+        dimension=3072,
+        model_id=MODEL_CATALOG_EMBEDDING_INDEXING_ID,
+    )
+    small_1536 = RagEmbeddingOptions(
+        provider=LLMProviderType.OPENAI,
+        model_alias=RagEmbeddingModelAlias.TEXT_EMBEDDING_3_SMALL,
+        dimension=1536,
+        model_id=MODEL_CATALOG_EMBEDDING_RETRIEVAL_ID,
+    )
+    return RagConfigOptions(
+        indexing_embedding=large_3072,
+        embedding=small_1536,
+    )
+
+
 async def seed_rag() -> None:
     async with get_db() as session:
         result = await session.execute(
@@ -140,8 +170,18 @@ async def seed_rag() -> None:
                 vector_store_id=VECTOR_STORE_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
                 name="Assistente de Bolso - Conhecimento",
+                embedding_model="text-embedding-3-large",
+                embedding_dimension=3072,
+                metric="cosine",
+                version=1,
+                active=True,
             )
             session.add(vector_store)
+            await session.commit()
+        else:
+            existing_store.embedding_model = "text-embedding-3-large"
+            existing_store.embedding_dimension = 3072
+            session.add(existing_store)
             await session.commit()
 
         result = await session.execute(
@@ -176,7 +216,7 @@ async def seed_rag() -> None:
         existing_config = result.scalar_one_or_none()
 
         if existing_config is None:
-            options = RagConfigOptions().model_dump(mode="json")
+            options = _demo_rag_options().model_dump(mode="json")
             rag_config = RagConfig(
                 rag_config_id=RAG_CONFIG_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
@@ -191,10 +231,16 @@ async def seed_rag() -> None:
             session.add(rag_config)
             await session.commit()
         else:
-            options = existing_config.options
-            if not options:
-                options = RagConfigOptions().model_dump(mode="json")
-                existing_config.options = options
+            merged = _demo_rag_options()
+            if existing_config.options:
+                prior = RagConfigOptions.model_validate(existing_config.options)
+                merged = merged.model_copy(
+                    update={
+                        "retrieval": prior.retrieval,
+                        "generation_contract": prior.generation_contract,
+                    }
+                )
+            existing_config.options = merged.model_dump(mode="json")
             if existing_config.chunking_rule_id is None:
                 existing_config.chunking_rule_id = RAG_CHUNKING_RULE_DEMO_ID
             if existing_config.status != VersionStatus.PUBLISHED.value:
@@ -220,16 +266,35 @@ async def seed_rag() -> None:
     )
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=OPENAI_API_KEY,
-        model="text-embedding-3-small",
-        dimension=EMBEDDING_DIMENSION,
+        model="text-embedding-3-large",
+        dimension=3072,
         tracer=tracer,
         cache_adapter=cache_adapter,
     )
+    ai_repository = AIRepository(database_connection, tracer=tracer)
+
+    embedding_provider_selector = EmbeddingProviderSelector(
+        tracer=tracer,
+    )
+
+    embedding_provider_factory = EmbeddingProviderFactory(
+        tracer=tracer,
+        embedding_adapter=embedding_adapter,
+    )
+
+    embedding_executor = EmbeddingExecutor(
+        selector=embedding_provider_selector,
+        factory=embedding_provider_factory,
+        tracer=tracer,
+    )
+
     rag_runtime_service = RagRuntimeService(
         repository=rag_repository,
         embedding_adapter=embedding_adapter,
         tracer=tracer,
         rag_policy_service=rag_policy_service,
+        ai_repository=ai_repository,
+        embedding_executor=embedding_executor,
     )
     for document in demo_assistente_bolso_kb_documents():
         await rag_runtime_service.ingest_document(

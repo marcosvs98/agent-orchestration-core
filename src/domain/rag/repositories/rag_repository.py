@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +14,6 @@ from adapters.cache.redis_adapter import RedisAdapter
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.rag.schemas.embedding_job import EmbeddingStatus
-from domain.rag.schemas.rag import EMBEDDING_DIMENSION_REDUCED
 from domain.rag.schemas.rag_tenant_summary import (
     RagConfigPreviewRow,
     RagTenantSummaryData,
@@ -122,10 +122,26 @@ class RagRepository:
             return list(result.scalars().all())
 
     async def create_vector_store(
-        self, *, tenant_id: UUID, name: str
+        self,
+        *,
+        tenant_id: UUID,
+        name: str,
+        embedding_model: str,
+        embedding_dimension: int,
+        metric: str = "cosine",
+        version: int = 1,
+        active: bool = True,
     ) -> VectorStoreModel:
         async with self.db.get_session() as session:
-            instance = VectorStoreModel(tenant_id=tenant_id, name=name)
+            instance = VectorStoreModel(
+                tenant_id=tenant_id,
+                name=name,
+                embedding_model=embedding_model,
+                embedding_dimension=embedding_dimension,
+                metric=metric,
+                version=version,
+                active=active,
+            )
             session.add(instance)
             await session.commit()
             await session.refresh(instance)
@@ -168,6 +184,36 @@ class RagRepository:
             if self.cache_adapter and row:
                 await self.cache_adapter.set(key, row.to_dict(), ttl=60)
             return row
+
+    async def update_rag_config_vector_store(
+        self, *, rag_config_id: UUID, tenant_id: UUID, vector_store_id: UUID
+    ) -> None:
+        async with self.db.get_session() as session:
+            await session.execute(
+                update(RagConfigModel)
+                .where(
+                    RagConfigModel.rag_config_id == rag_config_id,
+                    RagConfigModel.tenant_id == tenant_id,
+                )
+                .values(vector_store_id=vector_store_id, updated_at=sa.func.now())
+            )
+            await session.commit()
+        if self.cache_adapter:
+            await self.cache_adapter.delete(f"rag_config:{rag_config_id}")
+
+    async def set_vector_store_active(
+        self, *, vector_store_id: UUID, tenant_id: UUID, active: bool
+    ) -> None:
+        async with self.db.get_session() as session:
+            await session.execute(
+                update(VectorStoreModel)
+                .where(
+                    VectorStoreModel.vector_store_id == vector_store_id,
+                    VectorStoreModel.tenant_id == tenant_id,
+                )
+                .values(active=active, updated_at=sa.func.now())
+            )
+            await session.commit()
 
     async def get_chunking_rule(
         self,
@@ -630,6 +676,20 @@ class RagRepository:
             value = result.scalar()
             return int(value) if value is not None else 0
 
+    async def count_documents_by_embedding_status(
+        self, *, tenant_id: UUID, rag_config_id: UUID, statuses: list[str]
+    ) -> int:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(sa.func.count(RagDocumentModel.document_id))
+                .where(RagDocumentModel.tenant_id == tenant_id)
+                .where(RagDocumentModel.rag_config_id == rag_config_id)
+                .where(RagDocumentModel.embedding_status.in_(statuses))
+            )
+            result = await session.execute(stmt)
+            value = result.scalar()
+            return int(value) if value is not None else 0
+
     async def list_chunks(
         self, *, document_id: UUID, limit: int
     ) -> list[RagChunkModel]:
@@ -663,35 +723,6 @@ class RagRepository:
                     return rows
             result = await session.execute(stmt)
             return list(result.scalars().all())
-
-    async def list_chunks_pending_embedding_512(
-        self, *, limit: int, offset: int = 0
-    ) -> list[RagChunkModel]:
-        async with self.db.get_session() as session:
-            stmt = (
-                select(RagChunkModel)
-                .where(RagChunkModel.embedding_512.is_(None))
-                .where(RagChunkModel.embedding.is_not(None))
-                .order_by(RagChunkModel.chunk_id.asc())
-                .limit(limit)
-                .offset(offset)
-            )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
-
-    async def update_chunk_embedding_512(
-        self, *, chunk_id: UUID, embedding_512: list[float]
-    ) -> bool:
-        async with self.db.get_session() as session:
-            stmt = (
-                update(RagChunkModel)
-                .where(RagChunkModel.chunk_id == chunk_id)
-                .values(embedding_512=embedding_512)
-                .execution_options(synchronize_session=False)
-            )
-            result = await session.execute(stmt)
-            await session.commit()
-            return int(result.rowcount or 0) > 0
 
     async def finalize_document_embedding_with_usage(
         self,
@@ -855,14 +886,12 @@ class RagRepository:
                     {
                         "chunk_id": chunk.chunk_id,
                         "document_id": chunk.document_id,
+                        "vector_store_id": chunk.vector_store_id,
                         "chunk_index": chunk.chunk_index,
                         "content": chunk.content,
                         "content_hash": chunk.content_hash,
                         "token_count": chunk.token_count,
                         "embedding": chunk.embedding,
-                        "embedding_512": chunk.embedding_512,
-                        "embedding_model": chunk.embedding_model,
-                        "embedding_dimension": chunk.embedding_dimension,
                         "chunk_metadata": chunk.chunk_metadata,
                     }
                 )
@@ -904,14 +933,12 @@ class RagRepository:
                     {
                         "chunk_id": chunk.chunk_id,
                         "document_id": chunk.document_id,
+                        "vector_store_id": chunk.vector_store_id,
                         "chunk_index": chunk.chunk_index,
                         "content": chunk.content,
                         "content_hash": chunk.content_hash,
                         "token_count": chunk.token_count,
                         "embedding": chunk.embedding,
-                        "embedding_512": chunk.embedding_512,
-                        "embedding_model": chunk.embedding_model,
-                        "embedding_dimension": chunk.embedding_dimension,
                         "chunk_metadata": chunk.chunk_metadata,
                     }
                 )
@@ -926,11 +953,20 @@ class RagRepository:
             await session.commit()
 
     async def get_query_cache(
-        self, *, tenant_id: UUID, query_hash: str
+        self,
+        *,
+        tenant_id: UUID,
+        vector_store_id: UUID,
+        vector_store_version: int,
+        contract_hash: str,
+        query_hash: str,
     ) -> RagQueryCacheModel | None:
         async with self.db.get_session() as session:
             stmt = select(RagQueryCacheModel).where(
                 RagQueryCacheModel.tenant_id == tenant_id,
+                RagQueryCacheModel.vector_store_id == vector_store_id,
+                RagQueryCacheModel.vector_store_version == vector_store_version,
+                RagQueryCacheModel.contract_hash == contract_hash,
                 RagQueryCacheModel.query_hash == query_hash,
             )
             query_sql = compile_query(stmt)
@@ -942,6 +978,9 @@ class RagRepository:
                         "query": query_sql,
                         "params": {
                             "tenant_id": str(tenant_id),
+                            "vector_store_id": str(vector_store_id),
+                            "vector_store_version": vector_store_version,
+                            "contract_hash": contract_hash,
                             "query_hash": query_hash,
                         },
                     },
@@ -969,6 +1008,31 @@ class RagRepository:
             await session.refresh(cache_entry)
             return cache_entry
 
+    async def invalidate_query_cache_contract(
+        self, *, tenant_id: UUID, vector_store_id: UUID, contract_hash: str
+    ) -> None:
+        async with self.db.get_session() as session:
+            await session.execute(
+                sa.delete(RagQueryCacheModel).where(
+                    RagQueryCacheModel.tenant_id == tenant_id,
+                    RagQueryCacheModel.vector_store_id == vector_store_id,
+                    RagQueryCacheModel.contract_hash != contract_hash,
+                )
+            )
+            await session.commit()
+
+    async def invalidate_query_cache_vector_store(
+        self, *, tenant_id: UUID, vector_store_id: UUID
+    ) -> None:
+        async with self.db.get_session() as session:
+            await session.execute(
+                sa.delete(RagQueryCacheModel).where(
+                    RagQueryCacheModel.tenant_id == tenant_id,
+                    RagQueryCacheModel.vector_store_id == vector_store_id,
+                )
+            )
+            await session.commit()
+
     async def update_query_cache_usage(self, *, cache_id: UUID) -> None:
         async with self.db.get_session() as session:
             await session.execute(
@@ -986,17 +1050,20 @@ class RagRepository:
         *,
         tenant_id: UUID,
         rag_config_id: UUID,
+        vector_store_id: UUID,
         user_id: str | None,
         query_embedding: list[float],
-        embedding_dimension: int,
         top_k: int,
         similarity_threshold: float,
         filters: dict[str, object] | None,
     ) -> list[tuple[RagChunkModel, float, datetime | None, str | None]]:
-        if embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
-            distance_col = RagChunkModel.embedding_512.cosine_distance(query_embedding)
-        else:
-            distance_col = RagChunkModel.embedding.cosine_distance(query_embedding)
+        query_dimension = len(query_embedding)
+        if query_dimension == 0:
+            return []
+        distance_col = sa.cast(
+            sa.func.subvector(RagChunkModel.embedding, 1, query_dimension),
+            Vector(query_dimension),
+        ).cosine_distance(query_embedding)
         async with self.db.get_session() as session:
             stmt = (
                 select(
@@ -1013,11 +1080,9 @@ class RagRepository:
                 )
                 .where(RagDocumentModel.tenant_id == tenant_id)
                 .where(RagDocumentModel.rag_config_id == rag_config_id)
+                .where(RagChunkModel.vector_store_id == vector_store_id)
+                .where(RagChunkModel.embedding.is_not(None))
             )
-            if embedding_dimension == EMBEDDING_DIMENSION_REDUCED:
-                stmt = stmt.where(RagChunkModel.embedding_512.is_not(None))
-            else:
-                stmt = stmt.where(RagChunkModel.embedding.is_not(None))
             if filters:
                 if filters.get("source"):
                     stmt = stmt.where(RagDocumentModel.source == filters["source"])
@@ -1078,6 +1143,7 @@ class RagRepository:
             params: dict[str, object] = {
                 "tenant_id": str(tenant_id),
                 "rag_config_id": str(rag_config_id),
+                "vector_store_id": str(vector_store_id),
                 "top_k": top_k,
                 "similarity_threshold": similarity_threshold,
             }

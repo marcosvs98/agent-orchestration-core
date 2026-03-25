@@ -91,7 +91,6 @@ class AgentsRepository:
                         output={
                             "result_count": 1 if version else 0,
                             "found": version is not None,
-                            "origem": "database"
                         }
                     )
                 await self.cache_adapter.set(key, version.to_dict())

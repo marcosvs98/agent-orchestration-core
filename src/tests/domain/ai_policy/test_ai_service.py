@@ -8,6 +8,8 @@ from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.ai_policy.schemas.ai import (
     AIExecutionPolicyCreate,
     AIExecutionPolicyVersionCreate,
+    CatalogModelType,
+    ModelCreate,
 )
 from domain.ai_policy.services.ai_service import AIService
 from domain.common.schemas.change import ChangeRequest
@@ -186,6 +188,30 @@ class TestAIService:
         assert len(result) == 1
         assert result[0].id == model_id
         assert result[0].name == "gpt-4"
+
+    @pytest.mark.asyncio
+    async def test_create_model_passes_provider_and_type_to_repository(
+        self, ai_service, repository
+    ):
+        model_id = uuid4()
+        repository.create_model = AsyncMock(
+            return_value=SimpleNamespace(model_id=model_id, name="m")
+        )
+        payload = ModelCreate(
+            name="m",
+            provider="local",
+            type=CatalogModelType.SLM,
+        )
+
+        result = await ai_service.create_model(model_create=payload)
+
+        assert result.id == model_id
+        assert result.name == "m"
+        repository.create_model.assert_called_once_with(
+            name="m",
+            provider="local",
+            model_type="SLM",
+        )
 
     @pytest.mark.asyncio
     async def test_list_ai_execution_policy_versions_returns_empty_list_when_no_results(

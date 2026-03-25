@@ -13,9 +13,12 @@ for _repo in Path(__file__).resolve().parents:
         break
 else:
     raise RuntimeError("repository root not found")
-
+from domain.rag.services.embedding_executor import EmbeddingExecutor
+from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
+from domain.rag.services.embedding_provider_selector import EmbeddingProviderSelector
 from adapters.cache.redis_adapter import RedisAdapter
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
+from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.trace import TraceContext
 from domain.governance.services.rag_policy_service import RagPolicyService
@@ -139,15 +142,34 @@ async def seed_tool_catalog_rag() -> None:
     embedding_adapter = OpenAIEmbeddingAdapter(
         api_key=OPENAI_API_KEY,
         model="text-embedding-3-large",
-        dimension=1536,
+        dimension=3072,
         tracer=tracer,
         cache_adapter=cache_adapter,
     )
+    ai_repository = AIRepository(database_connection, tracer=tracer)
+
+    embedding_provider_selector = EmbeddingProviderSelector(
+        tracer=tracer,
+    )
+
+    embedding_provider_factory = EmbeddingProviderFactory(
+        tracer=tracer,
+        embedding_adapter=embedding_adapter,
+    )
+
+    embedding_executor = EmbeddingExecutor(
+        selector=embedding_provider_selector,
+        factory=embedding_provider_factory,
+        tracer=tracer,
+    )
+
     rag_runtime_service = RagRuntimeService(
         repository=rag_repository,
         embedding_adapter=embedding_adapter,
         tracer=tracer,
         rag_policy_service=rag_policy_service,
+        ai_repository=ai_repository,
+        embedding_executor=embedding_executor
     )
 
     for document in demo_tool_catalog_seed_documents(

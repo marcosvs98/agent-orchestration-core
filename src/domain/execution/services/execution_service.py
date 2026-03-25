@@ -83,7 +83,7 @@ from domain.governance.repositories.llm_model_mapping_repository import (
 from domain.governance.repositories.llm_pricing_repository import LLMPricingRepository
 from domain.governance.services.execution_limit_service import ExecutionLimitService
 
-from adapters.llm.embedding_adapter import OpenAIEmbeddingAdapter
+from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.jobs.arq_embedding_queue import ArqEmbeddingQueueAdapter
 from domain.rag.schemas.rag import RagCorpusKind
@@ -118,6 +118,9 @@ from domain.governance.services.memory_policy_service import MemoryPolicyService
 from domain.governance.services.rag_policy_service import RagPolicyService
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.rag.repositories.rag_repository import RagRepository
+from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
+from domain.rag.services.embedding_executor import EmbeddingExecutor
+from domain.rag.services.embedding_provider_selector import EmbeddingProviderSelector
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
@@ -229,6 +232,16 @@ class ExecutionService(ExecutionServicePort):
             tracer=tracer,
             cache_adapter=cache_adapter,
         )
+        embedding_selector = EmbeddingProviderSelector(tracer=self.tracer)
+        embedding_factory = EmbeddingProviderFactory(
+            tracer=self.tracer,
+            embedding_adapter=embedding_adapter,
+        )
+        embedding_executor = EmbeddingExecutor(
+            selector=embedding_selector,
+            factory=embedding_factory,
+            tracer=self.tracer,
+        )
         rag_policy_service = RagPolicyService(repository=repository)
         ai_repository = AIRepository(repository.db, tracer=tracer)
         rag_runtime_service = RagRuntimeService(
@@ -237,6 +250,7 @@ class ExecutionService(ExecutionServicePort):
             tracer=tracer,
             rag_policy_service=rag_policy_service,
             ai_repository=ai_repository,
+            embedding_executor=embedding_executor,
         )
         tool_catalog_indexer = ToolCatalogIndexer(
             rag_runtime_service=rag_runtime_service,
@@ -251,7 +265,7 @@ class ExecutionService(ExecutionServicePort):
         )
         semantic_cache_service = SemanticCacheService(
             repository=semantic_cache_repository,
-            embedding_adapter=embedding_adapter,
+            embedding_executor=embedding_executor,
             tracer=self.tracer,
             embedding_dimension=settings.EMBEDDING_DIMENSION,
         )

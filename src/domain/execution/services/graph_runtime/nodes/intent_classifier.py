@@ -49,7 +49,9 @@ class IntentClassifier:
         self, context: ExecutionContext, config: dict[str, Any] | None = None
     ) -> NodeResult:
         cfg = config or {}
-        confidence_threshold = cfg.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD)
+        confidence_threshold = cfg.get(
+            "confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD
+        )
         top_k = cfg.get("top_k", DEFAULT_TOP_K)
         user_input = read_user_input(context)
 

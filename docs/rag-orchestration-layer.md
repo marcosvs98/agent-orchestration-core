@@ -1,6 +1,29 @@
 # Embedding Orchestration Layer
 
-Camada responsável por governar a geração de embeddings no pipeline RAG, separando decisão (selector), construção (builder) e execução (provider). O VectorStore define o contrato do índice (modelo, dimensão, métrica), enquanto o runtime apenas o respeita e valida. Garante consistência entre indexing e retrieval, permitindo otimização de custo/latência sem quebrar compatibilidade.
+Camada responsável por governar a geração de embeddings no pipeline RAG, separando decisão (selector), construção (builder) e execução (provider). O VectorStore define o contrato do índice (modelo como **string** `embedding_model`, dimensão, métrica), enquanto o runtime apenas o respeita e valida. Garante consistência entre indexing e retrieval.
+
+Relacionados: [rag-analysis.md](./rag-analysis.md), [rag-model-todo.md](./rag-model-todo.md).
+
+## Fluxo (conceitual)
+
+```mermaid
+flowchart TD
+    REQ[EmbeddingRequest / texto] --> EXEC[EmbeddingExecutor]
+    EXEC --> SEL[EmbeddingSelector]
+    SEL --> BUILD[EmbeddingBuilder]
+    BUILD --> PROV[EmbeddingProvider ex OpenAI]
+    PROV --> VEC[vetores]
+    VEC --> VAL{dimensão == VectorStore.embedding_dimension?}
+    VAL -->|sim| OK[EmbeddingResponse / persistência]
+    VAL -->|não| ERR[erro dimension_mismatch]
+```
+
+## Código atual (hexagonal)
+
+- Port: `src/domain/rag/ports/embedding.py` — `EmbeddingPort` (`generate_embedding`, `generate_embeddings_batch`).
+- Adapter: `src/domain/rag/adapters/openai_embedding_adapter.py` — `OpenAIEmbeddingAdapter` (cache Redis, Langfuse).
+- Wiring: `src/adapters/rag/embedding_adapter.py` re-exporta o adapter para DI (`containers.py`, jobs, `ExecutionService`, etc.).
+- Runtime: `RagRuntimeService` resolve nome do modelo (`model_id` via `ai_repository` ou alias), compara com `vector_store.embedding_model` e dimensão com `vector_store.embedding_dimension` antes de embedar e antes de `search_similar_chunks`.
 
 ## Explicação objetiva:
 
@@ -61,19 +84,19 @@ class EmbeddingRequest:
 ```python
 class EmbeddingExecutor:
     def __init__(
-        self, 
+        self,
         embedding_selector: EmbeddingSelector,
         embedding_builder: EmbeddingBuilder,
     ):
         self.embedding_selector = embedding_selector
         self.embedding_builder = embedding_builder
-    
+
     async def execute(self, request: EmbeddingRequest) -> EmbeddingResponse:
         model = self.embedding_selector.select(request.context)
 
-        # valida contra o modelo do índice
+        # valida contra o modelo do índice (nome operacional string)
         if request.vector_store:
-            if model.model_id != request.vector_store.embedding_model_id:
+            if model.name != request.vector_store.embedding_model:
                 raise Exception("embedding model mismatch with vector store")
 
         provider = self.embedding_builder.build(model)
@@ -171,4 +194,3 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 * embedding_models separado evita poluir LLM config
 
 ---
-
