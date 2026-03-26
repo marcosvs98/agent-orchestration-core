@@ -424,7 +424,6 @@ class RAGContainer(containers.DeclarativeContainer):
     rag_runtime_service = providers.Factory(
         RagRuntimeService,
         repository=rag_repository,
-        embedding_adapter=embedding_adapter,
         tracer=adapters.tracer,
         rag_policy_service=rag_policy_service,
         ai_repository=ai_repository,
@@ -701,7 +700,6 @@ class ConversationContainer(containers.DeclarativeContainer):
     conversation_controller = providers.Factory(
         ConversationController,
         boundary=conversation_boundary,
-        tracer=adapters.tracer,
     )
 
 

@@ -52,7 +52,7 @@ class OperationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class ToolSelectionMode(StrEnum):
+class ToolSelectionMode(StrEnum):  # Todo: Depreciar se não for mais utilizado
     """How tool selection was decided. Used for observability and tracing."""
 
     SEMANTIC_NOOP = "semantic_noop"
@@ -64,7 +64,7 @@ class ToolSelectionMode(StrEnum):
     RAG_WITH_LLM = "rag_with_llm"
 
 
-class ToolSelectionReason(StrEnum):
+class ToolSelectionReason(StrEnum):  # Todo: Depreciar se não for mais utilizado
     """Reason for the tool selection outcome. Used for observability and tracing."""
 
     MISSING_USER_INPUT = "missing_user_input"

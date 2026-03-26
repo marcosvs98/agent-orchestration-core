@@ -62,7 +62,7 @@ class MemoryRetrievalService:
         retrieval_config = config or MemoryRetrievalConfig()
         with self.tracer.observe(
             as_type="retriever",
-            name="domain.context.memory_retrieval.started",
+            name="domain.context.memory_retrieval.get_layered_context",
             input={
                 "tenant_id": str(execution_context.tenant_id)
                 if execution_context
@@ -77,7 +77,7 @@ class MemoryRetrievalService:
                 "decision": decision.model_dump(mode="json"),
                 "task_type": task_type.value,
             },
-        ):
+        ) as retriever:
             session_context = None
             if (
                 decision.allow_session_context
@@ -160,6 +160,8 @@ class MemoryRetrievalService:
                 tenant_knowledge_context=tenant_knowledge_context,
                 user_memory_context=user_memory_context,
             )
+            if retriever:
+                retriever.update(output=result.model_dump(mode="json"))
 
             return result
 

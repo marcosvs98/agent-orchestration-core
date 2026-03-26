@@ -10,8 +10,6 @@ from domain.execution.services.graph_runtime.nodes import (
     ContextSummarizer,
     HumanFallback,
     IntentClassifier,
-    IntentClassifierLLMFallback,
-    IntentExamplesRetriever,
     MemoryCommitNode,
     QueryClarifier,
     ResponseBuilder,
@@ -48,7 +46,6 @@ class NodeRegistry:
         tool_catalog_retriever: ToolCatalogRetriever | None = None,
         tool_catalog_indexer: ToolCatalogIndexer | None = None,
         agents_repository: AgentsRepository | None = None,
-        intent_examples_retriever: IntentExamplesRetriever | None = None,
         llm_moderation_provider: ModerationProviderPort | None = None,
         human_sla_service: HumanSLAService | None = None,
     ) -> None:
@@ -63,7 +60,6 @@ class NodeRegistry:
         self.tool_catalog_retriever = tool_catalog_retriever
         self.tool_catalog_indexer = tool_catalog_indexer
         self.agents_repository = agents_repository
-        self.intent_examples_retriever = intent_examples_retriever
         self.llm_moderation_provider = llm_moderation_provider
         self.human_sla_service = human_sla_service
         self._registry: Dict[str, Type[NodeExecutor]] = {
@@ -134,41 +130,23 @@ class NodeRegistry:
                 tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
                 completion_budget_policy = self.completion_budget_policy
-                agents_repository = self.agents_repository
-                intent_examples_retriever = self.intent_examples_retriever
-                if (
-                    intent_examples_retriever is None
-                    and self.tool_catalog_retriever is not None
-                ):
-                    intent_examples_retriever = IntentExamplesRetriever(
-                        rag_runtime_service=self.tool_catalog_retriever.rag_runtime_service,
-                        tracer=tracer,
-                    )
 
                 class _IntentClassifier(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
-                        llm_fallback = None
-                        if llm_executor and prompt_resolver:
-                            llm_fallback = IntentClassifierLLMFallback(
-                                llm_executor=llm_executor,
-                                prompt_resolver=prompt_resolver,
-                                tracer=tracer,
-                                agent_runtime_resolver=agent_runtime_resolver,
-                                completion_budget_policy=completion_budget_policy,
-                            )
                         super().__init__(
+                            llm_executor=llm_executor,
+                            prompt_resolver=prompt_resolver,
                             tracer=tracer,
-                            agents_repository=agents_repository,
-                            intent_examples_retriever=intent_examples_retriever,
-                            llm_fallback=llm_fallback,
+                            agent_runtime_resolver=agent_runtime_resolver,
+                            completion_budget_policy=completion_budget_policy,
                         )
 
                 return _IntentClassifier
             if node_type == ToolInputFiller.node_type:
                 base_cls = node_cls or ToolInputFiller
+                tracer = self.tracer
                 llm_executor = self.llm_executor
                 prompt_resolver = self.prompt_resolver
-                tracer = self.tracer
                 agent_runtime_resolver = self.agent_runtime_resolver
                 completion_budget_policy = self.completion_budget_policy
 

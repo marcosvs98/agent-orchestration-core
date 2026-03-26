@@ -19,7 +19,7 @@ from settings import (
     TRACING_LEVEL,
 )
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 LANGFUSE_METADATA_MAX_LEN = 200

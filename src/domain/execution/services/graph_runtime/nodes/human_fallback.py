@@ -21,13 +21,10 @@ from domain.execution.services.graph_runtime.agent_runtime_resolver import (
 )
 
 
-# TODO:  Avaliar isso
 class HumanFallback(LLMNodeExecutor):
     node_type = NodeType.HumanFallback
     llm_task = LLMTaskType.FALLBACK_RESPONSE
     prompt_intent = PromptIntent.FALLBACK_RESPONSE
-    side_effect = True
-    deterministic = True
     resolve_prompt_passes_node_type = True
     include_available_tools = False
     result_status = NodeExecutionStatus.SUCCESS

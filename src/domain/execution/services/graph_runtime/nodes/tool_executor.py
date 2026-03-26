@@ -62,14 +62,6 @@ class ToolExecutor(NodeExecutor):
         context: ExecutionContext,
         config: dict[str, Any] | None = None,
     ) -> NodeResult:
-        if context.current_node_run_id is None:
-            return NodeResult(
-                node=self.node_type,
-                status=NodeExecutionStatus.ERROR,
-                error={"message": "node_run_id_not_available"},
-                next_state=context.state,
-            )
-
         try:
             inputs, precomputed_results = await self._parse_inputs_from_context(context)
         except DomainValidationException as exc:

@@ -130,7 +130,7 @@ class ExecutionController:
             name="domain.execution.controller.create_flow_run",
             input={"endpoint": request.url.path, "idempotency_key": idempotency_key},
             trace_context={"trace_id": trace_id_hex},
-        ):
+        ):  # Todo: melhorar este tracing - Remover da controller
             return await self.boundary.ingest_interaction_and_create_flow_run(
                 auth=auth,
                 endpoint=request.url.path,

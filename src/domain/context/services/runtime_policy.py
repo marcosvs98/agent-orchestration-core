@@ -6,8 +6,8 @@ from domain.llm.schemas.llm import LLMTaskType
 
 
 class RuntimeContextLayerPolicy:
+    @staticmethod
     def decide(
-        self,
         *,
         task_type: LLMTaskType,
         task_flags: AITaskContextFlags | None = None,

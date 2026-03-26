@@ -10,7 +10,6 @@ class QueryClarifier(LLMNodeExecutor):
     node_type = NodeType.QueryClarifier
     llm_task = LLMTaskType.CLARIFICATION
     prompt_intent = PromptIntent.CLARIFICATION
-    deterministic = True
     resolve_prompt_passes_node_type = False
     include_available_tools = False
     result_status = NodeExecutionStatus.NEEDS_INPUT

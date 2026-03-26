@@ -246,7 +246,6 @@ class ExecutionService(ExecutionServicePort):
         ai_repository = AIRepository(repository.db, tracer=tracer)
         rag_runtime_service = RagRuntimeService(
             repository=rag_repository,
-            embedding_adapter=embedding_adapter,
             tracer=tracer,
             rag_policy_service=rag_policy_service,
             ai_repository=ai_repository,
@@ -556,29 +555,17 @@ class ExecutionService(ExecutionServicePort):
         origin_start_node_id: str | None = None
         origin_initial_state: dict[str, object] | None = None
         origin_initial_memory: list[dict[str, object]] | None = None
-        candidates: list[UUID] = []
         if origin_flow_run_id is None and flow_run.correlation_id is not None:
             (
                 origin_flow_run_id,
-                candidates,
+                _,
             ) = await self.repository.get_latest_waiting_flow_run_id(
                 session_id=flow_run.session_id,
                 correlation_id=correlation_id,
                 flow_version_id=selected_flow_version_id,
                 user_id=flow_run.user_id,
             )
-        if len(candidates) > 1:
-            with self.tracer.observe(
-                as_type="event",
-                name="domain.execution.execution_service.ambiguous_waiting_origin",
-                input={
-                    "session_id": str(flow_run.session_id),
-                    "correlation_id": str(correlation_id),
-                    "flow_version_id": str(selected_flow_version_id),
-                    "candidate_ids": [str(candidate) for candidate in candidates],
-                },
-            ):
-                pass
+
         if origin_flow_run_id is not None:
             await self.repository.acquire_flow_run_lock(
                 origin_flow_run_id, owner=None, correlation_id=correlation_id

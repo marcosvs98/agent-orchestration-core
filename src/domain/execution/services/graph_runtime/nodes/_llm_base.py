@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 from uuid import UUID
 
+from application.prompts.prompt_resolver import PromptResolver
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.trace import TraceContext
 from domain.execution.services.graph_runtime.agent_runtime_resolver import (
@@ -33,8 +34,6 @@ class LLMNodeExecutor:
     node_type: NodeType
     llm_task: LLMTaskType
     prompt_intent: PromptIntent
-    side_effect = False
-    deterministic = False
 
     resolve_prompt_passes_node_type: bool = True
     json_schema_name: str = ""
@@ -47,7 +46,7 @@ class LLMNodeExecutor:
         self,
         tracer: RuntimeTracerPort,
         llm_executor: LLMExecutorPort,
-        prompt_resolver: Any,
+        prompt_resolver: PromptResolver,
         agent_runtime_resolver: AgentRuntimeResolver | None = None,
         completion_budget_policy: CompletionBudgetPolicyPort | None = None,
     ) -> None:

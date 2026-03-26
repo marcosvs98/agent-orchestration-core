@@ -20,7 +20,7 @@ from domain.conversation.schemas.conversation_read import (
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from exceptions.service_exceptions import NotFoundServiceException
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 def _interaction_user_input(payload: dict[str, Any] | None) -> Any | None:

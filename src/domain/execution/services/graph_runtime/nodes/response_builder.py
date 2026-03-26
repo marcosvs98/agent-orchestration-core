@@ -11,7 +11,7 @@ class ResponseBuilder(LLMNodeExecutor):
     llm_task = LLMTaskType.RESPONSE_RENDER
     prompt_intent = PromptIntent.RESPONSE_RENDER
     resolve_prompt_passes_node_type = True
-    include_available_tools = True
+    include_available_tools = False
     result_status = NodeExecutionStatus.SUCCESS
     write_next_state = True
     state_key_use_value = False

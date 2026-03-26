@@ -434,7 +434,8 @@ class RagActivationService:
             "user_id": user_id,
         }
 
-    def _classify_input(self, *, user_input: str | None) -> RagInputKind:
+    @staticmethod
+    def _classify_input(*, user_input: str | None) -> RagInputKind:
         if user_input is None:
             return RagInputKind.EMPTY
         normalized = user_input.strip()
@@ -444,8 +445,8 @@ class RagActivationService:
             return RagInputKind.STRUCTURED
         return RagInputKind.TEXT
 
+    @staticmethod
     def _heuristic_reason(
-        self,
         *,
         scope: RagActivationScope,
         user_input: str | None,
@@ -486,6 +487,7 @@ class RagActivationService:
             input={
                 "tenant_id": str(tenant_id),
                 "scope": decision.scope.value,
+                "user_id": user_id,
                 "task_type": task_type.value,
                 "enabled": decision.enabled,
                 "reason": decision.reason.value,
@@ -516,3 +518,10 @@ class RagActivationService:
             },
         ):
             pass
+            """
+            # Todo: Este span precisa estar presente e ter output
+            with langfuse.start_as_current_observation(name="process-query", as_type="span") as span:
+                # Do work
+                result = process_data()
+                span.update(output=result)
+            """

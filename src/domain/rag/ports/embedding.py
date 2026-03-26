@@ -10,8 +10,7 @@ class EmbeddingPort(Protocol):
         *,
         model: str | None = None,
         dimension: int | None = None,
-    ) -> list[float]:
-        ...
+    ) -> list[float]: ...
 
     async def generate_embeddings_batch(
         self,
@@ -19,5 +18,4 @@ class EmbeddingPort(Protocol):
         *,
         model: str | None = None,
         dimension: int | None = None,
-    ) -> list[list[float]]:
-        ...
+    ) -> list[list[float]]: ...

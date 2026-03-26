@@ -4,6 +4,7 @@ from domain.auth.schemas.auth import TenantTokenRequest, TenantTokenResponse
 from domain.auth.services.auth_service import AuthService
 from exceptions.service_exceptions import AuthorizationDeniedException
 from utils.auth import AuthContext, get_auth_context
+from domain.governance.schemas.scopes import Scope
 
 
 class AuthController:
@@ -29,7 +30,7 @@ class AuthController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> TenantTokenResponse:
         """Issue a JWT for the given tenant. Requires tenants:create scope."""
-        if "tenants:create" not in auth.scopes:
+        if Scope.TenantsCreate not in auth.scopes:
             raise AuthorizationDeniedException(message="insufficient_scope")
         return await self.service.issue_tenant_token(
             tenant_id=body.tenant_id,

@@ -43,7 +43,8 @@ class AuthService:
         self.tenants_repository = tenants_repository
         self.authoring_event_repository = authoring_event_repository
 
-    def _check_rate_limit(self, principal_id: str) -> None:
+    @staticmethod
+    def _check_rate_limit(principal_id: str) -> None:
         now = time.time()
         cutoff = now - _TENANT_TOKEN_RATE_WINDOW_SECONDS
         with _rate_lock:

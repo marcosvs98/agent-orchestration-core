@@ -13,7 +13,6 @@ from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.governance.schemas.rag_policy import RagIngestQuotas, ResolvedRagPolicy
 from domain.governance.services.rag_policy_service import RagPolicyService
-from domain.rag.ports.embedding import EmbeddingPort
 from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.schemas.embedding import (
     EmbeddingContract,
@@ -78,14 +77,14 @@ class RagRuntimeService:
     def __init__(
         self,
         repository: RagRepository,
-        embedding_adapter: EmbeddingPort,
+        # embedding_adapter: EmbeddingPort,
         tracer: RuntimeTracerPort,
         rag_policy_service: RagPolicyService,
         ai_repository: AIRepository,
         embedding_executor: EmbeddingExecutor,
     ) -> None:
         self.repository = repository
-        self.embedding_adapter = embedding_adapter
+        # self.embedding_adapter = embedding_adapter
         self.tracer = tracer
         self.rag_policy_service = rag_policy_service
         self.ai_repository = ai_repository
@@ -654,9 +653,7 @@ class RagRuntimeService:
                 generation_contract=None,
             )
         if not options.embedding:
-            raise DomainValidationException(
-                message="rag_retrievel_embedding_not_found"
-            )
+            raise DomainValidationException(message="rag_retrievel_embedding_not_found")
 
         if int(options.embedding.dimension) > int(vector_store.embedding_dimension):
             raise DomainValidationException(

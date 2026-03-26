@@ -36,4 +36,3 @@ class EmbeddingProviderSelection(BaseModel):
     provider: str
     provider_model: str
     contract: EmbeddingContract
-

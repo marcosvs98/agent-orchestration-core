@@ -79,7 +79,7 @@ class EndUserListItem(EndUserReadRecord):
 
 
 class PaginatedEndUsersResponse(BaseModel):
-    items: list[EndUserListItem]
+    items: list[EndUserReadRecord]
     limit: int
     offset: int
     has_next: bool

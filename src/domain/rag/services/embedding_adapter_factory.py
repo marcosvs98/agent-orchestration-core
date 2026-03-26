@@ -22,7 +22,6 @@ class EmbeddingProviderFactory:
             name="domain.rag.embedding_provider_factory.build",
             input={"provider": selection.provider},
         ):
-            if selection.provider.lower() == "openai": # Todo: StrEnum here
+            if selection.provider.lower() == "openai":  # Todo: StrEnum here
                 return self.embedding_adapter
         raise DomainValidationException(message="embedding_provider_not_supported")
-

@@ -54,20 +54,12 @@ class ToolCatalogIndexer:
         if rag_config is None:
             return False
         payload = self._compose_payload(document)
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.tools.tool_catalog_indexer.index_document",
-            input={
-                "tenant_id": str(tenant_id),
-                "tool_config_id": str(document.tool_config_id),
-                "rag_config_id": str(rag_config.rag_config_id),
-            },
-        ):
-            await self.rag_runtime_service.ingest_document(
-                tenant_id=tenant_id,
-                rag_config_id=rag_config.rag_config_id,
-                document=payload,
-            )
+
+        await self.rag_runtime_service.ingest_document(
+            tenant_id=tenant_id,
+            rag_config_id=rag_config.rag_config_id,
+            document=payload,
+        )
         return True
 
     async def _select_rag_config(self, *, tenant_id: UUID):

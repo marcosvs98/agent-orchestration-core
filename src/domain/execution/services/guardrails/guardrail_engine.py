@@ -81,8 +81,8 @@ class GuardrailEngine:
                 "provider": provider,
                 "provider_model": provider_model,
             },
-        ):
-            return await self._check_and_reserve_impl(
+        ) as guardrail:
+            guardrail_decision: GuardrailDecision = await self._check_and_reserve_impl(
                 tenant_id=tenant_id,
                 flow_run_id=flow_run_id,
                 request=request,
@@ -90,6 +90,10 @@ class GuardrailEngine:
                 provider=provider,
                 provider_model=provider_model,
             )
+            if guardrail:
+                guardrail.update(output=guardrail_decision.model_dump(mode="json"))
+
+            return guardrail_decision
 
     async def _check_and_reserve_impl(
         self,
@@ -219,7 +223,7 @@ class GuardrailEngine:
 
         return GuardrailDecision(
             decision=GuardrailDecisionType.ALLOW,
-            reason_code="ALLOW",
+            reason_code="ALLOW",  # Todo: StrEnum here
             applied_limits=applied_limits,
             overrides=overrides,
         )

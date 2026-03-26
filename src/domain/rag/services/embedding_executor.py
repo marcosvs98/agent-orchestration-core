@@ -32,7 +32,7 @@ class EmbeddingExecutor:
                 "dimension": request.contract.dimension,
                 "version": request.contract.version,
             },
-        ):
+        ) as embedding_handle:
             selection = await self.selector.select(contract=request.contract)
             provider = self.factory.build(selection)
             embedding = await provider.generate_embedding(
@@ -41,6 +41,8 @@ class EmbeddingExecutor:
                 dimension=request.contract.dimension,
             )
             if len(embedding) == request.contract.dimension:
+                if embedding_handle:
+                    pass  # Todo:
                 return embedding
             raise DomainValidationException(message="rag_embedding_dimension_mismatch")
 
@@ -71,4 +73,3 @@ class EmbeddingExecutor:
                         message="rag_embedding_dimension_mismatch"
                     )
             return embeddings
-

@@ -146,8 +146,11 @@ class RunLifecycleStateMachine:
             as_type="guardrail",
             name="domain.execution.state_machine.validate_flow",
             input={"current": str(current), "target": str(target)},
-        ):
+        ) as guardrail:
             if target not in self.flow_transitions.get(current, set()):
+                if guardrail:
+                    # TODO: improve the instrumentation here
+                    pass
                 raise InvalidTransitionException(
                     message=f"Invalid FlowRun transition: {current} -> {target}"
                 )
@@ -157,8 +160,11 @@ class RunLifecycleStateMachine:
             as_type="guardrail",
             name="domain.execution.state_machine.validate_node",
             input={"current": str(current), "target": str(target)},
-        ):
+        ) as guardrail:
             if target not in self.node_transitions.get(current, set()):
+                if guardrail:
+                    # TODO: improve the instrumentation here
+                    pass
                 raise InvalidTransitionException(
                     message=f"Invalid NodeRun transition: {current} -> {target}"
                 )
@@ -168,8 +174,11 @@ class RunLifecycleStateMachine:
             as_type="guardrail",
             name="domain.execution.state_machine.validate_agent",
             input={"current": str(current), "target": str(target)},
-        ):
+        ) as guardrail:
             if target not in self.agent_transitions.get(current, set()):
+                if guardrail:
+                    # TODO: improve the instrumentation here
+                    pass
                 raise InvalidTransitionException(
                     message=f"Invalid AgentRun transition: {current} -> {target}"
                 )
@@ -179,8 +188,11 @@ class RunLifecycleStateMachine:
             as_type="guardrail",
             name="domain.execution.state_machine.validate_tool",
             input={"current": str(current), "target": str(target)},
-        ):
+        ) as guardrail:
             if target not in self.tool_transitions.get(current, set()):
+                if guardrail:
+                    # TODO: improve the instrumentation here
+                    pass
                 raise InvalidTransitionException(
                     message=f"Invalid ToolRun transition: {current} -> {target}"
                 )
