@@ -120,23 +120,6 @@ class MemoryCommitNode:
             return
         node = await self.execution_repository.get_node(node_uuid)
         if node is None or not bool(node.allow_memory_write):
-            if self.tracer is not None:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="domain.context.memory_policy_decision",
-                    input={
-                        "flow_run_id": str(context.flow_run_id),
-                        "correlation_id": str(context.correlation_id),
-                        "tenant_id": str(context.tenant_id),
-                        "user_id": context.user_id,
-                        "source": str(memory_item.get("source")),
-                        "schema_id": str(memory_item.get("schema_id")),
-                        "allowed": False,
-                        "policy_version_id": None,
-                        "reason": "ai_task_memory_write_disabled",
-                    },
-                ):
-                    return
             return
         try:
             await self.memory_write_service.write_memory_item(
@@ -152,23 +135,7 @@ class MemoryCommitNode:
                 ),
             )
         except BaseServiceException as exc:
-            if self.tracer is not None:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="domain.context.memory_policy_decision",
-                    input={
-                        "flow_run_id": str(context.flow_run_id),
-                        "correlation_id": str(context.correlation_id),
-                        "tenant_id": str(context.tenant_id),
-                        "user_id": context.user_id,
-                        "source": str(memory_item.get("source")),
-                        "schema_id": str(memory_item.get("schema_id")),
-                        "allowed": False,
-                        "policy_version_id": None,
-                        "reason": exc.message,
-                    },
-                ):
-                    return
+            return
 
     async def execute(
         self, context: ExecutionContext, config: dict[str, Any] | None = None

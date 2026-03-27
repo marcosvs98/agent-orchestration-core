@@ -24,7 +24,7 @@ class EmbeddingExecutor:
 
     async def execute(self, request: EmbeddingExecutionRequest) -> list[float]:
         with self.tracer.observe(
-            as_type="embedding",
+            as_type="span",
             name="domain.rag.embedding_executor.execute",
             input={
                 "use_case": request.use_case,
@@ -32,7 +32,7 @@ class EmbeddingExecutor:
                 "dimension": request.contract.dimension,
                 "version": request.contract.version,
             },
-        ) as embedding_handle:
+        ) as span_handler:
             selection = await self.selector.select(contract=request.contract)
             provider = self.factory.build(selection)
             embedding = await provider.generate_embedding(
@@ -41,8 +41,8 @@ class EmbeddingExecutor:
                 dimension=request.contract.dimension,
             )
             if len(embedding) == request.contract.dimension:
-                if embedding_handle:
-                    pass  # Todo:
+                if span_handler:
+                    span_handler.update(output={"found": True})
                 return embedding
             raise DomainValidationException(message="rag_embedding_dimension_mismatch")
 
@@ -50,7 +50,7 @@ class EmbeddingExecutor:
         self, request: EmbeddingBatchExecutionRequest
     ) -> list[list[float]]:
         with self.tracer.observe(
-            as_type="embedding",
+            as_type="span",
             name="domain.rag.embedding_executor.execute_batch",
             input={
                 "use_case": request.use_case,
@@ -59,7 +59,7 @@ class EmbeddingExecutor:
                 "version": request.contract.version,
                 "size": len(request.texts),
             },
-        ):
+        ) as span_handler:
             selection = await self.selector.select(contract=request.contract)
             provider = self.factory.build(selection)
             embeddings = await provider.generate_embeddings_batch(
@@ -72,4 +72,6 @@ class EmbeddingExecutor:
                     raise DomainValidationException(
                         message="rag_embedding_dimension_mismatch"
                     )
+            if span_handler:
+                span_handler.update(output={"found": True})
             return embeddings

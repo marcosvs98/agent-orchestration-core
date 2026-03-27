@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
@@ -130,3 +130,46 @@ class ExecutionLimitPolicyRepository:
                         }
                     )
                 return items
+
+    async def ensure_default_published_policy_for_tenant(self, tenant_id: UUID) -> None:
+        async with self.db.get_session() as session:
+            policy_stmt = (
+                select(ExecutionLimitPolicyModel)
+                .where(ExecutionLimitPolicyModel.tenant_id == tenant_id)
+                .order_by(ExecutionLimitPolicyModel.created_at.asc())
+                .limit(1)
+            )
+            policy_result = await session.execute(policy_stmt)
+            policy = policy_result.scalar_one_or_none()
+            if policy is None:
+                policy = ExecutionLimitPolicyModel(
+                    execution_limit_policy_id=uuid4(),
+                    tenant_id=tenant_id,
+                    name="Default execution limits",
+                )
+                session.add(policy)
+                await session.flush()
+            pub_stmt = (
+                select(ExecutionLimitPolicyVersionModel)
+                .where(
+                    ExecutionLimitPolicyVersionModel.execution_limit_policy_id
+                    == policy.execution_limit_policy_id,
+                    ExecutionLimitPolicyVersionModel.status == VersionStatus.PUBLISHED,
+                )
+                .limit(1)
+            )
+            pub_result = await session.execute(pub_stmt)
+            if pub_result.scalar_one_or_none() is not None:
+                await session.commit()
+                return
+            session.add(
+                ExecutionLimitPolicyVersionModel(
+                    execution_limit_policy_version_id=uuid4(),
+                    execution_limit_policy_id=policy.execution_limit_policy_id,
+                    status=VersionStatus.PUBLISHED,
+                    version_major=1,
+                    version_minor=0,
+                    version_patch=0,
+                )
+            )
+            await session.commit()

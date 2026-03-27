@@ -813,6 +813,8 @@ class ExecutionRepository:
         edge_id: str | None = None,
     ) -> UUID:
         event_id = uuid4()
+        if flow_run_id is None:
+            return event_id
         in_batching = False
         events_to_flush: list[dict] = []
         async with self._event_batch_lock:

@@ -47,13 +47,6 @@ class RateLimitService:
                 )
 
         if policy is None:
-            with self.tracer.observe(
-                as_type="event",
-                name="governance.rate_limit.policy_missing",
-                input={"tenant_id": str(tenant_id), "action": action},
-            ) as event_handle:
-                if event_handle:
-                    event_handle.success(output={"reason": "policy_not_configured"})
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_configured"
             )
@@ -64,16 +57,6 @@ class RateLimitService:
             principal_type=principal_type,
         )
         if version is None:
-            with self.tracer.observe(
-                as_type="event",
-                name="governance.rate_limit.policy_unpublished",
-                input={
-                    "policy_id": str(policy.rate_limit_policy_id),
-                    "action": action,
-                },
-            ) as event_handle:
-                if event_handle:
-                    event_handle.success(output={"reason": "policy_not_published"})
             raise AuthorizationDeniedException(
                 message="rate_limit_policy_not_published"
             )
@@ -101,26 +84,4 @@ class RateLimitService:
                     }
                 )
         if int(value) > int(version.limit):
-            with self.tracer.observe(
-                as_type="event",
-                name="governance.rate_limit.exceeded",
-                input={
-                    "tenant_id": str(tenant_id),
-                    "action": action,
-                    "principal_type": principal_type,
-                    "principal_id": principal_id,
-                    "limit": int(version.limit),
-                    "count": int(value),
-                },
-            ) as event_handle:
-                if event_handle:
-                    event_handle.success(
-                        output={
-                            "exceeded": True,
-                            "principal_type": principal_type,
-                            "principal_id": principal_id,
-                            "limit": int(version.limit),
-                            "count": int(value),
-                        }
-                    )
             raise RateLimitExceededException(message="rate_limit_exceeded")

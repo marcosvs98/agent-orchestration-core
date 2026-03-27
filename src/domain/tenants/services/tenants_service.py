@@ -5,6 +5,9 @@ from uuid import UUID
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
+from domain.governance.repositories.execution_limit_policy_repository import (
+    ExecutionLimitPolicyRepository,
+)
 from domain.tenants.ports.service import TenantsServicePort
 from domain.tenants.repositories.tenants_repository import TenantsRepository
 from domain.tenants.schemas.tenants import (
@@ -21,9 +24,11 @@ class TenantsService(TenantsServicePort):
         self,
         repository: TenantsRepository,
         authoring_events: AuthoringEventRepository,
+        execution_limit_policy_repository: ExecutionLimitPolicyRepository | None = None,
     ) -> None:
         self.repository = repository
         self.authoring_events = authoring_events
+        self.execution_limit_policy_repository = execution_limit_policy_repository
 
     async def create(
         self, *, tenant_create: TenantCreate, principal_id: str
@@ -33,6 +38,10 @@ class TenantsService(TenantsServicePort):
                 tenant_create.external_id
             )
             if existing is not None:
+                if self.execution_limit_policy_repository is not None:
+                    await self.execution_limit_policy_repository.ensure_default_published_policy_for_tenant(
+                        existing.tenant_id
+                    )
                 tenant_dict = existing.to_dict()
                 tenant_dict["id"] = tenant_dict.pop("tenant_id")
                 return TenantResponse.model_validate(tenant_dict), False
@@ -40,6 +49,10 @@ class TenantsService(TenantsServicePort):
         model = await self.repository.create_tenant(
             tenant_data=tenant_create.model_dump(mode="json")
         )
+        if self.execution_limit_policy_repository is not None:
+            await self.execution_limit_policy_repository.ensure_default_published_policy_for_tenant(
+                model.tenant_id
+            )
         await self.authoring_events.append_event(
             tenant_id=model.tenant_id,
             resource_type="tenant",

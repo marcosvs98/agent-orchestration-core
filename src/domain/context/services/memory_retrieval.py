@@ -60,110 +60,91 @@ class MemoryRetrievalService:
         user_top_k_override: int | None = None,
     ) -> LayeredMemoryContext:
         retrieval_config = config or MemoryRetrievalConfig()
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.context.memory_retrieval.get_layered_context",
-            input={
-                "tenant_id": str(execution_context.tenant_id)
-                if execution_context
-                else (
-                    str(tenant_id_for_knowledge) if tenant_id_for_knowledge else None
-                ),
-                "user_id": user_id_for_memory
-                or (execution_context.user_id if execution_context else None),
-                "flow_run_id": str(execution_context.flow_run_id)
-                if execution_context
-                else None,
-                "decision": decision.model_dump(mode="json"),
-                "task_type": task_type.value,
-            },
-        ) as retriever:
-            session_context = None
-            if (
-                decision.allow_session_context
-                and self.session_context_service is not None
-                and execution_context is not None
-            ):
-                session_context = await self.session_context_service.load_snapshot(
-                    flow_run_id=execution_context.flow_run_id
-                )
 
-            tenant_knowledge_context = None
-            if (
-                decision.allow_tenant_knowledge
-                and self.tenant_knowledge_retriever is not None
-                and tenant_id_for_knowledge is not None
-                and tenant_rag_config_id is not None
-                and user_input
-            ):
-                tenant_knowledge_context = (
-                    await self.tenant_knowledge_retriever.retrieve(
-                        query=TenantKnowledgeQuery(
-                            tenant_id=tenant_id_for_knowledge,
-                            rag_config_id=tenant_rag_config_id,
-                            user_input=user_input,
-                        ),
-                        top_k_override=tenant_top_k_override,
-                        filters_override=tenant_filters_override,
-                    )
-                )
-
-            user_memory_context = None
-            if (
-                decision.allow_user_memory_structured
-                and self.user_memory_reader is not None
-                and execution_context is not None
-                and user_id_for_memory is not None
-            ):
-                base_top_k = user_top_k_override
-                candidate_top_k = user_top_k_override
-                temporal_enabled = (
-                    decision.allow_user_memory_vector
-                    and retrieval_config.temporal_scoring.enabled
-                )
-                if temporal_enabled and base_top_k is not None:
-                    multiplier = max(
-                        1,
-                        int(retrieval_config.temporal_scoring.candidate_multiplier),
-                    )
-                    candidate_top_k = base_top_k * multiplier
-                user_memory_context = await self.user_memory_reader.get_context(
-                    query=UserMemoryQuery(
-                        tenant_id=execution_context.tenant_id,
-                        user_id=user_id_for_memory,
-                        rag_config_id=tenant_rag_config_id
-                        if decision.allow_user_memory_vector
-                        else None,
-                        user_input=user_input
-                        if decision.allow_user_memory_vector
-                        else "",
-                    ),
-                    task_type=task_type,
-                    task_flags=task_flags,
-                    tool_config_id=tool_config_id,
-                    context_metadata=context_metadata,
-                    top_k_override=candidate_top_k,
-                )
-                if temporal_enabled and user_memory_context.rag_context is not None:
-                    user_memory_context = UserMemoryContext(
-                        structured=user_memory_context.structured,
-                        rag_context=self._rerank_with_temporal_decay(
-                            rag_context=user_memory_context.rag_context,
-                            base_top_k=base_top_k,
-                            timestamp_source=retrieval_config.temporal_scoring.timestamp_source,
-                            half_life_seconds=retrieval_config.temporal_scoring.half_life_seconds,
-                        ),
-                    )
-
-            result = LayeredMemoryContext(
-                session_context=session_context,
-                tenant_knowledge_context=tenant_knowledge_context,
-                user_memory_context=user_memory_context,
+        session_context = None
+        if (
+            decision.allow_session_context
+            and self.session_context_service is not None
+            and execution_context is not None
+        ):
+            session_context = await self.session_context_service.load_snapshot(
+                flow_run_id=execution_context.flow_run_id
             )
-            if retriever:
-                retriever.update(output=result.model_dump(mode="json"))
 
-            return result
+        tenant_knowledge_context = None
+        if (
+            decision.allow_tenant_knowledge
+            and self.tenant_knowledge_retriever is not None
+            and tenant_id_for_knowledge is not None
+            and tenant_rag_config_id is not None
+            and user_input
+        ):
+            tenant_knowledge_context = (
+                await self.tenant_knowledge_retriever.retrieve(
+                    query=TenantKnowledgeQuery(
+                        tenant_id=tenant_id_for_knowledge,
+                        rag_config_id=tenant_rag_config_id,
+                        user_input=user_input,
+                    ),
+                    top_k_override=tenant_top_k_override,
+                    filters_override=tenant_filters_override,
+                )
+            )
+
+        user_memory_context = None
+        if (
+            decision.allow_user_memory_structured
+            and self.user_memory_reader is not None
+            and execution_context is not None
+            and user_id_for_memory is not None
+        ):
+            base_top_k = user_top_k_override
+            candidate_top_k = user_top_k_override
+            temporal_enabled = (
+                decision.allow_user_memory_vector
+                and retrieval_config.temporal_scoring.enabled
+            )
+            if temporal_enabled and base_top_k is not None:
+                multiplier = max(
+                    1,
+                    int(retrieval_config.temporal_scoring.candidate_multiplier),
+                )
+                candidate_top_k = base_top_k * multiplier
+            user_memory_context = await self.user_memory_reader.get_context(
+                query=UserMemoryQuery(
+                    tenant_id=execution_context.tenant_id,
+                    user_id=user_id_for_memory,
+                    rag_config_id=tenant_rag_config_id
+                    if decision.allow_user_memory_vector
+                    else None,
+                    user_input=user_input
+                    if decision.allow_user_memory_vector
+                    else "",
+                ),
+                task_type=task_type,
+                task_flags=task_flags,
+                tool_config_id=tool_config_id,
+                context_metadata=context_metadata,
+                top_k_override=candidate_top_k,
+            )
+            if temporal_enabled and user_memory_context.rag_context is not None:
+                user_memory_context = UserMemoryContext(
+                    structured=user_memory_context.structured,
+                    rag_context=self._rerank_with_temporal_decay(
+                        rag_context=user_memory_context.rag_context,
+                        base_top_k=base_top_k,
+                        timestamp_source=retrieval_config.temporal_scoring.timestamp_source,
+                        half_life_seconds=retrieval_config.temporal_scoring.half_life_seconds,
+                    ),
+                )
+
+        result = LayeredMemoryContext(
+            session_context=session_context,
+            tenant_knowledge_context=tenant_knowledge_context,
+            user_memory_context=user_memory_context,
+        )
+
+        return result
 
     def _rerank_with_temporal_decay(
         self,

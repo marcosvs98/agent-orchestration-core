@@ -217,18 +217,6 @@ class ContextBuilder:
                     )
                 except AttributeError:
                     return decision.model_copy(update={"allow_tenant_knowledge": True})
-            with self.tracer.observe(
-                as_type="event",
-                name="domain.context.user_context_enrichment.gated_block",
-                input={
-                    "task_type": task_type.value,
-                    "published": False,
-                    "allow_tenant_knowledge": False,
-                    "allow_user_memory_structured": False,
-                    "allow_user_memory_vector": False,
-                },
-            ):
-                pass
             return decision.model_copy(
                 update={
                     "allow_tenant_knowledge": False,

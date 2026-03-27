@@ -35,15 +35,6 @@ class CircuitBreaker:
                 try:
                     data = await self.redis.get(self._key(scope))
                     if data and data.get("state") == "open":
-                        with self.tracer.observe(
-                            as_type="event",
-                            name="domain.llm.circuit_breaker.breaker_open_block",
-                            input={"scope": scope},
-                        ) as block_handle:
-                            if block_handle:
-                                block_handle.success(
-                                    output={"blocked": True, "reason": "circuit_open"}
-                                )
                             raise DomainValidationException(
                                 message="llm_circuit_breaker_open"
                             )
@@ -58,15 +49,6 @@ class CircuitBreaker:
             else:
                 data = await self.redis.get(self._key(scope))
                 if data and data.get("state") == "open":
-                    with self.tracer.observe(
-                        as_type="event",
-                        name="domain.llm.circuit_breaker.breaker_open_block",
-                        input={"scope": scope},
-                    ) as block_handle:
-                        if block_handle:
-                            block_handle.success(
-                                output={"blocked": True, "reason": "circuit_open"}
-                            )
                         raise DomainValidationException(
                             message="llm_circuit_breaker_open"
                         )
@@ -85,20 +67,11 @@ class CircuitBreaker:
                 )
                 transitioned = count >= self.failure_threshold
                 if transitioned:
-                    with self.tracer.observe(
-                        as_type="event",
-                        name="domain.llm.circuit_breaker.breaker_transition_open",
-                        input={"scope": scope},
-                    ) as transition_handle:
-                        await self.redis.set(
-                            self._key(scope),
-                            {"state": "open"},
-                            ttl=self.window_seconds,
-                        )
-                        if transition_handle:
-                            transition_handle.success(
-                                output={"state": "open", "count": int(count)}
-                            )
+                    await self.redis.set(
+                        self._key(scope),
+                        {"state": "open"},
+                        ttl=self.window_seconds,
+                    )
                 if failure_handle:
                     failure_handle.success(
                         output={"count": int(count), "transitioned": transitioned}

@@ -60,6 +60,12 @@ class RagController:
             status_code=status.HTTP_201_CREATED,
         )
         r(
+            "/rag-configs/{rag_config_id}:validate",
+            self.validate_rag_config,
+            methods=["POST"],
+            response_model=RagConfig,
+        )
+        r(
             "/rag-configs/{rag_config_id}:publish",
             self.publish_rag_config,
             methods=["POST"],
@@ -158,6 +164,18 @@ class RagController:
         return await self.service.create_rag_config(
             tenant_id=auth.tenant_id,
             rag_config_create=rag_config_create,
+            principal_id=auth.principal_id,
+        )
+
+    async def validate_rag_config(
+        self,
+        rag_config_id: str,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagConfig:
+        self._ensure_scope(auth, Scope.RagConfigsValidate)
+        return await self.service.validate_rag_config(
+            tenant_id=auth.tenant_id,
+            rag_config_id=rag_config_id,
             principal_id=auth.principal_id,
         )
 

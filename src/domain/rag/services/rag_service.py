@@ -156,6 +156,49 @@ class RagService(RagServicePort):
             config_hash=config_model.config_hash,
         )
 
+    async def validate_rag_config(
+        self,
+        *,
+        tenant_id: UUID,
+        rag_config_id: str,
+        principal_id: str,
+    ) -> RagConfig:
+        config_uuid = UUID(rag_config_id)
+        config = await self.repository.get_rag_config(config_uuid)
+        if config is None or config.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="rag_config_not_found")
+        if config.status != VersionStatus.DRAFT:
+            raise ResourceBlockedServiceException(message="rag_config_not_draft")
+        await self.repository.set_rag_config_status(
+            rag_config_id=config_uuid, status=VersionStatus.VALIDATED
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type=ResourceType.RAG_CONFIG,
+            resource_id=config_uuid,
+            version_id=None,
+            event_type=AuthoringEventType.RAG_CONFIG_VALIDATED,
+            change_type=ChangeType.UPDATE,
+            principal_id=principal_id,
+            justification="validate rag config",
+            schema_version=1,
+        )
+        refreshed = await self.repository.get_rag_config(config_uuid)
+        if refreshed is None:
+            raise NotFoundServiceException(message="rag_config_not_found")
+        return RagConfig(
+            id=refreshed.rag_config_id,
+            vector_store_id=refreshed.vector_store_id,
+            chunking_rule_id=refreshed.chunking_rule_id,
+            corpus_kind=RagCorpusKind(refreshed.corpus_kind),
+            options=refreshed.options,
+            status=refreshed.status,
+            version_major=refreshed.version_major,
+            version_minor=refreshed.version_minor,
+            version_patch=refreshed.version_patch,
+            config_hash=refreshed.config_hash,
+        )
+
     async def publish_rag_config(
         self,
         *,

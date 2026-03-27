@@ -203,14 +203,6 @@ class MemoryWriteService:
                 else None,
                 "profile_version": profile_version,
             }
-            self._emit_trace_event(
-                name=f"event.{ExecutionEventType.MemoryUpdated.value}",
-                payload={
-                    "tenant_id": str(tenant_id),
-                    "user_id": user_id,
-                    **event_payload,
-                },
-            )
             await self._append_execution_event(
                 tenant_id=tenant_id,
                 event_context=event_context,
@@ -229,26 +221,7 @@ class MemoryWriteService:
                 user_id=user_id,
                 rag_config_id=memory_item.rag_config_id,
             )
-            if current_count >= cap["effective_cap"]:
-                self._emit_trace_event(
-                    name="domain.memory.write.cap_reached",
-                    payload={
-                        "tenant_id": str(tenant_id),
-                        "user_id": user_id,
-                        "rag_config_id": str(memory_item.rag_config_id),
-                        "current_count": current_count,
-                        "effective_cap": cap["effective_cap"],
-                        "app_max_user_memory_documents": cap[
-                            "app_max_user_memory_documents"
-                        ],
-                        "tenant_max_documents_per_user": cap[
-                            "tenant_max_documents_per_user"
-                        ],
-                        "binding": cap["binding"],
-                        "reason_code": cap["reason_code"],
-                    },
-                )
-            else:
+            if current_count < cap["effective_cap"]:
                 prepared_document = (
                     await self.rag_runtime_service.prepare_document_for_embedding(
                         tenant_id=tenant_id,
@@ -297,14 +270,6 @@ class MemoryWriteService:
                         "rag_config_id": str(memory_item.rag_config_id),
                         "document_id": str(prepared_document.id),
                     }
-                    self._emit_trace_event(
-                        name=f"event.{ExecutionEventType.MemoryEmbedded.value}",
-                        payload={
-                            "tenant_id": str(tenant_id),
-                            "user_id": user_id,
-                            **event_payload,
-                        },
-                    )
                     await self._append_execution_event(
                         tenant_id=tenant_id,
                         event_context=event_context,
@@ -332,14 +297,6 @@ class MemoryWriteService:
                         "rag_config_id": str(memory_item.rag_config_id),
                         "document_id": str(document.id),
                     }
-                    self._emit_trace_event(
-                        name=f"event.{ExecutionEventType.MemoryEmbedded.value}",
-                        payload={
-                            "tenant_id": str(tenant_id),
-                            "user_id": user_id,
-                            **event_payload,
-                        },
-                    )
                     await self._append_execution_event(
                         tenant_id=tenant_id,
                         event_context=event_context,
@@ -386,14 +343,6 @@ class MemoryWriteService:
                         event_context=event_context,
                         event_type=ExecutionEventType.MemoryEmbeddingQueued,
                         payload=queued_payload,
-                    )
-                    self._emit_trace_event(
-                        name="domain.rag.embedding.queued",
-                        payload={
-                            "tenant_id": str(tenant_id),
-                            "user_id": user_id,
-                            **queued_payload,
-                        },
                     )
 
         return result
@@ -482,14 +431,6 @@ class MemoryWriteService:
         }
         if new_version is not None:
             payload["new_version"] = new_version
-        self._emit_trace_event(
-            name=f"event.{ExecutionEventType.MemoryUpdated.value}",
-            payload={
-                "tenant_id": str(tenant_id),
-                "user_id": user_id,
-                **payload,
-            },
-        )
         await self._append_execution_event(
             tenant_id=tenant_id,
             event_context=event_context,
@@ -540,17 +481,6 @@ class MemoryWriteService:
             causation_id=event_context.causation_id,
             node_id=event_context.node_id,
         )
-
-    def _emit_trace_event(self, *, name: str, payload: dict[str, object]) -> None:
-        with self.tracer.observe(
-            as_type="event",
-            name=name,
-            input=payload,
-            metadata={"event_type": name.replace("event.", "", 1)},
-        ) as span_event:
-            if span_event:
-                span_event.update(output=payload)
-            return
 
     def _deep_merge(
         self,

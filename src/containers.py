@@ -214,10 +214,16 @@ class TenantsContainer(containers.DeclarativeContainer):
         database_connection=core.database_connection,
         tracer=adapters.tracer,
     )
+    execution_limit_policy_repository = providers.Factory(
+        ExecutionLimitPolicyRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
     tenants_service = providers.Factory(
         TenantsService,
         repository=tenants_repository,
         authoring_events=authoring_event_repository,
+        execution_limit_policy_repository=execution_limit_policy_repository,
     )
     tenants_controller = providers.Factory(
         TenantsController,

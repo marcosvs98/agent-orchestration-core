@@ -721,41 +721,18 @@ class RagRuntimeService:
             effective_similarity_threshold = min(
                 effective_similarity_threshold, float(similarity_threshold_cap)
             )
-        scope_raw = config.corpus_kind
-        try:
-            scope_trace = RagCorpusKind(scope_raw).value
-        except ValueError:
-            scope_trace = scope_raw
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.rag.runtime.search_similar_chunks",
-            input={
-                "tenant_id": str(tenant_id),
-                "rag_config_id": str(rag_config_id),
-                "scope": scope_trace,
-                "user_id_present": bool(user_id),
-            },
-        ) as retriever_handle:
-            results: list[
-                tuple[RagChunkModel, float, datetime | None, str | None]
-            ] = await self.repository.search_similar_chunks(
-                tenant_id=tenant_id,
-                rag_config_id=rag_config_id,
-                vector_store_id=config.vector_store_id,
-                user_id=user_id,
-                query_embedding=embedding,
-                top_k=effective_top_k,
-                similarity_threshold=effective_similarity_threshold,
-                filters=effective_filters,
-            )
-            if retriever_handle:
-                retriever_handle.success(
-                    output={
-                        "chunk_count": len(results),
-                        "top_k": effective_top_k,
-                        "similarity_threshold": effective_similarity_threshold,
-                    }
-                )
+        results: list[
+            tuple[RagChunkModel, float, datetime | None, str | None]
+        ] = await self.repository.search_similar_chunks(
+            tenant_id=tenant_id,
+            rag_config_id=rag_config_id,
+            vector_store_id=config.vector_store_id,
+            user_id=user_id,
+            query_embedding=embedding,
+            top_k=effective_top_k,
+            similarity_threshold=effective_similarity_threshold,
+            filters=effective_filters,
+        )
         if not results:
             return RagContext(
                 context_items=[],

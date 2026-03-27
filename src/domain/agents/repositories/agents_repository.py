@@ -66,7 +66,7 @@ class AgentsRepository:
     ) -> AgentVersionModel | None:
         key = f"agent_version_by_id:{agent_version_id}"
         if cached := await self.cache_adapter.get(key):
-            return AgentVersionModel(**cached)
+            return AgentVersionModel.from_dict(cached)
 
         async with self.db.get_session() as session:
             stmt = select(AgentVersionModel).where(
@@ -93,7 +93,8 @@ class AgentsRepository:
                             "found": version is not None,
                         }
                     )
-                await self.cache_adapter.set(key, version.to_dict())
+                if version is not None:
+                    await self.cache_adapter.set(key, version.to_dict())
 
                 return version
 
@@ -138,6 +139,8 @@ class AgentsRepository:
                 },
             ):
                 await session.commit()
+        if self.cache_adapter:
+            await self.cache_adapter.delete(f"agent_version_by_id:{agent_version_id}")
 
     async def get_active_agent_version_id(self, agent_id: UUID) -> UUID | None:
         async with self.db.get_session() as session:

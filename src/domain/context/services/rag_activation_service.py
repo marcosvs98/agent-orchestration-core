@@ -64,19 +64,6 @@ class RagActivationService:
                 scope=scope,
                 reason=RagActivationDecisionReason.STRUCTURAL_DENY,
             )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
-            )
             return decision
 
         resolved_policy, scope_policy = await self.rag_policy_service.scope_policy(
@@ -91,19 +78,6 @@ class RagActivationService:
                 reason=RagActivationDecisionReason.POLICY_MISSING,
                 policy_version_id=resolved_policy.policy_version_id,
             )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
-            )
             return decision
 
         if scope_policy is None or not bool(scope_policy.enabled):
@@ -112,19 +86,6 @@ class RagActivationService:
                 scope=scope,
                 reason=RagActivationDecisionReason.POLICY_DENY,
                 policy_version_id=resolved_policy.policy_version_id,
-            )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
             )
             return decision
 
@@ -137,19 +98,6 @@ class RagActivationService:
                     scope=scope,
                     reason=RagActivationDecisionReason.POLICY_DENY,
                     policy_version_id=resolved_policy.policy_version_id,
-                )
-                self._emit_decision(
-                    decision=decision,
-                    tenant_id=tenant_id,
-                    task_type=task_type,
-                    rag_config_id=rag_config_id,
-                    user_id=user_id,
-                    tool_config_id=tool_config_id,
-                    intent_metadata=intent_metadata,
-                    context_metadata=context_metadata,
-                    task_flags=task_flags,
-                    input_len=input_len,
-                    input_kind=input_kind,
                 )
                 return decision
 
@@ -164,19 +112,6 @@ class RagActivationService:
                 reason=RagActivationDecisionReason.TOOL_CONFIG_EXPLICIT_DENY,
                 policy_version_id=resolved_policy.policy_version_id,
             )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
-            )
             return decision
 
         if rag_config_id is None:
@@ -185,19 +120,6 @@ class RagActivationService:
                 scope=scope,
                 reason=RagActivationDecisionReason.RAG_CONFIG_MISSING,
                 policy_version_id=resolved_policy.policy_version_id,
-            )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
             )
             return decision
 
@@ -209,19 +131,6 @@ class RagActivationService:
                 reason=RagActivationDecisionReason.RAG_CONFIG_NOT_FOUND,
                 policy_version_id=resolved_policy.policy_version_id,
             )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
-            )
             return decision
 
         if rag_config.tenant_id != tenant_id:
@@ -230,19 +139,6 @@ class RagActivationService:
                 scope=scope,
                 reason=RagActivationDecisionReason.RAG_CONFIG_TENANT_MISMATCH,
                 policy_version_id=resolved_policy.policy_version_id,
-            )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
             )
             return decision
 
@@ -257,19 +153,6 @@ class RagActivationService:
                 reason=RagActivationDecisionReason.RAG_CONFIG_NOT_PUBLISHED,
                 policy_version_id=resolved_policy.policy_version_id,
             )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
-            )
             return decision
 
         if scope == RagActivationScope.USER_MEMORY_VECTOR and not user_id:
@@ -278,19 +161,6 @@ class RagActivationService:
                 scope=scope,
                 reason=RagActivationDecisionReason.USER_ID_MISSING,
                 policy_version_id=resolved_policy.policy_version_id,
-            )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
             )
             return decision
 
@@ -306,19 +176,6 @@ class RagActivationService:
                 scope=scope,
                 reason=heuristic_reason,
                 policy_version_id=resolved_policy.policy_version_id,
-            )
-            self._emit_decision(
-                decision=decision,
-                tenant_id=tenant_id,
-                task_type=task_type,
-                rag_config_id=rag_config_id,
-                user_id=user_id,
-                tool_config_id=tool_config_id,
-                intent_metadata=intent_metadata,
-                context_metadata=context_metadata,
-                task_flags=task_flags,
-                input_len=input_len,
-                input_kind=input_kind,
             )
             return decision
 
@@ -343,19 +200,6 @@ class RagActivationService:
                 user_id=user_id,
                 filters_override=filters_override,
             ),
-        )
-        self._emit_decision(
-            decision=decision,
-            tenant_id=tenant_id,
-            task_type=task_type,
-            rag_config_id=rag_config_id,
-            user_id=user_id,
-            tool_config_id=tool_config_id,
-            intent_metadata=intent_metadata,
-            context_metadata=context_metadata,
-            task_flags=task_flags,
-            input_len=input_len,
-            input_kind=input_kind,
         )
         return decision
 
@@ -464,64 +308,3 @@ class RagActivationService:
         ):
             return RagActivationDecisionReason.INPUT_STRUCTURED
         return None
-
-    def _emit_decision(
-        self,
-        *,
-        decision: RagActivationDecision,
-        tenant_id: UUID,
-        task_type: LLMTaskType,
-        rag_config_id: UUID | None,
-        user_id: str | None,
-        tool_config_id: UUID | None,
-        intent_metadata: dict[str, object] | None,
-        context_metadata: dict[str, object] | None,
-        task_flags: AITaskContextFlags | None,
-        input_len: int,
-        input_kind: RagInputKind,
-    ) -> None:
-        metadata = context_metadata or {}
-        with self.tracer.observe(
-            as_type="event",
-            name="domain.rag.activation.decision",
-            input={
-                "tenant_id": str(tenant_id),
-                "scope": decision.scope.value,
-                "user_id": user_id,
-                "task_type": task_type.value,
-                "enabled": decision.enabled,
-                "reason": decision.reason.value,
-                "policy_version_id": (
-                    str(decision.policy_version_id)
-                    if decision.policy_version_id is not None
-                    else None
-                ),
-                "rag_config_id": str(rag_config_id) if rag_config_id else None,
-                "user_id_present": bool(user_id),
-                "tool_config_id": str(tool_config_id) if tool_config_id else None,
-                "intent_metadata_present": isinstance(intent_metadata, dict),
-                "allow_rag_tenant": (
-                    bool(task_flags.allow_rag_tenant) if task_flags else None
-                ),
-                "allow_user_memory_structured": (
-                    bool(task_flags.allow_user_memory_structured)
-                    if task_flags
-                    else None
-                ),
-                "allow_user_memory_vector": (
-                    bool(task_flags.allow_user_memory_vector) if task_flags else None
-                ),
-                "input_len": input_len,
-                "input_kind": input_kind.value,
-                "flow_run_id": metadata.get("flow_run_id"),
-                "node_id": metadata.get("node_id"),
-            },
-        ):
-            pass
-            """
-            # Todo: Este span precisa estar presente e ter output
-            with langfuse.start_as_current_observation(name="process-query", as_type="span") as span:
-                # Do work
-                result = process_data()
-                span.update(output=result)
-            """

@@ -54,6 +54,7 @@ class Scope(StrEnum):
     NodeAIExecutionPolicyBindingsDelete = "node_ai_execution_policy_bindings:delete"
     RagConfigsList = "rag_configs:list"
     RagConfigsCreate = "rag_configs:create"
+    RagConfigsValidate = "rag_configs:validate"
     RagConfigsPublish = "rag_configs:publish"
     RagConfigsDeprecate = "rag_configs:deprecate"
     RagConfigsDisable = "rag_configs:disable"

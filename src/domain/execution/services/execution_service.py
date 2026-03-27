@@ -695,33 +695,24 @@ class ExecutionService(ExecutionServicePort):
             trace_id=trace_uuid,
             root_observation_id=None,
         )
+        trace_context: TraceContext = self.tracer.start_flow_trace(
+            flow_run_id=flow_run_id,
+            flow_id=flow_id,
+            flow_version_id=selected_flow_version_id,
+            tenant_id=tenant_id,
+            session_id=flow_run.session_id,
+            user_id=flow_run.user_id,
+            external_request_id=request_id,
+            trace_id=trace_uuid,
+            interaction_id=interaction_id,
+            correlation_id=correlation_id,
+            channel=channel,
+            external_message_id=external_message_id,
+            graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
+            execution_plan_hash=execution_plan_hash,
+            flow_name=flow.name if flow else None,
+        )
 
-        with self.tracer.observe(
-            as_type="event",
-            name="domain.execution.execution_service.start_flow_trace",
-            input={"flow_run_id": str(flow_run_id), "flow_id": str(flow_id)},
-        ) as event_handle:
-            trace_context: TraceContext = self.tracer.start_flow_trace(
-                flow_run_id=flow_run_id,
-                flow_id=flow_id,
-                flow_version_id=selected_flow_version_id,
-                tenant_id=tenant_id,
-                session_id=flow_run.session_id,
-                user_id=flow_run.user_id,
-                external_request_id=request_id,
-                trace_id=trace_uuid,
-                interaction_id=interaction_id,
-                correlation_id=correlation_id,
-                channel=channel,
-                external_message_id=external_message_id,
-                graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
-                execution_plan_hash=execution_plan_hash,
-                flow_name=flow.name if flow else None,
-            )
-            if event_handle:
-                event_handle.success(
-                    output={"trace_context": trace_context.model_dump(mode="json")}
-                )
         if trace_context.root_observation_id:
             with self.tracer.observe(
                 as_type="tool",
@@ -771,32 +762,23 @@ class ExecutionService(ExecutionServicePort):
             tool_catalog_hash=tool_catalog_hash,
             llm_provider_config_hash=llm_provider_config_hash,
         )
-        with self.tracer.observe(
-            as_type="event",
-            name="domain.execution.execution_service.on_flow_start",
-            input={
-                "flow_run_id": str(flow_run_id),
-                "correlation_id": str(correlation_id),
-            },
-        ) as event_handle:
-            payload = {
+
+        await self.hook.on_flow_start(
+            tenant_id=tenant_id,
+            user_id=flow_run.user_id,
+            session_id=flow_run.session_id,
+            flow_run_id=flow_run_id,
+            correlation_id=correlation_id,
+            payload={
                 "interaction_id": str(interaction_id),
                 "channel": channel,
                 "trace_id": str(trace_uuid),
                 "user_id": flow_run.user_id,
-            }
-            await self.hook.on_flow_start(
-                tenant_id=tenant_id,
-                user_id=flow_run.user_id,
-                session_id=flow_run.session_id,
-                flow_run_id=flow_run_id,
-                correlation_id=correlation_id,
-                payload=payload,
-                causation_id=None,
-                schema_version=1,
-            )
-            if event_handle:
-                event_handle.success(output={"status": "recorded", "payload": payload})
+            },
+            causation_id=None,
+            schema_version=1,
+        )
+
         with self.tracer.observe(
             as_type="retriever",
             name="domain.execution.execution_service.cache_get_plan",
@@ -1048,25 +1030,20 @@ class ExecutionService(ExecutionServicePort):
 
         trace_uuid = UUID(trace_id) if trace_id else flow_run.trace_id or uuid4()
 
-        with self.tracer.observe(
-            as_type="event",
-            name="domain.execution.execution_service.start_flow_resume_trace",
-            input={"flow_run_id": str(flow_run_id), "flow_id": str(flow_id)},
-        ):
-            trace_context: TraceContext = self.tracer.start_flow_trace(
-                flow_run_id=flow_run_id,
-                flow_id=flow_id,
-                flow_version_id=flow_version.flow_version_id,
-                tenant_id=tenant_id,
-                session_id=session_id,
-                user_id=user_id,
-                external_request_id=request_id,
-                trace_id=trace_uuid,
-                interaction_id=interaction_id,
-                correlation_id=flow_run.correlation_id,
-                channel=channel,
-                external_message_id=external_message_id,
-                graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
+        trace_context: TraceContext = self.tracer.start_flow_trace(
+            flow_run_id=flow_run_id,
+            flow_id=flow_id,
+            flow_version_id=flow_version.flow_version_id,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            user_id=user_id,
+            external_request_id=request_id,
+            trace_id=trace_uuid,
+            interaction_id=interaction_id,
+            correlation_id=flow_run.correlation_id,
+            channel=channel,
+            external_message_id=external_message_id,
+            graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
             )
 
         if trace_context.root_observation_id:

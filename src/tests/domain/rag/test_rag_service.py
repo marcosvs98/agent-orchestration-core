@@ -271,6 +271,120 @@ class TestRagService:
             )
 
     @pytest.mark.asyncio
+    async def test_validate_rag_config_sets_validated(
+        self, rag_service, repository, authoring_events
+    ):
+        tenant_id = uuid4()
+        config_id = uuid4()
+        vector_store_id = uuid4()
+        chunking_rule_id = uuid4()
+        mock_draft = SimpleNamespace(
+            rag_config_id=config_id,
+            tenant_id=tenant_id,
+            vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
+            options={},
+            status=VersionStatus.DRAFT,
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+        )
+        mock_validated = SimpleNamespace(
+            rag_config_id=config_id,
+            tenant_id=tenant_id,
+            vector_store_id=vector_store_id,
+            chunking_rule_id=chunking_rule_id,
+            corpus_kind="TENANT_KNOWLEDGE",
+            options={},
+            status=VersionStatus.VALIDATED,
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+        )
+        repository.get_rag_config = AsyncMock(
+            side_effect=[mock_draft, mock_validated]
+        )
+        repository.set_rag_config_status = AsyncMock()
+
+        result = await rag_service.validate_rag_config(
+            tenant_id=tenant_id,
+            rag_config_id=str(config_id),
+            principal_id="user-123",
+        )
+
+        assert result.status == VersionStatus.VALIDATED
+        repository.set_rag_config_status.assert_called_once_with(
+            rag_config_id=config_id, status=VersionStatus.VALIDATED
+        )
+        authoring_events.append_event.assert_called_once()
+        assert (
+            authoring_events.append_event.call_args[1]["event_type"]
+            == "RAG_CONFIG_VALIDATED"
+        )
+
+    @pytest.mark.asyncio
+    async def test_validate_rag_config_raises_when_not_draft(
+        self, rag_service, repository
+    ):
+        tenant_id = uuid4()
+        config_id = uuid4()
+        mock_config = SimpleNamespace(
+            rag_config_id=config_id,
+            tenant_id=tenant_id,
+            status=VersionStatus.VALIDATED,
+        )
+        repository.get_rag_config = AsyncMock(return_value=mock_config)
+
+        with pytest.raises(
+            ResourceBlockedServiceException,
+            match="rag_config_not_draft",
+        ):
+            await rag_service.validate_rag_config(
+                tenant_id=tenant_id,
+                rag_config_id=str(config_id),
+                principal_id="user-123",
+            )
+
+    @pytest.mark.asyncio
+    async def test_validate_rag_config_raises_when_not_found(
+        self, rag_service, repository
+    ):
+        tenant_id = uuid4()
+        config_id = uuid4()
+        repository.get_rag_config = AsyncMock(return_value=None)
+
+        with pytest.raises(NotFoundServiceException, match="rag_config_not_found"):
+            await rag_service.validate_rag_config(
+                tenant_id=tenant_id,
+                rag_config_id=str(config_id),
+                principal_id="user-123",
+            )
+
+    @pytest.mark.asyncio
+    async def test_validate_rag_config_raises_when_wrong_tenant(
+        self, rag_service, repository
+    ):
+        tenant_id = uuid4()
+        other_tenant = uuid4()
+        config_id = uuid4()
+        mock_config = SimpleNamespace(
+            rag_config_id=config_id,
+            tenant_id=other_tenant,
+            status=VersionStatus.DRAFT,
+        )
+        repository.get_rag_config = AsyncMock(return_value=mock_config)
+
+        with pytest.raises(NotFoundServiceException, match="rag_config_not_found"):
+            await rag_service.validate_rag_config(
+                tenant_id=tenant_id,
+                rag_config_id=str(config_id),
+                principal_id="user-123",
+            )
+
+    @pytest.mark.asyncio
     async def test_deprecate_rag_config_deprecates_with_success(
         self, rag_service, repository, authoring_events
     ):

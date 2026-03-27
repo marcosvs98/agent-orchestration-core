@@ -165,7 +165,6 @@ async def seed_tool_catalog_rag() -> None:
 
     rag_runtime_service = RagRuntimeService(
         repository=rag_repository,
-        embedding_adapter=embedding_adapter,
         tracer=tracer,
         rag_policy_service=rag_policy_service,
         ai_repository=ai_repository,

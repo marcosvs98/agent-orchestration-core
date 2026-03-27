@@ -40,6 +40,7 @@ from seeds.demo.ids import (
     NODE_TOOL_ERROR_HANDLER_ID,
     NODE_TOOL_EXEC_ID,
     NODE_TOOL_SELECTION_ID,
+    NODE_MEMORY_PAYLOAD_SUMMARIZE_ID,
     PRINCIPAL_SYSTEM,
     RAG_CONFIG_DEMO_ID,
 )
@@ -157,6 +158,29 @@ def _resume_llm_node_config(
             use_conversation_history=use_conversation_history,
         ),
     ).model_dump(mode="json")
+
+
+def _memory_payload_summarize_node_config() -> dict[str, object]:
+    base = _llm_node_config(
+        task_type="MEMORY_CONTENT_SUMMARIZE",
+        provider="OPENAI",
+        model_alias="gpt-4.1-mini",
+        temperature=0.0,
+        top_p=0.0,
+        use_system_prompt=False,
+        use_system_context=False,
+        use_conversation_history=False,
+        completion_budget={
+            "schema_factor": 1.2,
+            "safety_margin": 16,
+            "floor": 48,
+        },
+    )
+    return {
+        "source_node_id": str(NODE_SLOT_ID),
+        "min_payload_bytes_to_run": 4096,
+        **base,
+    }
 
 
 def _moderation_node_config() -> dict[str, object]:
@@ -334,7 +358,7 @@ async def seed_graph() -> None:
                 ),
                 FlowGraphEdge(
                     from_node=str(NODE_TOOL_SELECTION_ID),
-                    to_node=str(NODE_MEMORY_COMMIT_ID),
+                    to_node=str(NODE_RESPONSE_ID),
                     condition="len(result) < 1",
                     edge_kind=EdgeKind.NORMAL,
                 ),

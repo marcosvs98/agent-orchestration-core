@@ -142,19 +142,7 @@ class RuntimeExecutor:
                 "mode": str(handle.get("mode") or mode),
             }
             context.state[gate_key] = merged_handle
-            with self.tracer.observe(
-                as_type="event",
-                name="domain.context.user_context_enrichment.seeded",
-                input={
-                    "flow_run_id": str(context.flow_run_id),
-                    "correlation_id": str(context.correlation_id),
-                    "current_node_id": context.current_node_id,
-                    "enabled": True,
-                    "mode": merged_handle["mode"],
-                    "published": merged_handle["published"],
-                },
-            ):
-                pass
+
         adjacency = plan.adjacency_map
         node_specs = plan.nodes
 
@@ -362,73 +350,54 @@ class RuntimeExecutor:
                 return
 
             if node_type in TERMINAL_NODE_TYPES:
-                with self.tracer.observe(
-                    as_type="event",
-                    name="domain.execution.graph_runtime.flow_completed",
-                    input={
-                        "flow_run_id": str(context.flow_run_id),
-                        "correlation_id": str(context.correlation_id),
-                        "current_node_id": context.current_node_id,
-                        "terminated_at": context.current_node_id,
-                    },
-                    metadata={"event_type": "flow_completion"},
-                ) as event_handle:
-                    await self.repository.complete_flow_run(
+
+                await self.repository.complete_flow_run(
+                    flow_run_id=flow_run_id,
+                    status=FlowRunStatus.COMPLETED,
+                    output=node_result.data,
+                )
+                await self.repository.set_current_interaction_result_for_flow_run(
+                    flow_run_id=flow_run_id,
+                    output=node_result.data or {},
+                    result_node_run_id=node_run_id,
+                )
+                memory_extraction_config = None
+                if isinstance(context.metadata, dict):
+                    runtime_policy = context.metadata.get("runtime_policy")
+                    if isinstance(runtime_policy, dict):
+                        extracted_config = runtime_policy.get("memory_extraction")
+                        if isinstance(extracted_config, dict):
+                            memory_extraction_config = extracted_config
+                if self.hook:
+                    await self.hook.on_flow_complete(
+                        tenant_id=tenant_id,
+                        user_id=trace_user_id,
+                        session_id=session_id,
                         flow_run_id=flow_run_id,
-                        status=FlowRunStatus.COMPLETED,
-                        output=node_result.data,
+                        correlation_id=correlation_id,
+                        payload={
+                            "terminated_at": context.current_node_id,
+                            "payload": node_result.data,
+                            "memory_extraction_config": memory_extraction_config,
+                        },
+                        causation_id=None,
+                        schema_version=1,
                     )
-                    await self.repository.set_current_interaction_result_for_flow_run(
+                else:
+                    await self.repository.append_execution_event(
+                        tenant_id=tenant_id,
+                        session_id=session_id,
                         flow_run_id=flow_run_id,
-                        output=node_result.data or {},
-                        result_node_run_id=node_run_id,
+                        event_type=ExecutionEventType.FlowCompleted,
+                        payload={
+                            "terminated_at": context.current_node_id,
+                            "payload": node_result.data,
+                            "memory_extraction_config": memory_extraction_config,
+                        },
+                        correlation_id=correlation_id,
+                        causation_id=None,
+                        schema_version=1,
                     )
-                    memory_extraction_config = None
-                    if isinstance(context.metadata, dict):
-                        runtime_policy = context.metadata.get("runtime_policy")
-                        if isinstance(runtime_policy, dict):
-                            extracted_config = runtime_policy.get("memory_extraction")
-                            if isinstance(extracted_config, dict):
-                                memory_extraction_config = extracted_config
-                    if self.hook:
-                        await self.hook.on_flow_complete(
-                            tenant_id=tenant_id,
-                            user_id=trace_user_id,
-                            session_id=session_id,
-                            flow_run_id=flow_run_id,
-                            correlation_id=correlation_id,
-                            payload={
-                                "terminated_at": context.current_node_id,
-                                "payload": node_result.data,
-                                "memory_extraction_config": memory_extraction_config,
-                            },
-                            causation_id=None,
-                            schema_version=1,
-                        )
-                    else:
-                        await self.repository.append_execution_event(
-                            tenant_id=tenant_id,
-                            session_id=session_id,
-                            flow_run_id=flow_run_id,
-                            event_type=ExecutionEventType.FlowCompleted,
-                            payload={
-                                "terminated_at": context.current_node_id,
-                                "payload": node_result.data,
-                                "memory_extraction_config": memory_extraction_config,
-                            },
-                            correlation_id=correlation_id,
-                            causation_id=None,
-                            schema_version=1,
-                        )
-                    if event_handle:
-                        event_handle.success(
-                            output={
-                                "status": "recorded",
-                                "payload": {
-                                    "terminated_at": context.current_node_id,
-                                },
-                            }
-                        )
                 return
 
             try:
@@ -557,63 +526,40 @@ class RuntimeExecutor:
         to_node: str,
         result: bool,
     ) -> None:
-        with self.tracer.observe(
-            as_type="event",
-            name=f"event.{ExecutionEventType.EdgeEvaluated.value}",
-            input={
-                "flow_run_id": str(flow_run_id),
-                "correlation_id": str(correlation_id),
-                "current_node_id": current_node_id,
-                "from_node": current_node_id,
-                "to_node": to_node,
-                "result": result,
-            },
-            metadata={"event_type": ExecutionEventType.EdgeEvaluated.value},
-        ) as event_handle:
-            if self.hook:
-                edge_id = f"{current_node_id}->{to_node}"
-                await self.hook.on_edge_evaluated(
-                    tenant_id=tenant_id,
-                    user_id=user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    node_id=UUID(current_node_id) if current_node_id else None,
-                    edge_id=edge_id,
-                    payload={
-                        "from_node": current_node_id,
-                        "to_node": to_node,
-                        "result": result,
-                    },
-                    causation_id=None,
-                    schema_version=1,
-                )
-            else:
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.EdgeEvaluated,
-                    payload={
-                        "from_node": current_node_id,
-                        "to_node": to_node,
-                        "result": result,
-                    },
-                    correlation_id=correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                )
-            if event_handle:
-                event_handle.success(
-                    output={
-                        "status": RuntimeTraceEdgeEventStatus.RECORDED.value,
-                        "payload": {
-                            "from_node": current_node_id,
-                            "to_node": to_node,
-                            "result": result,
-                        },
-                    }
-                )
+
+        if self.hook:
+            edge_id = f"{current_node_id}->{to_node}"
+            await self.hook.on_edge_evaluated(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                flow_run_id=flow_run_id,
+                correlation_id=correlation_id,
+                node_id=UUID(current_node_id) if current_node_id else None,
+                edge_id=edge_id,
+                payload={
+                    "from_node": current_node_id,
+                    "to_node": to_node,
+                    "result": result,
+                },
+                causation_id=None,
+                schema_version=1,
+            )
+        else:
+            await self.repository.append_execution_event(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                flow_run_id=flow_run_id,
+                event_type=ExecutionEventType.EdgeEvaluated,
+                payload={
+                    "from_node": current_node_id,
+                    "to_node": to_node,
+                    "result": result,
+                },
+                correlation_id=correlation_id,
+                causation_id=None,
+                schema_version=1,
+            )
 
     async def _fail_flow(
         self,
@@ -636,43 +582,28 @@ class RuntimeExecutor:
             error=error_detail,
         )
 
-        with self.tracer.observe(
-            as_type="event",
-            name=f"event.{ExecutionEventType.FlowFailed.value}",
-            input={
-                "flow_run_id": str(flow_run_id),
-                "correlation_id": str(correlation_id),
-                "reason": reason,
-                "error_detail": error_detail,
-            },
-            metadata={"event_type": ExecutionEventType.FlowFailed.value},
-        ) as event_handle:
-            if self.hook:
-                await self.hook.on_flow_failed(
-                    tenant_id=tenant_id,
-                    user_id=user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    payload={"reason": reason},
-                    causation_id=None,
-                    schema_version=1,
-                )
-            else:
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.FlowFailed,
-                    payload={"reason": reason},
-                    correlation_id=correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                )
-            if event_handle:
-                event_handle.success(
-                    output={"status": "recorded", "payload": {"reason": reason}}
-                )
+        if self.hook:
+            await self.hook.on_flow_failed(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                flow_run_id=flow_run_id,
+                correlation_id=correlation_id,
+                payload={"reason": reason},
+                causation_id=None,
+                schema_version=1,
+            )
+        else:
+            await self.repository.append_execution_event(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                flow_run_id=flow_run_id,
+                event_type=ExecutionEventType.FlowFailed,
+                payload={"reason": reason},
+                correlation_id=correlation_id,
+                causation_id=None,
+                schema_version=1,
+            )
 
     @staticmethod
     def _map_status(status: NodeExecutionStatus) -> NodeRunStatus:

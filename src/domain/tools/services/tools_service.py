@@ -301,7 +301,7 @@ class ToolsService(ToolsServicePort):
             binding_create.tool_config_id
         )
         if tool_config is None or tool_config.tenant_id != tenant_id:
-            raise NotFoundServiceException(message="tool_config_not_found")
+            raise NotFoundServiceException(message=f"tool_config_not_found")
         with self.tracer.observe(
             as_type="tool",
             name="domain.tools.tools_service.create_agent_version_tool_binding",

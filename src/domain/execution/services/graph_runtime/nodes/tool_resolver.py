@@ -61,7 +61,7 @@ class ToolResolver(LLMNodeExecutor):
         self, context: ExecutionContext, config: dict[str, Any] | None = None
     ) -> NodeResult:
         config = config or {}
-        top_k = config.get("top_k", 10)
+        top_k = config.get("top_k", 5)
         user_input = (context.input_payload or {}).get("user_input", "") or ""
 
         rag_config_id: UUID = (
@@ -76,19 +76,26 @@ class ToolResolver(LLMNodeExecutor):
             user_input=user_input,
             top_k=top_k,
         )
-        llm_result = await self._run_llm_after_setup(context, config)
+        if context.available_tools:
+            llm_result = await self._run_llm_after_setup(context, config)
 
-        asyncio.create_task(
-            self._index_post_llm_selection(
-                tenant_id=context.tenant_id,
-                user_input=user_input,
-                retrieved_tools=context.available_tools,
-                llm_result=llm_result,
-                config=config,
-            ),
-            name=self.llm_task,
+            asyncio.create_task(
+                self._index_post_llm_selection(
+                    tenant_id=context.tenant_id,
+                    user_input=user_input,
+                    retrieved_tools=context.available_tools,
+                    llm_result=llm_result,
+                    config=config,
+                ),
+                name=self.llm_task,
+            )
+            return llm_result
+
+        return NodeResult(
+            node=self.node_type,
+            status=self.result_status,
+            data={"result": []},
         )
-        return llm_result
 
     async def _index_post_llm_selection(
         self,
@@ -105,48 +112,34 @@ class ToolResolver(LLMNodeExecutor):
         if not selections:
             return
         tools_by_config = {str(tool.tool_config_id): tool for tool in retrieved_tools}
-        with self.tracer.observe(
-            as_type="retriever",
-            name="domain.execution.nodes.tool_selection.index_post_llm_selection",
-            input={
-                "tenant_id": str(tenant_id),
-                "selection_count": len(selections),
-            },
-        ) as retriever_handle:
-            indexed = 0
-            for selection in selections:
-                confidence = float(selection.get("confidence") or 0.0)
-                if confidence < config.get("min_indexing_confidence"):
-                    continue
-                tool_config_id = str(selection.get("tool_config_id") or "")
-                selected_tool = tools_by_config.get(tool_config_id)
-                if selected_tool is None:
-                    continue
-                await self.tool_catalog_indexer.index_document(
-                    tenant_id=tenant_id,
-                    document=ToolCatalogDocument(
-                        tool_id=selected_tool.tool_id,
-                        tool_config_id=selected_tool.tool_config_id,
-                        tool_name=selected_tool.name,
-                        operation_id=selected_tool.operation_id,
-                        method=selected_tool.method,
-                        path=selected_tool.path,
-                        summary=selected_tool.summary,
-                        description=selected_tool.description,
-                        request_schema={},
-                        response_schema={},
-                        examples=[user_input],
-                        version="learned",
-                    ),
-                )
-                indexed += 1
-            if retriever_handle:
-                retriever_handle.success(
-                    output={
-                        "indexed_count": indexed,
-                        "selection_count": len(selections),
-                    }
-                )
+        indexed = 0
+        for selection in selections:
+            confidence = float(selection.get("confidence") or 0.0)
+            if confidence < config.get("min_indexing_confidence"):
+                continue
+            tool_config_id = str(selection.get("tool_config_id") or "")
+            selected_tool = tools_by_config.get(tool_config_id)
+            if selected_tool is None:
+                continue
+            await self.tool_catalog_indexer.index_document(
+                tenant_id=tenant_id,
+                document=ToolCatalogDocument(
+                    tool_id=selected_tool.tool_id,
+                    tool_config_id=selected_tool.tool_config_id,
+                    tool_name=selected_tool.name,
+                    operation_id=selected_tool.operation_id,
+                    method=selected_tool.method,
+                    path=selected_tool.path,
+                    summary=selected_tool.summary,
+                    description=selected_tool.description,
+                    request_schema={},
+                    response_schema={},
+                    examples=[user_input],
+                    version="learned",
+                ),
+            )
+            indexed += 1
+
 
     @staticmethod
     def _extract_selected_tools(result: NodeResult) -> list[dict[str, Any]]:

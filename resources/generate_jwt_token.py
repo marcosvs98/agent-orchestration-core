@@ -52,7 +52,7 @@ def generate_admin_token() -> str:
     tenant_id = config("ADMIN_TENANT_ID", default=DEMO_TENANT_ID) or DEMO_TENANT_ID
     principal_id = config("ADMIN_PRINCIPAL_ID", default="admin-dev")
     principal_type = config("ADMIN_PRINCIPAL_TYPE", default="human")
-    expires_in = config("ADMIN_TOKEN_EXPIRES_IN", default=86400 * 30, cast=int)
+    expires_in = config("ADMIN_TOKEN_EXPIRES_IN", default=86400 * 100, cast=int)
 
     now = int(time.time())
     payload = {

@@ -478,6 +478,8 @@ class RagRepository:
                 raise NotFoundServiceException(message="rag_config_not_found")
             instance.status = str(status)
             await session.commit()
+        if self.cache_adapter:
+            await self.cache_adapter.delete(f"rag_config:{rag_config_id}")
 
     async def get_document_by_hash(
         self, *, tenant_id: UUID, content_hash: str
