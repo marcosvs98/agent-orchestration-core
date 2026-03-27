@@ -1,6 +1,6 @@
 # agent-orchestration-core
 
-Plataforma de orquestração cognitiva multi-tenant com arquitetura hexagonal e Domain-Driven Design em Python. Interpreta entrada em linguagem natural, decide caminhos de execução e aciona integrações externas de forma controlada, auditável e previsível.
+Plataforma de orquestração cognitiva multi-tenant . Interpreta entrada em linguagem natural, decide caminhos de execução e aciona integrações externas de forma controlada, auditável e previsível.
 
 ---
 
