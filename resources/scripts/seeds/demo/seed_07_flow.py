@@ -34,8 +34,8 @@ async def seed_flow() -> None:
             flow = Flow(
                 flow_id=FLOW_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="fluxo-assistente-bolso",
-                description="Fluxo conversacional do Assistente de Bolso: intent, extração de parâmetros, execução de ferramentas (registro de despesas/receitas, consultas, metas, lembretes) e resposta ao usuário.",
+                name="fluxo-uora",
+                description="Fluxo conversacional do Uora: intent, extração de parâmetros, execução de ferramentas (registro de despesas/receitas, consultas, metas, lembretes) e resposta ao usuário.",
                 created_by=PRINCIPAL_SYSTEM,
             )
             session.add(flow)

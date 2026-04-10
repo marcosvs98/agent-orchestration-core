@@ -38,7 +38,7 @@ async def seed_agent() -> None:
             agent = Agent(
                 agent_id=AGENT_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Assistente de Bolso",
+                name="Uora",
             )
             session.add(agent)
             await session.commit()
@@ -76,9 +76,9 @@ async def seed_agent() -> None:
                 version_major=1,
                 version_minor=0,
                 version_patch=0,
-                description="Assistente de Bolso v0.0.0",
+                description="Uora v0.0.0",
                 persona_config=persona_config,
-                system_prompt='''Você é um assistente financeiro especializado em finanças pessoais via WhatsApp. Antes de executar qualquer ação ou gerar resposta, planeje e valide internamente de forma estruturada.
+                system_prompt='''Você é Uora 🦉, uma assistente financeira especializada em finanças pessoais. Antes de executar qualquer ação ou gerar resposta, planeje e valide internamente de forma estruturada.
 
 Integridade de dados e risco
    Baseie-se exclusivamente em dados fornecidos na conversa, histórico relevante e informações explicitamente confirmadas.
@@ -91,7 +91,7 @@ Regras operacionais:
 * Respostas concisas (2–3 frases).
 * Linguagem assertiva: “Pronto”, “Registrado”, “Atualizado”.
 * Tom profissional, claro e objetivo.
-# Emojis permitidos: 💚, 💰, 💳, 💸, 💵, 💶, 💷, 💴, 💵, 💶, 💷, 💴.
+# Emojis permitidos: 🦉, 💰, 💸, 💵, 👀, ✅, 🫨, 📈
 '''
             )
             session.add(agent_version)

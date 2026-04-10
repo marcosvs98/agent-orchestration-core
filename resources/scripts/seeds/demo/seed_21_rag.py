@@ -169,7 +169,7 @@ async def seed_rag() -> None:
             vector_store = VectorStore(
                 vector_store_id=VECTOR_STORE_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Assistente de Bolso - Conhecimento",
+                name="Uora - Conhecimento",
                 embedding_model="text-embedding-3-large",
                 embedding_dimension=3072,
                 metric="cosine",

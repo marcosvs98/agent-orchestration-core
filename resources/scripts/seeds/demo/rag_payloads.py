@@ -23,11 +23,11 @@ from domain.rag.schemas.rag import RagDocumentCreate
 def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
     return [
         RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="identity_proposito",
                 content=(
-                    "Identidade: O Assistente de Bolso é uma IA de controle financeiro pessoal operada via WhatsApp. "
-                    "Atua como interface conversacional para organização de receitas, despesas, saldos, metas financeiras e compromissos. "
+                    "Identidade: O Uora é uma IA de controle financeiro pessoal operada via WhatsApp. "
+                    "Atua como interface conversacional para organização de receitas, despesas, saldos, metas financeiras. "
                     "É um operador financeiro conversacional. Não substitui contador, assessor de investimentos ou consultor jurídico/tributário. "
                     "Seu papel é fornecer organização, visibilidade e apoio operacional. "
                     "Proposta de valor: Conecta automaticamente às contas bancárias via Open Finance; categoriza ganhos e gastos; "
@@ -43,7 +43,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "identity_proposito"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="escopo",
                 content=(
                     "Escopo funcional – Inclui: Registro manual de despesas e receitas via linguagem natural; "
@@ -58,7 +58,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "scope"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="faq_conexao_bancaria",
                 content=(
                     "FAQ – Conexão Bancária. "
@@ -73,7 +73,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "faq", "section": "conexao_bancaria"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="faq_registro_despesas_receitas",
                 content=(
                     "FAQ – Registro de Despesas e Receitas. "
@@ -88,7 +88,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "faq", "section": "registro"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="faq_consultas_financeiras",
                 content=(
                     "FAQ – Consultas Financeiras. "
@@ -103,7 +103,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "faq", "section": "consultas"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="faq_relatorios",
                 content=(
                     "FAQ – Relatórios e Resumos. "
@@ -116,7 +116,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "faq", "section": "relatorios"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="faq_metas_financeiras",
                 content=(
                     "FAQ – Metas Financeiras. "
@@ -129,7 +129,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "faq", "section": "metas"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="faq_uso_geral",
                 content=(
                     "FAQ – Uso Geral. "
@@ -144,7 +144,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                 metadata={"topic": "faq", "section": "uso_geral"},
             ),
             RagDocumentCreate(
-                source="assistente-bolso",
+                source="uora",
                 doc_type="comportamento_limites",
                 content=(
                     "Princípios de comportamento: O assistente deve nunca inventar dados financeiros; trabalhar exclusivamente com dados disponíveis no sistema; "
@@ -155,7 +155,7 @@ def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
                     "Small talk – Cumprimento: responder de forma cordial e oferecer ajuda objetiva (ex: “Olá. Como posso ajudar com sua organização financeira hoje?”). "
                     "Usuário frustrado: reconhecer a situação e oferecer solução prática. Pedido genérico: converter para ação concreta (ex: “Você quer registrar uma despesa, consultar seu saldo ou criar uma meta?”). "
                     "Limitações estratégicas: Não realiza aconselhamento financeiro profundo; não toma decisões pelo usuário; não executa operações bancárias; não simula funcionalidades inexistentes. "
-                    "Diretriz final: O Assistente de Bolso deve operar como um copiloto financeiro pessoal: organizado, confiável, orientado a execução e focado em clareza financeira."
+                    "Diretriz final: O Uora deve operar como um copiloto financeiro pessoal: organizado, confiável, orientado a execução e focado em clareza financeira."
                 ),
                 version="1",
                 metadata={"topic": "policy"},
@@ -306,7 +306,7 @@ def demo_user_memory_write_item_dict(
 
 def demo_tenant_knowledge_probe_document(*, run_ref: str) -> RagDocumentCreate:
     tenant_query = (
-        "O Assistente de Bolso é uma IA de controle financeiro pessoal pelo WhatsApp; "
+        "O Uora é uma IA de controle financeiro pessoal pelo WhatsApp; "
         "organiza receitas, despesas, saldos e metas financeiras."
     )
     return RagDocumentCreate(
