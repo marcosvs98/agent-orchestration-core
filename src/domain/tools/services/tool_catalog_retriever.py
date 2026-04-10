@@ -35,6 +35,7 @@ class ToolCatalogRetriever:
         rag_config_id: UUID,
         user_input: str,
         top_k: int | None = None,
+        agent_version_id: UUID | None = None,
     ) -> list[AvailableTool]:
 
         filters_override: dict[str, object] = {
@@ -48,7 +49,7 @@ class ToolCatalogRetriever:
             user_id=None,
             user_input=user_input,
             filters_override=filters_override,
-            top_k_override=top_k or MAX_TOOL_CATALOG_TOP_K,
+            top_k_override=(top_k or MAX_TOOL_CATALOG_TOP_K) * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER,
             similarity_threshold_cap=TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP,
         )
         selected: list[ToolDiscoveryCandidate] = (
@@ -56,6 +57,14 @@ class ToolCatalogRetriever:
                 context_items=context.context_items,
             )
         )
+        if agent_version_id is not None:
+            bindings = await self.tools_repository.list_tool_bindings_by_agent_version_id(
+                tenant_id=tenant_id,
+                agent_version_id=agent_version_id,
+            )
+            allowed = {b.tool_config_id for b in bindings}
+            if allowed:
+                selected = [c for c in selected if c.tool_config_id in allowed]
         score_by_id = {item.tool_config_id: item.score for item in selected}
         rows = await self.tools_repository.list_published_tool_configs_with_tools_by_config_ids(
             tenant_id=tenant_id,

@@ -33,7 +33,8 @@ from seeds.demo.ids import (
     TOOL_CONFIG_DEMO_ID,
     TOOL_DEMO_ID,
 )
-from seeds.demo.rag_payloads import demo_tool_catalog_seed_documents
+from seeds.demo.rag_payloads import uora_allowlisted_tool_catalog_documents
+from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
 
 
 class _SeedObservationHandle:
@@ -171,10 +172,11 @@ async def seed_tool_catalog_rag() -> None:
         embedding_executor=embedding_executor
     )
 
-    for document in demo_tool_catalog_seed_documents(
-        tool_id=TOOL_DEMO_ID,
-        tool_config_id=TOOL_CONFIG_DEMO_ID,
-    ):
+    rows = await fetch_uora_platform_tool_rows(
+        demo_tool_id=TOOL_DEMO_ID,
+        demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
+    )
+    for document in uora_allowlisted_tool_catalog_documents(rows):
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,
             rag_config_id=RAG_CONFIG_DEMO_ID,

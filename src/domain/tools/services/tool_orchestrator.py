@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 import json
@@ -16,6 +17,20 @@ from domain.tools.repositories.tools_repository import ToolsRepository
 from exceptions.service_exceptions import DomainValidationException
 
 
+def effective_tool_http_url(config: dict[str, Any]) -> str:
+    """Resolve request URL: prefer base_url + path; fall back to legacy absolute url."""
+    base = str(config.get("base_url") or "").strip().rstrip("/")
+    path = str(config.get("path") or "").strip()
+    if path and not path.startswith("/"):
+        path = f"/{path}"
+    explicit = str(config.get("url") or "").strip()
+    if base and path:
+        return f"{base}{path}"
+    if explicit:
+        return explicit
+    return base or path
+
+
 class ToolOrchestrator:
     def __init__(
         self,
@@ -32,10 +47,14 @@ class ToolOrchestrator:
         self.tools_repository = tools_repository
 
     async def _resolve_headers(
-        self, *, headers_config: dict
+        self,
+        *,
+        headers_config: dict,
+        interaction_metadata: dict[str, Any] | None = None,
     ) -> tuple[dict[str, str], list[str]]:
         resolved: dict[str, str] = {}
         used_secret_refs: list[str] = []
+        meta = interaction_metadata if isinstance(interaction_metadata, dict) else {}
         for key, value in (headers_config or {}).items():
             if isinstance(value, dict) and "secret_ref" in value:
                 secret_ref = str(value["secret_ref"])
@@ -49,6 +68,16 @@ class ToolOrchestrator:
                     )
                 resolved[str(key)] = secret_value
                 used_secret_refs.append(secret_ref)
+                continue
+            if isinstance(value, dict) and "interaction_metadata_key" in value:
+                mk = str(value["interaction_metadata_key"])
+                raw = meta.get(mk)
+                if raw is None or (isinstance(raw, str) and not raw.strip()):
+                    raise DomainValidationException(
+                        message="interaction_metadata_header_missing",
+                        detail={"header": str(key), "metadata_key": mk},
+                    )
+                resolved[str(key)] = str(raw).strip()
                 continue
             if isinstance(value, str):
                 resolved[str(key)] = value
@@ -74,12 +103,17 @@ class ToolOrchestrator:
                 pass
 
         config: dict = tool_config.config or {}
-        url = config.get("url")
+        url = effective_tool_http_url(config)
         method = config.get("method", "POST")
         timeout_seconds = float(config.get("timeout_seconds", 10))
         int(config.get("max_attempts", 3))
+        flow_run_id = await self.repository.get_flow_run_id_for_tool_run(tool_run_id)
+        interaction_metadata = await self.repository.get_interaction_metadata_for_flow_run(
+            flow_run_id
+        )
         headers, secret_refs = await self._resolve_headers(
-            headers_config=config.get("headers", {}) or {}
+            headers_config=config.get("headers", {}) or {},
+            interaction_metadata=interaction_metadata,
         )
 
         if not url:
@@ -100,9 +134,6 @@ class ToolOrchestrator:
         result: dict | None = None
         try:
             if secret_refs:
-                flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
-                    tool_run.tool_run_id
-                )
                 session_id, tenant_id = await self.repository.get_flow_context(
                     flow_run_id
                 )

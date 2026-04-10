@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-project_root = Path(__file__).resolve().parents[3]
+project_root = Path(__file__).resolve().parents[4]
 src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
@@ -25,12 +25,19 @@ from seeds.demo.ids import (
     NODE_RESPONSE_ID,
     NODE_SLOT_ID,
     NODE_TOOL_SELECTION_ID,
-    TOOL_CONFIG_DEMO_ID,
     NODE_FALLBACK_SLA_ID,
+    TOOL_CONFIG_DEMO_ID,
+    TOOL_DEMO_ID,
 )
+from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
 
 
 async def seed_bindings() -> None:
+    rows = await fetch_uora_platform_tool_rows(
+        demo_tool_id=TOOL_DEMO_ID,
+        demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
+    )
+    tool_config_ids = [r["tool_config_id"] for r in rows]
     async with get_db() as session:
         nodes = [
             NODE_INPUT_MODERATION_ID,
@@ -59,19 +66,19 @@ async def seed_bindings() -> None:
                 )
                 session.add(binding)
 
-        result = await session.execute(
-            select(AgentVersionToolBinding).where(
-                AgentVersionToolBinding.agent_version_id == AGENT_VERSION_V1_ID,
-                AgentVersionToolBinding.tool_config_id == TOOL_CONFIG_DEMO_ID,
+        for tcid in tool_config_ids:
+            result = await session.execute(
+                select(AgentVersionToolBinding).where(
+                    AgentVersionToolBinding.agent_version_id == AGENT_VERSION_V1_ID,
+                    AgentVersionToolBinding.tool_config_id == tcid,
+                )
             )
-        )
-        tool_binding = result.scalar_one_or_none()
-
-        if tool_binding is None:
-            tool_binding = AgentVersionToolBinding(
-                agent_version_id=AGENT_VERSION_V1_ID,
-                tool_config_id=TOOL_CONFIG_DEMO_ID,
-            )
-            session.add(tool_binding)
+            if result.scalar_one_or_none() is None:
+                session.add(
+                    AgentVersionToolBinding(
+                        agent_version_id=AGENT_VERSION_V1_ID,
+                        tool_config_id=tcid,
+                    )
+                )
 
         await session.commit()

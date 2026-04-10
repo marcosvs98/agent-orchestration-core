@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 from adapters.observability.logging import get_logger
 from domain.mcp_registry.schemas.mcp_registry import McpServerBuildSpec
 from domain.tools.schemas.http_result import HttpToolResult
+from domain.tools.services.tool_orchestrator import effective_tool_http_url
 
 logger = get_logger(__name__)
 
@@ -106,7 +107,7 @@ class _McpHttpProxyTool(Tool):
                 structured_content={"error": "tool_config_not_found"},
             )
         config: dict = cfg_model.config or {}
-        url = config.get("url")
+        url = effective_tool_http_url(config)
         if not url:
             return ToolResult(
                 content=json.dumps({"error": "tool_config_missing_url"}),

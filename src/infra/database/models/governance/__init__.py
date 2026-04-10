@@ -1,4 +1,7 @@
 from infra.database.models.governance.tenant import Tenant as Tenant
+from infra.database.models.governance.tenant_inbound_service_key import (
+    TenantInboundServiceKey as TenantInboundServiceKey,
+)
 from infra.database.models.governance.access_policy import AccessPolicy as AccessPolicy
 from infra.database.models.governance.access_policy_version import (
     AccessPolicyVersion as AccessPolicyVersion,

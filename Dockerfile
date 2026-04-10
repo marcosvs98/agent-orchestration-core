@@ -12,7 +12,11 @@ RUN apt-get update && apt-get install -y \
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser appuser \
+    && mkdir -p /home/appuser \
+    && chown -R appuser:appuser /home/appuser
+
+ENV HOME=/home/appuser
 
 WORKDIR /app
 

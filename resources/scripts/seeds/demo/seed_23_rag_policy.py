@@ -32,10 +32,18 @@ from seeds.demo.ids import (
     RAG_POLICY_VERSION_V1_ID,
     TENANT_DEMO_ID,
     TOOL_CONFIG_DEMO_ID,
+    TOOL_DEMO_ID,
 )
+from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
 
 
 async def seed_rag_policy() -> None:
+    tool_rows = await fetch_uora_platform_tool_rows(
+        demo_tool_id=TOOL_DEMO_ID,
+        demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
+    )
+    allowed_tc = [r["tool_config_id"] for r in tool_rows]
+
     async with get_db() as session:
         result = await session.execute(
             select(RagPolicy).where(RagPolicy.rag_policy_id == RAG_POLICY_DEMO_ID)
@@ -58,14 +66,14 @@ async def seed_rag_policy() -> None:
                         tenant_knowledge=RagScopePolicy(enabled=True),
                         user_memory_vector=RagScopePolicy(
                             enabled=True,
-                            allowed_tool_config_ids=[TOOL_CONFIG_DEMO_ID],
+                            allowed_tool_config_ids=allowed_tc,
                         ),
                     ),
                     LLMTaskType.MEMORY_EXTRACTION: RagTaskDefaults(
                         tenant_knowledge=RagScopePolicy(enabled=True),
                         user_memory_vector=RagScopePolicy(
                             enabled=True,
-                            allowed_tool_config_ids=[TOOL_CONFIG_DEMO_ID],
+                            allowed_tool_config_ids=allowed_tc,
                         ),
                     ),
                     LLMTaskType.SLOT_FILLING: RagTaskDefaults(

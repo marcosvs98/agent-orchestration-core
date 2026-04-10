@@ -1,5 +1,8 @@
 PYTHON ?= python3
 
+# migrate / seed-demo usam uv run para usar o Alembic e deps do projeto (ver README §4.1–4.2).
+# Postgres do compose usa bind mount em ./docker-volumes/postgres; docker compose down -v não apaga esse diretório.
+
 .PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo seed-demo2 test-flow-demo test-trace-hierarchy serve-conversation-test
 
 validate-setup:
@@ -24,7 +27,7 @@ run-seed:
 	@PYTHONPATH=src python3 resources/scripts/seeds/seed_main.py
 
 seed-demo:
-	@PYTHONPATH=src python3 resources/scripts/seeds/demo/run.py
+	@PYTHONPATH=src uv run python resources/scripts/seeds/demo/run.py
 
 seed-demo2:
 	@PYTHONPATH=src uv run python resources/scripts/seeds/demo_2/run.py
@@ -39,7 +42,7 @@ test-trace-hierarchy:
 	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/test_trace_hierarchy.py
 
 migrate:
-	@PYTHONPATH=src alembic upgrade head
+	@PYTHONPATH=src uv run python -m alembic upgrade head
 
 serve-conversation-test:
 	@echo "Serving conversation test frontend at http://localhost:9000"

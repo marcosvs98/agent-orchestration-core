@@ -1,10 +1,21 @@
+import hashlib
 import time
 from uuid import UUID
 
-from fastapi import Security, status
+from fastapi import Depends, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
+from domain.auth.repositories.inbound_service_key_repository import (
+    InboundServiceKeyRepository,
+)
+from domain.auth.schemas.auth import TenantTokenRequest
+from exceptions.service_exceptions import (
+    AuthenticationFailedException,
+    AuthorizationDeniedException,
+)
+from infra.database import DatabaseConnection
+from infra.database.dependencies import get_database_connection
 from settings import (
     JWT_ALGORITHM,
     JWT_AUDIENCE,
@@ -12,12 +23,10 @@ from settings import (
     JWT_LEEWAY_SECONDS,
     JWT_SECRET,
 )
-from exceptions.service_exceptions import (
-    AuthenticationFailedException,
-    AuthorizationDeniedException,
-)
 
 security = HTTPBearer(auto_error=False)
+
+INBOUND_SERVICE_KEY_HEADER = "X-Inbound-Service-Key"
 
 
 class AuthContext:
@@ -41,8 +50,8 @@ class AuthContext:
         self.expires_at = expires_at
 
 
-def get_auth_context(
-    credentials: HTTPAuthorizationCredentials | None = Security(security),
+def _jwt_auth_context_from_bearer(
+    credentials: HTTPAuthorizationCredentials | None,
 ) -> AuthContext:
     if credentials is None or not credentials.scheme.lower() == "bearer":
         raise AuthenticationFailedException(message="missing_bearer_token")
@@ -130,3 +139,49 @@ def get_auth_context(
         token_audience=audience,
         expires_at=exp,
     )
+
+
+def get_auth_context(
+    credentials: HTTPAuthorizationCredentials | None = Security(security),
+) -> AuthContext:
+    return _jwt_auth_context_from_bearer(credentials)
+
+
+async def get_tenant_token_m2m_auth(
+    body: TenantTokenRequest,
+    request: Request,
+    db: DatabaseConnection = Depends(get_database_connection),
+    credentials: HTTPAuthorizationCredentials | None = Security(security),
+) -> AuthContext:
+    inbound_key = (request.headers.get(INBOUND_SERVICE_KEY_HEADER) or "").strip()
+    if inbound_key:
+        digest = hashlib.sha256(inbound_key.encode("utf-8")).hexdigest()
+        async with db.get_session() as session:
+            row = await InboundServiceKeyRepository.find_active_by_key_hash(
+                session,
+                digest,
+            )
+        if row is None:
+            raise AuthenticationFailedException(
+                message="invalid_inbound_service_key",
+            )
+        if body.tenant_id is not None and body.tenant_id != row.tenant_id:
+            raise AuthorizationDeniedException(
+                message="inbound_key_tenant_mismatch",
+            )
+        if not JWT_ISSUER or not JWT_AUDIENCE:
+            raise AuthenticationFailedException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                message="jwt_issuer_audience_not_configured",
+            )
+        now = int(time.time())
+        return AuthContext(
+            tenant_id=row.tenant_id,
+            principal_type="machine",
+            principal_id=str(row.inbound_service_key_id),
+            scopes={"tenants:create", "execution:flow_run:create"},
+            token_issuer=str(JWT_ISSUER),
+            token_audience=str(JWT_AUDIENCE),
+            expires_at=now + 3600,
+        )
+    return _jwt_auth_context_from_bearer(credentials)

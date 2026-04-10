@@ -12,8 +12,6 @@ from domain.tools.schemas.tools import (
     ToolImportResult,
 )
 from domain.tools.services.tools_service import ToolsService
-from domain.common.schemas.error import ErrorResponse
-from exceptions.service_exceptions import MethodNotAllowedPlaceholderException
 from utils.auth import AuthContext, get_auth_context
 
 
@@ -62,21 +60,18 @@ class ToolsController:
             self.publish_tool_config,
             methods=["POST"],
             response_model=ToolConfig,
-            responses=self._resp405(),
         )
         r(
             "/tool-configs/{tool_config_id}:deprecate",
             self.deprecate_tool_config,
             methods=["POST"],
             response_model=ToolConfig,
-            responses=self._resp405(),
         )
         r(
             "/tool-configs/{tool_config_id}:disable",
             self.disable_tool_config,
             methods=["POST"],
             response_model=ToolConfig,
-            responses=self._resp405(),
         )
         r(
             "/agent-version-tool-bindings",
@@ -91,9 +86,6 @@ class ToolsController:
             methods=["GET"],
             response_model=list[AgentVersionToolBinding],
         )
-
-    def _resp405(self) -> dict[int, dict[str, object]]:
-        return {status.HTTP_405_METHOD_NOT_ALLOWED: {"model": ErrorResponse}}
 
     async def import_tool(
         self,
@@ -156,16 +148,34 @@ class ToolsController:
         )
 
     async def publish_tool_config(
-        self, tool_config_id: str, _: AuthContext = Depends(get_auth_context)
+        self,
+        tool_config_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> ToolConfig:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.publish_tool_config(
+            tenant_id=auth.tenant_id,
+            tool_config_id=tool_config_id,
+            principal_id=auth.principal_id,
+        )
 
     async def deprecate_tool_config(
-        self, tool_config_id: str, _: AuthContext = Depends(get_auth_context)
+        self,
+        tool_config_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> ToolConfig:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.deprecate_tool_config(
+            tenant_id=auth.tenant_id,
+            tool_config_id=tool_config_id,
+            principal_id=auth.principal_id,
+        )
 
     async def disable_tool_config(
-        self, tool_config_id: str, _: AuthContext = Depends(get_auth_context)
+        self,
+        tool_config_id: UUID,
+        auth: AuthContext = Depends(get_auth_context),
     ) -> ToolConfig:
-        raise MethodNotAllowedPlaceholderException()
+        return await self.service.disable_tool_config(
+            tenant_id=auth.tenant_id,
+            tool_config_id=tool_config_id,
+            principal_id=auth.principal_id,
+        )

@@ -534,14 +534,23 @@ class LLMExecutor(LLMExecutorPort):
                                         "cost_usd": result.cost_usd,
                                     },
                                 )
+
                         except Exception as infer_exc:
                             if generation_handle:
+                                if isinstance(infer_exc, DomainValidationException):
+                                    generation_handle.error(
+                                        error_type=type(infer_exc).__name__,
+                                        error_message=str(infer_exc),
+                                        output={"status": "error", "errors": infer_exc.errors, "input_data": infer_exc.input_data},
+                                    )
+                                    raise infer_exc from infer_exc
+                            
                                 generation_handle.error(
                                     error_type=type(infer_exc).__name__,
                                     error_message=str(infer_exc),
-                                    output={"status": "error"},
+                                    output={"status": "error",},
                                 )
-                            raise
+                            raise infer_exc from infer_exc
 
                     output_to_validate = result.output
                     if isinstance(result.output, str):

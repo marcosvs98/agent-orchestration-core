@@ -44,7 +44,9 @@ You can use context from the previous conversation to complete slots.
 {{ ctx.derived.selected_tools | tojson }}
 
 # Constraints
-- Do not invent values.
+- Use only names that appear in the request schema for `params` and for `missing_fields[].field`.
+- When the user’s wording clearly matches a field, fill it in the format the schema expects; do not add values or entities they did not convey.
+- `ready` when every required field in the schema is satisfied; otherwise `incomplete` and list only what is still missing.
 """
         clarification_template = """# Task
 Ask the user for missing required information.
@@ -86,14 +88,20 @@ You can use context from the previous conversation to complete slots.
 - Do not mention status codes, endpoints, requests, or payloads."""
 
         tool_selection_template = """# Task
-Select the best matching tool(s) for each user intent. Return one entry per intent type when the user has multiple intents.
+Select the best matching tool(s) for the user's intent. Return one entry per distinct intent.
 
 # Available tools
 {{ ctx.meta.available_tools | tojson }}
 
+# Intent-to-method mapping
+- When the user wants to CREATE, REGISTER, ADD, RECORD, or INSERT something new → prefer tools with method POST.
+- When the user wants to LIST, VIEW, SHOW, SEARCH, or CONSULT existing data → prefer tools with method GET.
+- Match the user's ACTION VERB to the correct HTTP method. Do NOT use a GET/list tool when the user clearly wants to create or register.
+
 # Constraints
 - selected_tool must reference a tool from available_tools by name and tool_config_id.
-- confidence between 0 and 1."""
+- confidence between 0 and 1.
+- intent_type: "query" for GET tools, "command" for POST/PUT/PATCH/DELETE tools."""
         input_moderation_template = """You are a moderation classifier.
 Return JSON only.
 {
@@ -229,6 +237,9 @@ Return only JSON:
                                     },
                                     "params": {
                                         "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {},
+                                        "required": [],
                                     },
                                     "missing_fields": {
                                         "type": "array",

@@ -21,6 +21,7 @@ from domain.governance.schemas.scopes import Scope
 
 from seeds.demo.ids import (
     RATE_LIMIT_POLICY_DEMO_ID,
+    RATE_LIMIT_POLICY_VERSION_MACHINE_V1_ID,
     RATE_LIMIT_POLICY_VERSION_V1_ID,
     TENANT_DEMO_ID,
 )
@@ -80,4 +81,42 @@ async def seed_rate_limit_policy() -> None:
                 updated = True
             if updated:
                 session.add(existing_version)
+                await session.commit()
+
+        result_m = await session.execute(
+            select(RateLimitPolicyVersion).where(
+                RateLimitPolicyVersion.rate_limit_policy_version_id
+                == RATE_LIMIT_POLICY_VERSION_MACHINE_V1_ID
+            )
+        )
+        existing_machine = result_m.scalar_one_or_none()
+
+        if existing_machine is None:
+            machine_version = RateLimitPolicyVersion(
+                rate_limit_policy_version_id=RATE_LIMIT_POLICY_VERSION_MACHINE_V1_ID,
+                rate_limit_policy_id=RATE_LIMIT_POLICY_DEMO_ID,
+                status=VersionStatus.PUBLISHED.value,
+                version_major=1,
+                version_minor=1,
+                version_patch=0,
+                action=str(Scope.ExecutionFlowRunCreate),
+                principal_type="machine",
+                limit=100,
+                window_seconds=60,
+            )
+            session.add(machine_version)
+            await session.commit()
+        else:
+            updated_m = False
+            if existing_machine.action != str(Scope.ExecutionFlowRunCreate):
+                existing_machine.action = str(Scope.ExecutionFlowRunCreate)
+                updated_m = True
+            if existing_machine.principal_type != "machine":
+                existing_machine.principal_type = "machine"
+                updated_m = True
+            if existing_machine.status != VersionStatus.PUBLISHED.value:
+                existing_machine.status = VersionStatus.PUBLISHED.value
+                updated_m = True
+            if updated_m:
+                session.add(existing_machine)
                 await session.commit()

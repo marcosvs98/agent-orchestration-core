@@ -26,6 +26,7 @@ from domain.governance.schemas.authoring_events import AuthoringEventType, Chang
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
+    ResourceBlockedServiceException,
 )
 
 
@@ -63,11 +64,10 @@ class ToolsService(ToolsServicePort):
         operations = self.openapi_parser.extract_operations(parsed_spec)
         if not operations:
             raise DomainValidationException(message="openapi_spec_without_operations")
-        base_url = (
-            parsed_spec.get("servers", [{}])[0].get("url", "")
-            if parsed_spec.get("servers")
-            else ""
-        )
+        raw_base = ""
+        if parsed_spec.get("servers"):
+            raw_base = str(parsed_spec.get("servers", [{}])[0].get("url", "") or "")
+        base_url = str(raw_base).strip().rstrip("/")
         imported_tools: list[Tool] = []
         for op in operations:
             operation_id = op["operation_id"]
@@ -84,9 +84,12 @@ class ToolsService(ToolsServicePort):
                 version_major=1,
                 version_minor=0,
             )
-            full_url = f"{base_url}{op['path']}" if base_url else op["path"]
+            path = str(op["path"])
+            path_norm = path if path.startswith("/") else (f"/{path}" if path else "")
+            full_url = f"{base_url}{path_norm}" if base_url else path
 
             tool_config_dict = ToolConfigConfig(
+                base_url=base_url or None,
                 url=full_url,
                 path=op["path"],
                 method=op["method"],
@@ -135,6 +138,11 @@ class ToolsService(ToolsServicePort):
                     justification="import tool from openapi",
                     schema_version=1,
                 )
+            await self.publish_tool_config(
+                tenant_id=tenant_id,
+                tool_config_id=created_tool_config.tool_config_id,
+                principal_id=principal_id,
+            )
             imported_tools.append(Tool(id=tool_model.tool_id, name=tool_model.name))
         return ToolImportResult(
             imported_count=len(imported_tools),
@@ -354,6 +362,136 @@ class ToolsService(ToolsServicePort):
             )
             for m in models
         ]
+
+    def _tool_config_to_schema(self, src: object) -> ToolConfig:
+        return ToolConfig(
+            id=src.tool_config_id,
+            tool_id=src.tool_id,
+            config=src.config,
+            status=src.status,
+            version_major=src.version_major,
+            version_minor=src.version_minor,
+            version_patch=src.version_patch,
+            config_hash=src.config_hash,
+            schema_version=src.schema_version,
+        )
+
+    async def publish_tool_config(
+        self,
+        *,
+        tenant_id: UUID,
+        tool_config_id: UUID,
+        principal_id: str,
+    ) -> ToolConfig:
+        model = await self.repository.get_tool_config(tool_config_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="tool_config_not_found")
+        current = str(model.status)
+        if current == VersionStatus.PUBLISHED.value:
+            return self._tool_config_to_schema(model)
+        if current not in (
+            VersionStatus.DRAFT.value,
+            VersionStatus.VALIDATED.value,
+        ):
+            raise ResourceBlockedServiceException(message="tool_config_not_publishable")
+        await self.repository.set_tool_config_status(
+            tool_config_id=tool_config_id, status=VersionStatus.PUBLISHED
+        )
+        tool = await self.repository.get_tool(model.tool_id)
+        refreshed = await self.repository.get_tool_config(tool_config_id)
+        if refreshed is None:
+            raise NotFoundServiceException(message="tool_config_not_found")
+        await self._index_tool_catalog_document(
+            tenant_id=tenant_id,
+            tool_id=refreshed.tool_id,
+            tool_name=tool.name if tool else None,
+            tool_config_id=refreshed.tool_config_id,
+            config=refreshed.config,
+            version=f"{refreshed.version_major}.{refreshed.version_minor}.{refreshed.version_patch}",
+        )
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="tool_config",
+            resource_id=tool_config_id,
+            version_id=None,
+            event_type=AuthoringEventType.TOOL_CONFIG_PUBLISHED.value,
+            change_type=ChangeType.UPDATE.value,
+            principal_id=principal_id,
+            justification="publish tool config",
+            schema_version=1,
+        )
+        return self._tool_config_to_schema(refreshed)
+
+    async def deprecate_tool_config(
+        self,
+        *,
+        tenant_id: UUID,
+        tool_config_id: UUID,
+        principal_id: str,
+    ) -> ToolConfig:
+        model = await self.repository.get_tool_config(tool_config_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="tool_config_not_found")
+        current = str(model.status)
+        if current == VersionStatus.DEPRECATED.value:
+            return self._tool_config_to_schema(model)
+        if current in (VersionStatus.DISABLED.value,):
+            raise ResourceBlockedServiceException(message="tool_config_not_deprecatable")
+        await self.repository.set_tool_config_status(
+            tool_config_id=tool_config_id, status=VersionStatus.DEPRECATED
+        )
+        refreshed = await self.repository.get_tool_config(tool_config_id)
+        if refreshed is None:
+            raise NotFoundServiceException(message="tool_config_not_found")
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="tool_config",
+            resource_id=tool_config_id,
+            version_id=None,
+            event_type=AuthoringEventType.TOOL_CONFIG_DEPRECATED.value,
+            change_type=ChangeType.UPDATE.value,
+            principal_id=principal_id,
+            justification="deprecate tool config",
+            schema_version=1,
+        )
+        return self._tool_config_to_schema(refreshed)
+
+    async def disable_tool_config(
+        self,
+        *,
+        tenant_id: UUID,
+        tool_config_id: UUID,
+        principal_id: str,
+    ) -> ToolConfig:
+        model = await self.repository.get_tool_config(tool_config_id)
+        if model is None or model.tenant_id != tenant_id:
+            raise NotFoundServiceException(message="tool_config_not_found")
+        current = str(model.status)
+        if current == VersionStatus.DISABLED.value:
+            return self._tool_config_to_schema(model)
+        if current not in (
+            VersionStatus.PUBLISHED.value,
+            VersionStatus.DEPRECATED.value,
+        ):
+            raise ResourceBlockedServiceException(message="tool_config_not_disableable")
+        await self.repository.set_tool_config_status(
+            tool_config_id=tool_config_id, status=VersionStatus.DISABLED
+        )
+        refreshed = await self.repository.get_tool_config(tool_config_id)
+        if refreshed is None:
+            raise NotFoundServiceException(message="tool_config_not_found")
+        await self.authoring_events.append_event(
+            tenant_id=tenant_id,
+            resource_type="tool_config",
+            resource_id=tool_config_id,
+            version_id=None,
+            event_type=AuthoringEventType.TOOL_CONFIG_DISABLED.value,
+            change_type=ChangeType.UPDATE.value,
+            principal_id=principal_id,
+            justification="disable tool config",
+            schema_version=1,
+        )
+        return self._tool_config_to_schema(refreshed)
 
     async def _index_tool_catalog_document(
         self,

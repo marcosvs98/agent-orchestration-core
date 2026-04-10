@@ -161,7 +161,30 @@ docker compose logs -f app
 docker compose down
 ```
 
-### 4.2 Via Makefile
+**Postgres local e `down -v`:** O `docker-compose.yml` persiste dados em **`./docker-volumes/postgres`** (bind mount). O comando `docker compose down -v` remove apenas volumes **nomeados ou anônimos** declarados na seção `volumes:` do Compose; **não apaga** esse diretório. Para zerar o banco de desenvolvimento, pare os serviços e remova manualmente os dados (por exemplo `rm -rf docker-volumes/postgres`; faça o mesmo para Redis em `docker-volumes/redis` se precisar de reset completo).
+
+### 4.2 Migração e seed do banco
+
+Os alvos `migrate` e `seed-demo` do Makefile usam **`uv run`** para executar o Alembic e o Python do ambiente do projeto (evita `command not found: alembic` quando o binário não está no PATH).
+
+Alternativa: instalar/use o mesmo Alembic que o `uv lock` resolve (por exemplo `uv tool run alembic` ou ativar `.venv` após `uv sync`).
+
+**Migrações** (PostgreSQL acessível na URL configurada, ex. após `docker compose up -d postgres`):
+
+```bash
+export DATABASE_URL='postgresql+asyncpg://postgres:password@127.0.0.1:5432/agent_router'
+make migrate
+# equivalente: PYTHONPATH=src uv run python -m alembic upgrade head
+```
+
+**Seed de demo** (define `DATABASE_URL`, e para o seed de tools/RAG típico também `REDIS_URL`, variáveis do `.env` e, se aplicável, `UORA_OPENAPI_URL` apontando para o OpenAPI do app consumidor):
+
+```bash
+make seed-demo
+# equivalente: PYTHONPATH=src uv run python resources/scripts/seeds/demo/run.py
+```
+
+### 4.3 Via Makefile
 
 ```bash
 # Configurar pre-commit hooks
@@ -177,7 +200,7 @@ make pc-run-all
 make validate-test
 ```
 
-### 4.3 Configuração de Ambiente
+### 4.4 Configuração de Ambiente
 
 Copiar arquivo de exemplo `.env` e ajustar variáveis conforme necessidade:
 

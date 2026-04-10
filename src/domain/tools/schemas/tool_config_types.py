@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from pydantic import BaseModel
 
@@ -14,6 +14,7 @@ class ToolConfigRagActivation(TypedDict, total=False):
 
 
 class ToolConfigConfig(TypedDict, total=False):
+    base_url: str
     url: str
     path: str
     method: str
@@ -24,6 +25,7 @@ class ToolConfigConfig(TypedDict, total=False):
     description: str
     examples: list[str]
     rag_activation: ToolConfigRagActivation
+    headers: dict[str, Any]
 
 
 class ToolConfigRagScopeActivationSchema(BaseModel):
@@ -43,6 +45,7 @@ class ToolConfigRagActivationSchema(BaseModel):
 class ToolConfigConfigSchema(BaseModel):
     """Pydantic schema for tool config at API boundary. Used in POST /tool-configs."""
 
+    base_url: str | None = None
     url: str | None = None
     path: str | None = None
     method: str | None = None
@@ -53,3 +56,4 @@ class ToolConfigConfigSchema(BaseModel):
     description: str | None = None
     examples: list[str] | None = None
     rag_activation: ToolConfigRagActivationSchema | None = None
+    headers: dict[str, object] | None = None

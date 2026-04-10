@@ -19,6 +19,320 @@ from domain.execution.services.graph_runtime.types import ToolIntentFilter
 from domain.governance.schemas.memory_policy import MemoryPolicySource
 from domain.rag.schemas.rag import RagDocumentCreate
 
+_UORA_SEMANTIC_ALIASES_PT: dict[str, str] = {
+    "dashboard_get_overview": (
+        "visão geral financeira, painel, dashboard, resumo do mês, como estou financeiramente, "
+        "panorama das minhas finanças, situação geral, me dá um overview, consolidado."
+    ),
+    "list_user_transactions": (
+        "consultar extrato, ver lançamentos, mostrar movimentações, listar transações, "
+        "ver histórico de gastos, mostrar últimas compras, o que eu gastei, exibir movimentos da conta, "
+        "ver todas as transações, filtrar período, buscar transação, pesquisar no extrato. "
+        "ATENÇÃO: esta tool é apenas para CONSULTAR e VER transações existentes. "
+        "NÃO usar para registrar, criar, lançar ou adicionar transações novas."
+    ),
+    "create_manual_transaction": (
+        "registrar transação, criar transação manual, lançar despesa, adicionar receita, "
+        "anotar gasto, incluir compra, registrar pagamento, inserir lançamento, cadastrar movimento, "
+        "registre uma transação, registre um gasto, registre uma despesa, crie uma transação, "
+        "quero registrar, quero lançar, quero anotar, adicionar transação, nova transação, "
+        "gastei X reais, paguei X reais, comprei algo, recebi X reais, entrou X reais, "
+        "despesa em dinheiro, compra que não veio do banco, lançamento manual, gasto manual. "
+        "ATENÇÃO: esta é a tool correta quando o utilizador quer CRIAR, REGISTRAR, LANÇAR ou "
+        "ADICIONAR uma transação nova — NÃO confundir com listar ou consultar transações."
+    ),
+    "list_similar_transactions": (
+        "transações parecidas, gastos similares, outras no mesmo local, compras iguais, "
+        "recorrência parecida, lançamentos semelhantes."
+    ),
+    "get_transaction_detail": (
+        "detalhe de uma transação, informações do lançamento, abrir uma movimentação específica, "
+        "o que foi essa compra, explicar essa transação, dados completos do lançamento."
+    ),
+    "spending_by_category": (
+        "gastos por categoria, quanto gastei em cada rubrica, ranking de categorias, onde mais gastei, "
+        "distribuição de despesas, top categorias, relatório por categoria, alocação do orçamento."
+    ),
+    "installments_get_summary": (
+        "resumo de parcelas, total parcelado, quanto falta parcelar, visão de parcelamento, "
+        "compromisso com parcelas, soma das prestações."
+    ),
+    "list_user_installments": (
+        "minhas parcelas, compras parceladas, lista de prestações, parcelas ativas, "
+        "carnê, o que estou pagando parcelado."
+    ),
+    "list_detected_recurring_subscriptions": (
+        "assinaturas detectadas, mensalidades recorrentes, serviços que cobram todo mês, "
+        "Netflix Spotify estilo cobrança fixa, gastos recorrentes identificados."
+    ),
+    "list_user_credit_cards": (
+        "meus cartões, cartões cadastrados, lista de cartões de crédito, "
+        "quais cartões tenho, plasticópes."
+    ),
+    "cards_get_invoice_evolution": (
+        "evolução da fatura, histórico de fatura do cartão, como a fatura variou, "
+        "tendência de fechamento, fatura mês a mês."
+    ),
+    "cards_get_invoice_totals": (
+        "totais de fatura, soma das faturas, total a pagar nos cartões, "
+        "fechamento consolidado de faturas."
+    ),
+    "get_credit_card_detail": (
+        "detalhe do cartão, dados do cartão X, limite, melhor dia, informações do plastic, "
+        "resumo de um cartão específico."
+    ),
+    "list_card_invoices": (
+        "faturas do cartão, fechamentos anteriores, lista de faturas de um cartão, "
+        "histórico de invoices, qual fechamento."
+    ),
+    "list_invoice_transactions": (
+        "lançamentos da fatura, gastos nesse fechamento, movimentos da invoice, "
+        "o que entrou na fatura, itens da fatura."
+    ),
+    "list_user_wallets": (
+        "carteiras, contas, saldos por instituição, minhas contas conectadas, "
+        "onde tenho dinheiro, lista de carteiras."
+    ),
+    "financial_health_get_current_score": (
+        "score de saúde financeira, nota atual, como está minha saúde financeira, "
+        "pontuação financeira, rating de finanças."
+    ),
+    "financial_health_get_score_history": (
+        "histórico do score, evolução da saúde financeira, score no tempo, "
+        "como minha nota mudou."
+    ),
+    "financial_health_get_score_explanation": (
+        "por que meu score é assim, explicação da nota, fatores do score, "
+        "entender a saúde financeira, detalhamento do cálculo."
+    ),
+    "financial_health_get_action_plan": (
+        "plano de ação financeira, o que fazer para melhorar, recomendações, "
+        "passos sugeridos, dicas personalizadas para subir score."
+    ),
+    "investments_get_portfolio_summary": (
+        "resumo da carteira de investimentos, patrimônio investido, visão geral dos investimentos, "
+        "consolidado de ativos, quanto tenho aplicado."
+    ),
+    "investments_list_positions": (
+        "posições, ativos que tenho, detalhe da carteira, cada investimento, "
+        "lista de tickers ou fundos, composição da carteira."
+    ),
+    "investments_get_insights": (
+        "insights de investimento, análise da carteira, comentários sobre alocação, "
+        "visão de performance relativa ao portfólio."
+    ),
+    "market_get_indices": (
+        "índices de mercado, Ibovespa e afins, como fechou o índice, "
+        "cotação de índice, mercado em alta ou baixa."
+    ),
+    "market_get_quotes": (
+        "cotação de ativo, preço da ação, quote ao vivo, "
+        "quanto está valendo hoje, ticker."
+    ),
+    "market_get_news_headlines": (
+        "notícias de mercado, manchetes financeiras, headlines, "
+        "news do mercado, o que saiu na imprensa sobre finanças."
+    ),
+    "advisor_client_360_alerts": (
+        "alertas do cliente na visão 360, red flags, riscos e alertas do assessorado, "
+        "avisos importantes sobre o cliente."
+    ),
+    "advisor_client_360_behavior": (
+        "comportamento de gastos do cliente, padrão de consumo do cliente 360, "
+        "hábitos financeiros do assessorado."
+    ),
+    "advisor_client_360_cash_flow": (
+        "fluxo de caixa do cliente, entradas e saídas do assessorado, "
+        "movimento de caixa na visão 360."
+    ),
+    "advisor_client_360_debt_evolution": (
+        "evolução da dívida do cliente, histórico de endividamento, "
+        "como a dívida mudou no tempo."
+    ),
+    "advisor_client_360_debts": (
+        "dívidas do cliente, passivos do assessorado, o que o cliente deve, "
+        "consolidado de empréstimos e financiamentos."
+    ),
+    "advisor_client_360_list_goals": (
+        "metas financeiras do cliente, objetivos do assessorado, "
+        "planos e metas na visão 360."
+    ),
+    "advisor_client_360_investments": (
+        "investimentos do cliente, carteira do assessorado, "
+        "alocação de investments na visão 360."
+    ),
+    "advisor_client_360_summary": (
+        "resumo 360 do cliente, visão geral do assessorado, snapshot do cliente, "
+        "panorama advisor 360."
+    ),
+    "advisor_client_360_timeline": (
+        "linha do tempo financeira do cliente, histórico cronológico, "
+        "eventos e marcos do assessorado."
+    ),
+}
+
+
+def _derive_tool_intent_from_method(method: str | None) -> str:
+    upper = (method or "GET").upper()
+    if upper == "GET":
+        return ToolIntentFilter.QUERY.value
+    if upper in {"POST", "PUT", "PATCH", "DELETE"}:
+        return ToolIntentFilter.COMMAND.value
+    return ToolIntentFilter.QUERY.value
+
+
+def _tool_catalog_meta(row: dict[str, Any]) -> dict[str, Any]:
+    oid = str(row["operation_id"])
+    return {
+        "category": "TOOL_CATALOG",
+        "tool_id": str(row["tool_id"]),
+        "tool_config_id": str(row["tool_config_id"]),
+        "tool_name": str(row["tool_name"]),
+        "operation_id": oid,
+        "method": str(row["method"]),
+        "path": str(row["path"]),
+        "tool_intent": _derive_tool_intent_from_method(str(row.get("method") or "")),
+    }
+
+
+def _semantic_alias_text(row: dict[str, Any]) -> str:
+    oid = str(row["operation_id"])
+    if oid in _UORA_SEMANTIC_ALIASES_PT:
+        return _UORA_SEMANTIC_ALIASES_PT[oid]
+    tool_name = str(row["tool_name"])
+    path = str(row["path"])
+    method = str(row.get("method") or "GET").upper()
+    su = row.get("summary")
+    if method == "GET":
+        verb_phrase = f"{tool_name} consulta GET"
+        pt_hints = (
+            "pedidos em português: mostrar, listar, quero ver, me mostra o, qual o, preciso saber"
+        )
+    else:
+        verb_phrase = f"{tool_name} operação HTTP {method} (criar, atualizar ou remover conforme o caso)"
+        pt_hints = (
+            "pedidos em português: registrar, criar, adicionar, lançar, atualizar, remover, quero que você"
+        )
+    bits = [verb_phrase, f"caminho {path}", pt_hints]
+    if su:
+        bits.append(str(su))
+    return ". ".join(bits)
+
+
+def _spending_by_category_cluster_docs(row: dict[str, Any]) -> list[RagDocumentCreate]:
+    m = _tool_catalog_meta(row)
+    tool_name = str(row["tool_name"])
+    oid = str(row["operation_id"])
+    return [
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.r",
+            content=(
+                f"{tool_name} operation. User asks for reports and summaries of spending by "
+                "category in Portuguese: resumo dos gastos por categoria, top gastos por categoria, "
+                "maiores gastos por categoria, onde mais gastei, em que categoria gastei mais, "
+                "ranking de categorias, quanto gastei em cada categoria, distribuição de gastos, "
+                "alocação de despesas, relatório de gastos por categoria, visão por categoria do mês, "
+                "gastos agrupados por categoria, custo de vida por categoria, comparar categorias."
+            ),
+            metadata={**m, "cluster": "reports"},
+        ),
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.i",
+            content=(
+                f"{tool_name} for AI insights and narrative: pedido para analisar padrão de consumo, "
+                "entender para onde vai o dinheiro, destacar categorias que mais pesam no orçamento, "
+                "sugerir foco em categorias altas, pedido de síntese explicativa com totais por "
+                "categoria (sem inventar valores — usar dados da API)."
+            ),
+            metadata={**m, "cluster": "insights"},
+        ),
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.m",
+            content=(
+                f"{tool_name} quando o utilizador menciona período: mês atual, mês passado, YYYY-MM, "
+                "este mês, último mês, meses por extenso em português ou inglês com ano "
+                "(ex.: março de 2026 → month=2026-03), fechamento mensal, visão do mês. "
+                "A API expõe apenas o parâmetro opcional `month` (YYYY-MM), não existe campo `year` separado."
+            ),
+            metadata={**m, "cluster": "month"},
+        ),
+    ]
+
+
+def _create_manual_transaction_cluster_docs(row: dict[str, Any]) -> list[RagDocumentCreate]:
+    """RAG clusters for POST /transactions — body fields, PT phrasing, and disambiguation."""
+    m = _tool_catalog_meta(row)
+    tool_name = str(row["tool_name"])
+    oid = str(row["operation_id"])
+    return [
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.body",
+            content=(
+                f"{tool_name} cria um lançamento manual no extrato. Corpo JSON (OpenAPI): "
+                "`account_id` (UUID da conta/carteira), `amount_minor` (valor em centavos; ex.: R$ 10,50 → 1050), "
+                "`description` (texto livre do lançamento), `category_id` (UUID da categoria), "
+                "`booked_on` (data ISO YYYY-MM-DD), `direction` opcional `outflow` ou `inflow` (padrão despesa: outflow), "
+                "`currency` opcional (padrão BRL). Não inventar IDs: o utilizador ou contexto deve indicar conta e categoria."
+            ),
+            metadata={**m, "cluster": "request_body"},
+        ),
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.pt",
+            content=(
+                f"{tool_name} quando o utilizador diz que pagou algo em dinheiro, esqueceu de sincronizar, "
+                "quer anotar uma compra ou receita que não veio do Open Finance, ou pede para 'lançar' / 'registrar' "
+                "um gasto com valor e descrição. Preferir esta tool em vez de só listar transações."
+            ),
+            metadata={**m, "cluster": "intent_pt"},
+        ),
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.ex",
+            content=(
+                f"{tool_name} — exemplos de frases reais do utilizador que devem acionar esta tool: "
+                "\"Registre uma transação no valor de 50 reais na categoria Supermercado na data de hoje\", "
+                "\"Anota aí que gastei 120 reais no mercado\", "
+                "\"Lança uma despesa de 200 reais em restaurante\", "
+                "\"Adiciona uma receita de 3000 reais de salário\", "
+                "\"Registra um gasto de 80 reais em transporte\", "
+                "\"Quero registrar que paguei 150 reais na farmácia\", "
+                "\"Cria uma transação manual de 500 reais\", "
+                "\"Recebi 1000 reais, registra como receita\", "
+                "\"Gastei 45 reais no Uber hoje, registra\", "
+                "\"Paguei o almoço, 35 reais, anota como alimentação\". "
+                "Todas essas frases indicam CRIAÇÃO de transação, NÃO consulta."
+            ),
+            metadata={**m, "cluster": "user_examples"},
+        ),
+        RagDocumentCreate(
+            source="tool_catalog",
+            doc_type="tool_catalog",
+            version=f"{oid}.v1.dis",
+            content=(
+                f"Desambiguação: {tool_name} vs list_user_transactions. "
+                "Quando a frase do utilizador contém verbos como REGISTRAR, CRIAR, LANÇAR, ANOTAR, "
+                "ADICIONAR, INCLUIR, CADASTRAR ou INSERIR seguidos de transação, gasto, despesa, receita "
+                "ou lançamento, a tool correta é create_manual_transaction (POST /api/v1/transactions). "
+                "A tool list_user_transactions (GET /api/v1/transactions) serve apenas para CONSULTAR, "
+                "VER, LISTAR, MOSTRAR ou BUSCAR transações já existentes. "
+                "Regra: verbo de ação/escrita → create_manual_transaction. "
+                "Verbo de leitura/consulta → list_user_transactions."
+            ),
+            metadata={**m, "cluster": "disambiguation"},
+        ),
+    ]
+
 
 def demo_assistente_bolso_kb_documents() -> list[RagDocumentCreate]:
     return [
@@ -168,114 +482,63 @@ def demo_tool_catalog_seed_documents(
     tool_id: UUID,
     tool_config_id: UUID,
 ) -> list[RagDocumentCreate]:
-    tid = str(tool_id)
-    tcid = str(tool_config_id)
-    return [
-        RagDocumentCreate(
-            source="tool_catalog",
-            doc_type="tool_catalog",
-            version="createExpense.v1.cluster.direct_verbs",
-            content=(
-                "createExpense operation semantic aliases in Portuguese. "
-                "direct verbs and typo variants for spending intent: "
-                "paguei, pague, pagamos, pagamento, paguei por, paguei no, paguei na, paguei em, paguei isso, paguei hoje, "
-                "pagei, paguey, pagueii, pagay, pagui, pagie, pgto, pagto, pguei, pguei x, pguei no cartao, pguei no pix, "
-                "gastei, gastei com, gastei no, gastei na, gastei em, gastei isso, gasto, gastos, gastamos, gasti, gastey, gasteii, gaste, gsti, gsto, gstei, "
-                "comprei, comprei um, comprei uma, comprei isso, comprei no, comprei na, comprei em, comprai, compreei, compree, compray, comprie, cmprei, cmprei x, cmprei no, cmprei na, cmprei em, "
-                "desembolsei, desembolso, desembolsado, desembolsamos, desenbolsei, desembolcei, "
-                "quitei, quitado, quitei isso, quitei hoje, kitei, kitey, quiteii."
+    return uora_allowlisted_tool_catalog_documents(
+        [
+            {
+                "tool_id": tool_id,
+                "tool_config_id": tool_config_id,
+                "tool_name": "spending_by_category",
+                "operation_id": "spending_by_category",
+                "method": "GET",
+                "path": "/api/v1/spending/by-category",
+                "summary": None,
+                "description": None,
+            }
+        ]
+    )
+
+
+def uora_allowlisted_tool_catalog_documents(
+    rows: list[dict[str, Any]],
+) -> list[RagDocumentCreate]:
+    docs: list[RagDocumentCreate] = []
+    for row in rows:
+        oid = str(row["operation_id"])
+        tool_name = str(row["tool_name"])
+        m = _tool_catalog_meta(row)
+        docs.append(
+            RagDocumentCreate(
+                source="tool_catalog",
+                doc_type="tool_catalog",
+                version=f"{oid}.v1.sa",
+                content=(
+                    f"{tool_name} operation semantic aliases in Portuguese. "
+                    f"{_semantic_alias_text(row)}"
+                ),
+                metadata={**m, "cluster": "semantic_aliases"},
             ),
-            metadata={
-                "category": "TOOL_CATALOG",
-                "tool_id": tid,
-                "tool_config_id": tcid,
-                "tool_name": "createExpense",
-                "operation_id": "createExpense",
-                "method": "POST",
-                "path": "/createExpense",
-                "cluster": "direct_verbs",
-                "tool_intent": "Command",
-            },
-        ),
-        RagDocumentCreate(
-            source="tool_catalog",
-            doc_type="tool_catalog",
-            version="createExpense.v1.cluster.colloquial",
-            content=(
-                "createExpense operation semantic aliases in Portuguese. "
-                "colloquial and slang spending expressions: "
-                "torrei, torrei grana, torrei dinheiro, torei, torey, torray, "
-                "deixei x em, deixei x no, deixei x na, larguei x em, larguei x no, larguei x na, "
-                "gastei uma grana, gastei dinheiro, gastei tudo, paguei tudo, "
-                "foi embora x, foi embora uma grana, foi embora dinheiro, sumiu x, sumiu uma grana."
+        )
+        parts: list[str] = [tool_name]
+        su = row.get("summary")
+        if su:
+            parts.append(str(su))
+        de = row.get("description")
+        if de:
+            parts.append(str(de))
+        docs.append(
+            RagDocumentCreate(
+                source="tool_catalog",
+                doc_type="tool_catalog",
+                version=f"{oid}.v1.su",
+                content=". ".join(parts),
+                metadata={**m, "cluster": "api_summary"},
             ),
-            metadata={
-                "category": "TOOL_CATALOG",
-                "tool_id": tid,
-                "tool_config_id": tcid,
-                "tool_name": "createExpense",
-                "operation_id": "createExpense",
-                "method": "POST",
-                "path": "/createExpense",
-                "cluster": "colloquial",
-                "tool_intent": "Command",
-            },
-        ),
-        RagDocumentCreate(
-            source="tool_catalog",
-            doc_type="tool_catalog",
-            version="createExpense.v1.cluster.payment_methods",
-            content=(
-                "createExpense operation semantic aliases in Portuguese. "
-                "payment method and card statements tied to expense registration: "
-                "paguei no cartao, paguei no credito, paguei no debito, paguei no pix, paguei em dinheiro, paguei parcelado, "
-                "parcelei, parcelei isso, parcelei em, "
-                "deu no cartao, deu no pix, deu no dinheiro, "
-                "foi no cartao, foi no pix, foi no debito, foi no credito, foi gasto, foi pago, foi cobrado, foi debitado, foi debitado x, "
-                "saiu no cartao, saiu no pix, saiu na conta, "
-                "caiu no cartao, caiu na fatura, veio na fatura, veio no cartao, veio cobranca, veio cobranca de, veio debito, veio debito de, "
-                "debitou, debitou x, debitou da conta, debitou no cartao, "
-                "cobrou, cobrou x, cobrou no cartao, cobrou da conta."
-            ),
-            metadata={
-                "category": "TOOL_CATALOG",
-                "tool_id": tid,
-                "tool_config_id": tcid,
-                "tool_name": "createExpense",
-                "operation_id": "createExpense",
-                "method": "POST",
-                "path": "/createExpense",
-                "cluster": "payment_methods",
-                "tool_intent": "Command",
-            },
-        ),
-        RagDocumentCreate(
-            source="tool_catalog",
-            doc_type="tool_catalog",
-            version="createExpense.v1.cluster.amount_signals",
-            content=(
-                "createExpense operation semantic aliases in Portuguese. "
-                "amount and total signals indicating expense statements: "
-                "deu, deu isso, deu tanto, deu x, deu uns, deu tipo, deu uns x, deu x reais, deu caro, deu barato, deu nisso, deu no total, "
-                "foi, foi isso, foi x, foi x reais, "
-                "saiu, saiu x, saiu por x, saiu isso, saiu caro, saiu barato, saiu do bolso, "
-                "ficou, ficou x, ficou em x, ficou por x, ficou caro, ficou barato, "
-                "me custou, custou x, custou isso, custei, custey, custeu, "
-                "paguei a conta, paguei a fatura, paguei o boleto, paguei o uber, paguei o almoco, paguei a conta do, paguei a fatura do, paguei o boleto do."
-            ),
-            metadata={
-                "category": "TOOL_CATALOG",
-                "tool_id": tid,
-                "tool_config_id": tcid,
-                "tool_name": "createExpense",
-                "operation_id": "createExpense",
-                "method": "POST",
-                "path": "/createExpense",
-                "cluster": "amount_signals",
-                "tool_intent": "command",
-            },
-        ),
-    ]
+        )
+        if oid == "spending_by_category":
+            docs.extend(_spending_by_category_cluster_docs(row))
+        if oid == "create_manual_transaction":
+            docs.extend(_create_manual_transaction_cluster_docs(row))
+    return docs
 
 
 def demo_user_memory_write_item_dict(
@@ -344,11 +607,11 @@ def demo_tool_catalog_probe_document(
             "category": "TOOL_CATALOG",
             "tool_id": str(tool_id),
             "tool_config_id": str(tool_config_id),
-            "tool_name": "createExpense",
-            "operation_id": "createExpense",
-            "method": "POST",
-            "path": "/createExpense",
-            "tool_intent": ToolIntentFilter.COMMAND.value,
+            "tool_name": "spending_by_category",
+            "operation_id": "spending_by_category",
+            "method": "GET",
+            "path": "/api/v1/spending/by-category",
+            "tool_intent": ToolIntentFilter.QUERY.value,
             "run_ref": run_ref,
         },
     )

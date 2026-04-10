@@ -36,7 +36,7 @@ End-to-end checks using **`ApplicationContainer`** (same wiring as the app): `Ra
 
 Reference seeds: `resources/scripts/seeds/demo/seed_21_rag.py`, `seed_22_tool_catalog_rag.py`.
 
-## 0. Improvement proposal register (agent-governance)
+## 0. Improvement proposal register (rll-sub-governance-agent)
 
 This section is the **single inventory** of everything that is **not** merely descriptive of today’s code: gaps, target capabilities, schema concepts, API work, and phased delivery. Sections **1–9** describe **as-is** behavior. Sections **10–17** elaborate the proposal; **§16** sequences delivery. **§10** is a short index; **§0** is the authoritative checklist.
 

@@ -1,6 +1,7 @@
 from infra.database.models.base import ORMBaseModel
 from infra.database.models.governance import (
     Tenant,
+    TenantInboundServiceKey,
     AccessPolicy,
     AccessPolicyVersion,
     ExecutionLimitPolicyVersion,
@@ -92,6 +93,7 @@ from infra.database.models.mcp_registry import (
 __all__ = [
     "ORMBaseModel",
     "Tenant",
+    "TenantInboundServiceKey",
     "AccessPolicy",
     "AccessPolicyVersion",
     "ExecutionLimitPolicy",

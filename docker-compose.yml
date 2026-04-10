@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: agent_router
     volumes:
-      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker-volumes/postgres:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     networks:
@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
-      - redis_dev_data:/data
+      - ./docker-volumes/redis:/data
     ports:
       - "6379:6379"
     networks:
@@ -36,38 +36,39 @@ services:
       timeout: 3s
       retries: 5
 
-  #app:
-  #  build:
-  #    context: .
-  #    dockerfile: Dockerfile
-  #  restart: unless-stopped
-  #  env_file:
-  #    - .env
-  #  environment:
-  #    DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
-  #    REDIS_URL: redis://redis:6379/3
-  #    REDIS_HOST: redis
-  #    REDIS_PORT: 6379
-  #    ENVIRONMENT: development
-  #    JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
-  #    JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
-  #    JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
-  #    JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-  #    LANGFUSE_BASE_URL: http://langfuse-proxy:3000
-  #    LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-  #    LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-  #  ports:
-  #    - "8000:8000"
-  #  networks:
-  #    - network-dev
-  #  depends_on:
-  #    postgres:
-  #      condition: service_healthy
-  #    redis:
-  #      condition: service_healthy
-  #  volumes:
-  #    - ./src:/app/src
-  #    - ./resources:/app/resources
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
+      REDIS_URL: redis://redis:6379/3
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ENVIRONMENT: development
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
+      JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      UORA_APP_PLATFORM_HTTP_BASE: ${UORA_APP_PLATFORM_HTTP_BASE:-http://host.docker.internal:8088}
+      LANGFUSE_HOST: ${LANGFUSE_HOST}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+    ports:
+      - "8000:8000"
+    networks:
+      - network-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    #volumes:
+    #  - ./src:/app/src
+    #  - ./resources:/app/resources
 
   langfuse-proxy:
     image: python:3.12-slim
@@ -85,7 +86,11 @@ services:
     volumes:
       - ./resources:/app/resources
 
+  # Mock HTTP API legado (createExpense em :3001). Não faz parte do fluxo Uora.
+  # Só sobe com: docker compose --profile legacy-mock up -d
   mock-api:
+    profiles:
+      - legacy-mock
     image: python:3.12-slim
     container_name: router-mock-api-dev
     restart: unless-stopped
@@ -102,6 +107,6 @@ networks:
   network-dev:
     driver: bridge
 
-volumes:
-  postgres_dev_data:
-  redis_dev_data:
+#volumes:
+#  postgres_dev_data:
+#  redis_dev_data:

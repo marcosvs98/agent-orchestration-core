@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -1056,6 +1057,22 @@ class ExecutionRepository:
                     )
 
                 return flow_run
+
+    async def get_interaction_metadata_for_flow_run(
+        self, flow_run_id: UUID
+    ) -> dict[str, Any]:
+        flow_run = await self.get_flow_run(flow_run_id)
+        if flow_run is None or flow_run.interaction_id is None:
+            return {}
+        async with self.db.get_session() as session:
+            stmt = select(InteractionModel.interaction_metadata).where(
+                InteractionModel.interaction_id == flow_run.interaction_id
+            )
+            result = await session.execute(stmt)
+            raw = result.scalar_one_or_none()
+            if raw is None or not isinstance(raw, dict):
+                return {}
+            return dict(raw)
 
     async def get_latest_waiting_flow_run_id(
         self,

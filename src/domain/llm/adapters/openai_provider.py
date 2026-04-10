@@ -174,7 +174,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             raise DomainValidationException(
                 "llm_provider_error",
                 input_data=payload,
-                errors=[getattr(exc, "body", str(exc))],
+                errors=[str(exc)],
             )
         else:
             latency_ms = (time.perf_counter() - start) * 1000

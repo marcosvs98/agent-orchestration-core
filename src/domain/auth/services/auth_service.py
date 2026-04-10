@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 import time
 from collections import defaultdict
 from threading import Lock
@@ -5,6 +7,9 @@ from uuid import UUID
 
 from jose import jwt
 
+from domain.auth.repositories.inbound_service_key_repository import (
+    InboundServiceKeyRepository,
+)
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
@@ -33,15 +38,15 @@ _rate_lock = Lock()
 
 
 class AuthService:
-    """Issues tenant-scoped JWTs and records audit events."""
-
     def __init__(
         self,
         tenants_repository: TenantsRepository,
         authoring_event_repository: AuthoringEventRepository,
+        inbound_service_key_repository: InboundServiceKeyRepository,
     ) -> None:
         self.tenants_repository = tenants_repository
         self.authoring_event_repository = authoring_event_repository
+        self.inbound_service_key_repository = inbound_service_key_repository
 
     @staticmethod
     def _check_rate_limit(principal_id: str) -> None:
@@ -60,7 +65,6 @@ class AuthService:
         tenant_id: UUID,
         auth: AuthContext,
     ) -> TenantTokenResponse:
-        """Issue a JWT for the given tenant. Caller must have tenants:create scope."""
         self._check_rate_limit(auth.principal_id)
 
         tenant = await self.tenants_repository.get_tenant(tenant_id)
@@ -91,7 +95,7 @@ class AuthService:
             JWT_SECRET,
             algorithm=JWT_ALGORITHM,
         )
-        if hasattr(access_token, "decode"):
+        if isinstance(access_token, bytes):
             access_token = access_token.decode("utf-8")
 
         await self.authoring_event_repository.append_event(
@@ -110,4 +114,52 @@ class AuthService:
             access_token=access_token,
             token_type="bearer",
             expires_in=JWT_TENANT_TOKEN_EXPIRES_SECONDS,
+        )
+
+    async def create_inbound_service_key(
+        self,
+        tenant_id: UUID,
+        auth: AuthContext,
+    ) -> tuple[UUID, UUID, str]:
+        tenant = await self.tenants_repository.get_tenant(tenant_id)
+        if tenant is None:
+            raise NotFoundServiceException(message="tenant_not_found")
+        secret = secrets.token_urlsafe(48)
+        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        row = await self.inbound_service_key_repository.insert_key(tenant_id, digest)
+        await self.authoring_event_repository.append_event(
+            tenant_id=tenant_id,
+            resource_type="tenant_inbound_service_key",
+            resource_id=row.inbound_service_key_id,
+            version_id=None,
+            event_type="TENANT_INBOUND_SERVICE_KEY_CREATED",
+            change_type="CREATE",
+            principal_id=auth.principal_id,
+            justification="inbound service key created",
+            schema_version=1,
+        )
+        return row.inbound_service_key_id, tenant_id, secret
+
+    async def revoke_inbound_service_key(
+        self,
+        inbound_service_key_id: UUID,
+        tenant_id: UUID,
+        auth: AuthContext,
+    ) -> None:
+        ok = await self.inbound_service_key_repository.revoke_key(
+            inbound_service_key_id,
+            tenant_id,
+        )
+        if not ok:
+            raise NotFoundServiceException(message="inbound_service_key_not_found")
+        await self.authoring_event_repository.append_event(
+            tenant_id=tenant_id,
+            resource_type="tenant_inbound_service_key",
+            resource_id=inbound_service_key_id,
+            version_id=None,
+            event_type="TENANT_INBOUND_SERVICE_KEY_REVOKED",
+            change_type="UPDATE",
+            principal_id=auth.principal_id,
+            justification="inbound service key revoked",
+            schema_version=1,
         )

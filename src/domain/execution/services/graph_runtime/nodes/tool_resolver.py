@@ -70,11 +70,16 @@ class ToolResolver(LLMNodeExecutor):
             )
         )
 
+        agent_version_id = await self.agents_repository.get_agent_version_id_by_node_id(
+            UUID(context.current_node_id)
+        )
+
         context.available_tools = await self.tool_catalog_retriever.retrieve_tools(
             tenant_id=context.tenant_id,
             rag_config_id=rag_config_id,
             user_input=user_input,
             top_k=top_k,
+            agent_version_id=agent_version_id,
         )
         if context.available_tools:
             llm_result = await self._run_llm_after_setup(context, config)
@@ -108,14 +113,16 @@ class ToolResolver(LLMNodeExecutor):
     ) -> None:
         if self.tool_catalog_indexer is None:
             return
+        cfg = config or {}
         selections = self._extract_selected_tools(llm_result)
         if not selections:
             return
         tools_by_config = {str(tool.tool_config_id): tool for tool in retrieved_tools}
         indexed = 0
+        min_ic = cfg.get("min_indexing_confidence")
         for selection in selections:
             confidence = float(selection.get("confidence") or 0.0)
-            if confidence < config.get("min_indexing_confidence"):
+            if min_ic is not None and confidence < float(min_ic):
                 continue
             tool_config_id = str(selection.get("tool_config_id") or "")
             selected_tool = tools_by_config.get(tool_config_id)

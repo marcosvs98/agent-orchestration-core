@@ -16,6 +16,9 @@ from domain.llm.services.moderation_orchestration_service import (
 from infra.database import DatabaseConnection, async_session, engine
 
 from domain.auth.controllers.auth_controller import AuthController
+from domain.auth.repositories.inbound_service_key_repository import (
+    InboundServiceKeyRepository,
+)
 from domain.auth.services.auth_service import AuthService
 from domain.tenants.controllers.tenants_controller import TenantsController
 from domain.tenants.repositories.tenant_summary_repository import (
@@ -245,10 +248,15 @@ class AuthContainer(containers.DeclarativeContainer):
         database_connection=core.database_connection,
         tracer=adapters.tracer,
     )
+    inbound_service_key_repository = providers.Factory(
+        InboundServiceKeyRepository,
+        database_connection=core.database_connection,
+    )
     auth_service = providers.Factory(
         AuthService,
         tenants_repository=tenants_repository,
         authoring_event_repository=authoring_event_repository,
+        inbound_service_key_repository=inbound_service_key_repository,
     )
     auth_controller = providers.Factory(AuthController, service=auth_service)
 

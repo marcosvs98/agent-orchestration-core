@@ -21,37 +21,6 @@ class _FakeTracer:
 
 class TestToolOrchestrator:
     @pytest.mark.asyncio
-    async def test_execute_operation_creates_tool_run_and_delegates_execute_tool_run(self):
-        tool_run_id = uuid4()
-        tool_config_id = uuid4()
-        correlation_id = uuid4()
-        node_run_id = uuid4()
-
-        repo = MagicMock()
-        repo.create_tool_run = AsyncMock(return_value=tool_run_id)
-
-        orchestrator = ToolOrchestrator(
-            repository=repo,
-            executor=MagicMock(),
-            secret_resolver=MagicMock(),
-            tracer=_FakeTracer(),
-        )
-        orchestrator.execute_tool_run = AsyncMock(return_value={"status_code": 200})
-
-        created_tool_run_id, result = await orchestrator.execute_operation(
-            tool_config_id=tool_config_id,
-            correlation_id=correlation_id,
-            node_run_id=node_run_id,
-            idempotency_key="key-1",
-            input_payload={"x": 1},
-        )
-
-        assert created_tool_run_id == tool_run_id
-        assert result == {"status_code": 200}
-        repo.create_tool_run.assert_awaited_once()
-        orchestrator.execute_tool_run.assert_awaited_once_with(tool_run_id=tool_run_id)
-
-    @pytest.mark.asyncio
     async def test_execute_tool_run_success_updates_run_and_creates_artifact(self):
         tool_run_id = uuid4()
         tool_config_id = uuid4()
@@ -75,7 +44,9 @@ class TestToolOrchestrator:
             )
         )
         repo.update_tool_run_result = AsyncMock()
-        repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=uuid4())
+        flow_rid = uuid4()
+        repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=flow_rid)
+        repo.get_interaction_metadata_for_flow_run = AsyncMock(return_value={})
         repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
         repo.append_execution_event = AsyncMock()
         repo.create_response_artifact_for_tool_run = AsyncMock(return_value=uuid4())
@@ -83,7 +54,7 @@ class TestToolOrchestrator:
 
         executor = MagicMock()
         executor.execute_http = AsyncMock(
-            return_value={"status_code": 200, "headers": {}, "text": "ok"}
+            return_value={"status_code": 200, "headers": {}, "body": {}}
         )
 
         secret_resolver = MagicMock()
@@ -130,7 +101,9 @@ class TestToolOrchestrator:
             )
         )
         repo.update_tool_run_result = AsyncMock()
-        repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=uuid4())
+        flow_rid = uuid4()
+        repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=flow_rid)
+        repo.get_interaction_metadata_for_flow_run = AsyncMock(return_value={})
         repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
         repo.append_execution_event = AsyncMock()
         repo.create_response_artifact_for_tool_run = AsyncMock(return_value=uuid4())
@@ -138,7 +111,7 @@ class TestToolOrchestrator:
 
         executor = MagicMock()
         executor.execute_http = AsyncMock(
-            return_value={"status_code": 200, "headers": {}, "text": "ok"}
+            return_value={"status_code": 200, "headers": {}, "body": {}}
         )
 
         secret_resolver = MagicMock()
@@ -156,3 +129,62 @@ class TestToolOrchestrator:
             str(call.kwargs.get("event_type")) == "SecretAccessed"
             for call in repo.append_execution_event.mock_calls
         )
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_run_resolves_interaction_metadata_authorization(self):
+        tool_run_id = uuid4()
+        tool_config_id = uuid4()
+        correlation_id = uuid4()
+
+        repo = MagicMock()
+        repo.get_tool_run = AsyncMock(
+            return_value=SimpleNamespace(
+                tool_run_id=tool_run_id,
+                tool_config_id=tool_config_id,
+                input={},
+                correlation_id=correlation_id,
+                node_run_id=None,
+                agent_run_id=None,
+            )
+        )
+        repo.get_tool_config = AsyncMock(
+            return_value=SimpleNamespace(
+                tool_config_id=tool_config_id,
+                config={
+                    "url": "https://api.example/spending",
+                    "method": "GET",
+                    "max_attempts": 1,
+                    "headers": {
+                        "Authorization": {
+                            "interaction_metadata_key": "uora_end_user_authorization",
+                        },
+                    },
+                },
+            )
+        )
+        repo.update_tool_run_result = AsyncMock()
+        flow_rid = uuid4()
+        repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=flow_rid)
+        repo.get_interaction_metadata_for_flow_run = AsyncMock(
+            return_value={"uora_end_user_authorization": "Bearer user-jwt"}
+        )
+        repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
+        repo.append_execution_event = AsyncMock()
+        repo.create_response_artifact_for_tool_run = AsyncMock(return_value=uuid4())
+        repo.create_run_failure_for_tool_run = AsyncMock()
+
+        executor = MagicMock()
+        executor.execute_http = AsyncMock(
+            return_value={"status_code": 200, "headers": {}, "body": {}}
+        )
+        orchestrator = ToolOrchestrator(
+            repository=repo,
+            executor=executor,
+            secret_resolver=MagicMock(),
+            tracer=_FakeTracer(),
+        )
+        await orchestrator.execute_tool_run(tool_run_id=tool_run_id)
+
+        executor.execute_http.assert_awaited_once()
+        call_kw = executor.execute_http.await_args.kwargs
+        assert call_kw["headers"]["Authorization"] == "Bearer user-jwt"

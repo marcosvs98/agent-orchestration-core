@@ -16,6 +16,7 @@ from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
+    ResourceBlockedServiceException,
 )
 
 
@@ -351,3 +352,147 @@ class TestToolsService:
                 binding_create=binding_create,
                 principal_id="user-123",
             )
+
+    @pytest.mark.asyncio
+    async def test_publish_tool_config(self, tools_service, repository, authoring_events):
+        tenant_id = uuid4()
+        tc_id = uuid4()
+        tool_id = uuid4()
+        draft = SimpleNamespace(
+            tool_config_id=tc_id,
+            tool_id=tool_id,
+            tenant_id=tenant_id,
+            status="DRAFT",
+            config={"path": "/api/v1/wallets", "method": "get"},
+            version_major=1,
+            version_minor=0,
+            version_patch=1,
+            config_hash=None,
+            schema_version=1,
+        )
+        published = SimpleNamespace(
+            tool_config_id=tc_id,
+            tool_id=tool_id,
+            tenant_id=tenant_id,
+            status="PUBLISHED",
+            config=draft.config,
+            version_major=1,
+            version_minor=0,
+            version_patch=1,
+            config_hash=None,
+            schema_version=1,
+        )
+        repository.get_tool_config = AsyncMock(side_effect=[draft, published])
+        repository.set_tool_config_status = AsyncMock()
+        repository.get_tool = AsyncMock(
+            return_value=SimpleNamespace(tool_id=tool_id, name="get_wallets")
+        )
+        indexer = tools_service.tool_catalog_indexer
+        indexer.build_document = MagicMock()
+        indexer.index_document = AsyncMock(return_value=True)
+
+        result = await tools_service.publish_tool_config(
+            tenant_id=tenant_id, tool_config_id=tc_id, principal_id="p1"
+        )
+
+        assert result.status == "PUBLISHED"
+        repository.set_tool_config_status.assert_called_once()
+        indexer.index_document.assert_awaited_once()
+        authoring_events.append_event.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_publish_tool_config_idempotent_when_already_published(
+        self, tools_service, repository, authoring_events
+    ):
+        tenant_id = uuid4()
+        tc_id = uuid4()
+        tool_id = uuid4()
+        published = SimpleNamespace(
+            tool_config_id=tc_id,
+            tool_id=tool_id,
+            tenant_id=tenant_id,
+            status="PUBLISHED",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        repository.get_tool_config = AsyncMock(return_value=published)
+
+        result = await tools_service.publish_tool_config(
+            tenant_id=tenant_id, tool_config_id=tc_id, principal_id="p1"
+        )
+
+        assert result.status == "PUBLISHED"
+        repository.set_tool_config_status.assert_not_called()
+        authoring_events.append_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_publish_tool_config_raises_when_not_draft(
+        self, tools_service, repository
+    ):
+        tenant_id = uuid4()
+        tc_id = uuid4()
+        tool_id = uuid4()
+        deprecated = SimpleNamespace(
+            tool_config_id=tc_id,
+            tool_id=tool_id,
+            tenant_id=tenant_id,
+            status="DEPRECATED",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        repository.get_tool_config = AsyncMock(return_value=deprecated)
+
+        with pytest.raises(ResourceBlockedServiceException, match="tool_config_not_publishable"):
+            await tools_service.publish_tool_config(
+                tenant_id=tenant_id, tool_config_id=tc_id, principal_id="p1"
+            )
+
+    @pytest.mark.asyncio
+    async def test_deprecate_tool_config_from_draft(
+        self, tools_service, repository, authoring_events
+    ):
+        tenant_id = uuid4()
+        tc_id = uuid4()
+        tool_id = uuid4()
+        draft = SimpleNamespace(
+            tool_config_id=tc_id,
+            tool_id=tool_id,
+            tenant_id=tenant_id,
+            status="DRAFT",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        deprecated = SimpleNamespace(
+            tool_config_id=tc_id,
+            tool_id=tool_id,
+            tenant_id=tenant_id,
+            status="DEPRECATED",
+            config=draft.config,
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        repository.get_tool_config = AsyncMock(side_effect=[draft, deprecated])
+        repository.set_tool_config_status = AsyncMock()
+
+        result = await tools_service.deprecate_tool_config(
+            tenant_id=tenant_id, tool_config_id=tc_id, principal_id="p1"
+        )
+
+        assert result.status == "DEPRECATED"
+        repository.set_tool_config_status.assert_called_once()
+        authoring_events.append_event.assert_awaited_once()
