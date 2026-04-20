@@ -64,7 +64,7 @@ This avoids requesting the model maximum when only a small JSON payload is expec
 | **Layered memory context** | Composes session, tenant, and user memory; optional temporal rerank on RAG items | `src/domain/context/services/memory_retrieval.py` |
 | **Chunking / ingest** | Token windows, overlap, max chunks, truncation flags on ingest | `src/domain/rag/services/rag_runtime_service.py` |
 
-Chunking parameters come from `rag_chunking_rule` / `rag_config` (see [RAG overview](../RAG/index.md) and [Persistence tables](../Glossary/persistence-tables.md)).
+Chunking parameters come from `rag_chunking_rule` / `rag_config` (see [Chunking strategies](../RAG/chunking-strategies.md), [RAG overview](../RAG/index.md), and [Persistence tables](../Glossary/persistence-tables.md)).
 
 ## Caches (what each saves)
 

@@ -57,3 +57,11 @@ uv run pre-commit run --all-files
 ## Docker
 
 If the repository ships a `docker-compose` or `Makefile`, prefer those entry points for Postgres/Redis-backed integration or validation suites; see `docs/Deployment/docker.md`.
+
+## Multimodal input and PDF (optional)
+
+- **`DOCLING_ENABLED`**: when `true`, `application/pdf` is converted with IBM Docling (install the optional dependency / extra that provides `docling`).
+- **`USER_INPUT_COMPOSED_MAX_CHARS`**: cap for composed `user_input` after merging text + media extracts (default `1048576`).
+- **Blob storage**: not bundled; implement `BlobStorePort` and wire it in the DI container if you use `media_ref` in conversations or RAG `ingestFromMedia`.
+
+See [docs/Conversation/user-input-and-media.md](docs/Conversation/user-input-and-media.md) and [docs/RAG/runtime-and-integration.md](docs/RAG/runtime-and-integration.md#ingest-from-media).

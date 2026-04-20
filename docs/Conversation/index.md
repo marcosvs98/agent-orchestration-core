@@ -30,6 +30,7 @@ flowchart LR
 ## Reading order
 
 1. [SSE and runtime](sse-and-runtime.md)
-2. [Read API](read-api.md)
-3. [Governance — enforcement](../Governance/enforcement-and-limits.md)
-4. [System events](../Develop/system-events-reference.md) for SSE event shapes
+2. [User input and media](user-input-and-media.md) (optional `input_parts`, normalization to `user_input`)
+3. [Read API](read-api.md)
+4. [Governance — enforcement](../Governance/enforcement-and-limits.md)
+5. [System events](../Develop/system-events-reference.md) for SSE event shapes

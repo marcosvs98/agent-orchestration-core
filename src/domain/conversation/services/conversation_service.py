@@ -68,6 +68,7 @@ class ConversationService(ConversationServicePort):
             user_id=request.user_id,
             correlation_id=request.correlation_id,
             input=FlowRunInput(user_input=user_input),
+            input_parts=request.input_parts,
             metadata=request.metadata,
         )
         endpoint = "/core/v1/conversations"

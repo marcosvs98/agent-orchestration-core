@@ -2,7 +2,10 @@ from dependency_injector import containers, providers
 
 import settings
 from openai import AsyncOpenAI
+from adapters.blob.unconfigured_blob_store import UnconfiguredBlobStore
 from adapters.cache.redis_adapter import RedisAdapter
+from adapters.document_conversion.factory import build_document_to_text
+from domain.user_input.normalizer import UserInputNormalizer
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
 from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
@@ -42,6 +45,7 @@ from domain.ai_policy.services.ai_service import AIService
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.rag.controllers.rag_controller import RagController
 from domain.rag.services.rag_service import RagService
+from domain.rag.services.rag_media_ingest_service import RagMediaIngestService
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.rag.services.embedding_executor import EmbeddingExecutor
 from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
@@ -156,6 +160,14 @@ class AdaptersContainer(containers.DeclarativeContainer):
     )
     secret_resolver = providers.Singleton(EnvSecretResolver)
     tracer = providers.Singleton(LangfuseRuntimeTracer)
+
+    blob_store = providers.Singleton(UnconfiguredBlobStore)
+    document_to_text = providers.Singleton(build_document_to_text)
+    user_input_normalizer = providers.Singleton(
+        UserInputNormalizer,
+        blob_store=blob_store,
+        document_to_text=document_to_text,
+    )
 
     openai_client = providers.Singleton(AsyncOpenAI, api_key=settings.OPENAI_API_KEY)
 
@@ -443,8 +455,17 @@ class RAGContainer(containers.DeclarativeContainer):
         ai_repository=ai_repository,
         embedding_executor=embedding_executor,
     )
+    rag_media_ingest_service = providers.Factory(
+        RagMediaIngestService,
+        runtime_service=rag_runtime_service,
+        blob_store=adapters.blob_store,
+        document_to_text=adapters.document_to_text,
+    )
     rag_controller = providers.Factory(
-        RagController, service=rag_service, runtime_service=rag_runtime_service
+        RagController,
+        service=rag_service,
+        runtime_service=rag_runtime_service,
+        media_ingest_service=rag_media_ingest_service,
     )
 
 
@@ -590,6 +611,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
         secret_resolver=adapters.secret_resolver,
         llm_moderation_provider=moderation_orchestration_service,
         human_sla_service=human_sla.human_sla_service,
+        user_input_normalizer=adapters.user_input_normalizer,
     )
     tool_executor = providers.Singleton(HttpToolExecutor, tracer=adapters.tracer)
     tool_orchestrator = providers.Factory(

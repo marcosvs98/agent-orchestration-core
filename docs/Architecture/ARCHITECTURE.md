@@ -40,6 +40,8 @@ flowchart LR
 
 Runtime code depends **inward** on domain contracts; infrastructure and adapters implement those contracts at the edges.
 
+**Multimodal input:** optional `input_parts` on conversation and flow-run requests are normalized inside **`ExecutionService`** into a single `FlowRunInput.user_input` string. **`BlobStorePort`** and **`DocumentToTextPort`** (e.g. Docling for PDF) live in `src/adapters/`; defaults do not resolve blobs until you wire storage. RAG **`documents:ingestFromMedia`** reuses the same ports before chunk/embed.
+
 ## Authoring vs runtime
 
 - **Authoring**: draft and publish versioned artefacts (flows, tools, policies, prompts). Published versions are immutable.

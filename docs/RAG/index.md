@@ -23,6 +23,8 @@ flowchart TB
 
 **Vector store** rows define **embedding model** and **dimension** so indexing and query paths stay compatible. See [Vector store](../Glossary/terms/vector-store.md) and [RAG config](../Glossary/terms/rag-config.md).
 
+Indexing can start from **linear text** (batch `RagDocumentCreate`) or from **stored media** resolved to text (e.g. PDF extract) before the same chunk-and-embed pipeline; see [Runtime and integration — ingest](runtime-and-integration.md#ingest-and-generic-query).
+
 ## Product boundaries
 
 - RAG is optional per flow or task: **activation** logic decides when retrieval runs (see domain `context` and RAG services).
@@ -30,8 +32,9 @@ flowchart TB
 
 ## Further reading
 
+- [Chunking strategies](chunking-strategies.md) — **`rag_chunking_rule`** strategies, parameters, ingest contracts (`PER_PAGE` vs content-only); [media ingest vs `PER_PAGE`](chunking-strategies.md#media-ingest-vs-per_page)
 - [Embedding orchestration](embedding-orchestration.md) — ports, executor, adapter, vector-store contract
-- [Runtime and integration](runtime-and-integration.md) — retrievers, policies, validation script, HTTP API
+- [Runtime and integration](runtime-and-integration.md) — retrievers, policies, validation script, HTTP API; **ingest:** batch text (`documents:ingest`) vs [media (`documents:ingestFromMedia`)](runtime-and-integration.md#ingest-from-media)
 - [Data model reference](data-model-reference.md) — tables, ER diagrams, ORM pointers
 - [GLM-OCR (external)](glm-ocr.md) — optional OCR preprocessing for ingest pipelines
 - [Glossary index](../Glossary/index.md), [Domain overview](../Models/domain-overview.md)

@@ -15,6 +15,10 @@ Router: `prefix="/core/v1"`, `dependencies=[get_auth_context]`.
 - **`Last-Event-ID`** — optional; must parse to non-negative int or validation error.
 - **`X-Trace-Id`** — optional UUID for tracing (see controller).
 
+### Request body
+
+Beyond legacy `user_input`, the JSON body may include **`input_parts`** (text and `media_ref` segments). **`ExecutionService`** composes them into a single canonical **`user_input`** before the graph runs; see [User input and media](user-input-and-media.md).
+
 ### Boundary behaviour
 
 `ConversationBoundary.send_message` (see `src/services/conversation_boundary.py`):

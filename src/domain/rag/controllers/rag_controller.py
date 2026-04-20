@@ -15,10 +15,12 @@ from domain.rag.schemas.rag import (
     RagDocument,
     RagDocumentCreate,
     RagDocumentsIngestBatchAccepted,
+    RagIngestFromMediaRequest,
     RagRetrievalPreviewRequest,
     VectorStore,
     VectorStoreCreate,
 )
+from domain.rag.services.rag_media_ingest_service import RagMediaIngestService
 from domain.rag.services.rag_service import RagService
 from domain.rag.services.rag_runtime_service import RagRuntimeService
 from domain.governance.schemas.scopes import Scope
@@ -34,9 +36,15 @@ MAX_RAG_DOCUMENTS_INGEST_BATCH = 10000
 class RagController:
     """HTTP controller for RAG configuration."""
 
-    def __init__(self, service: RagService, runtime_service: RagRuntimeService) -> None:
+    def __init__(
+        self,
+        service: RagService,
+        runtime_service: RagRuntimeService,
+        media_ingest_service: RagMediaIngestService | None = None,
+    ) -> None:
         self.service = service
         self.runtime_service = runtime_service
+        self._media_ingest_service = media_ingest_service
         self.router = APIRouter(
             prefix="/core/v1",
             tags=["rag"],
@@ -99,6 +107,13 @@ class RagController:
         r(
             "/rag-configs/{rag_config_id}/documents:ingest",
             self.ingest_document,
+            methods=["POST"],
+            response_model=RagDocumentsIngestBatchAccepted,
+            status_code=status.HTTP_202_ACCEPTED,
+        )
+        r(
+            "/rag-configs/{rag_config_id}/documents:ingestFromMedia",
+            self.ingest_document_from_media,
             methods=["POST"],
             response_model=RagDocumentsIngestBatchAccepted,
             status_code=status.HTTP_202_ACCEPTED,
@@ -266,6 +281,22 @@ class RagController:
 
         asyncio.create_task(_run_batch())
         return accepted
+
+    async def ingest_document_from_media(
+        self,
+        rag_config_id: str,
+        body: RagIngestFromMediaRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> RagDocumentsIngestBatchAccepted:
+        if self._media_ingest_service is None:
+            raise DomainValidationException(message="rag_media_ingest_unconfigured")
+        self._ensure_scope(auth, Scope.RagConfigsCreate)
+        rag_config_uuid = UUID(rag_config_id)
+        return await self._media_ingest_service.schedule_ingest_from_media(
+            tenant_id=auth.tenant_id,
+            rag_config_id=rag_config_uuid,
+            body=body,
+        )
 
     async def list_documents(
         self,

@@ -63,7 +63,7 @@ Use the MkDocs sidebar **Domain documentation** for the full tree (same order as
 | AI policy | [AI policy overview](../AI-Policy/index.md) | `src/domain/ai_policy/` |
 | Auth | [Auth overview](../Auth/index.md) | `src/domain/auth/` |
 | Context | [Context overview](../Context/index.md) | `src/domain/context/` |
-| Conversation | [Conversation overview](../Conversation/index.md) | `src/domain/conversation/` |
+| Conversation | [Conversation overview](../Conversation/index.md), [User input and media](../Conversation/user-input-and-media.md) | `src/domain/conversation/`, `src/domain/user_input/` |
 | Flows | [Flows overview](../Flows/index.md) | `src/domain/flows/` |
 | Onboarding | [Onboarding overview](../Onboarding/index.md) | `src/domain/onboarding/` |
 | Prompts (node) | [Prompts overview](../Prompts/index.md) | `src/domain/prompts/` |
@@ -82,7 +82,7 @@ Use the MkDocs sidebar **Domain documentation** for the full tree (same order as
 | Conversation SSE / read APIs | [Conversation overview](../Conversation/index.md) | [SSE and runtime](../Conversation/sse-and-runtime.md), [Read API](../Conversation/read-api.md) | `src/domain/conversation/` |
 | Tenants / auth tokens | [Tenants](../Tenants/index.md), [Auth](../Auth/index.md) | [HTTP API](../Tenants/http-api.md), [Auth HTTP API](../Auth/http-api.md) | `src/domain/tenants/`, `src/domain/auth/` |
 | Layered context (memory / RAG) | [Context](../Context/index.md) | [LLM context builder](../LLM/context-builder.md), [RAG runtime](../RAG/runtime-and-integration.md) | `src/domain/context/` |
-| Change RAG retrieval | [RAG overview](../RAG/index.md) | [Runtime and integration](../RAG/runtime-and-integration.md), [Embedding orchestration](../RAG/embedding-orchestration.md), [Vector store](../Glossary/terms/vector-store.md) | `src/domain/rag/` |
+| Change RAG retrieval / ingest | [RAG overview](../RAG/index.md) | [Chunking strategies](../RAG/chunking-strategies.md), [Runtime and integration](../RAG/runtime-and-integration.md) (e.g. [ingest from media](../RAG/runtime-and-integration.md#ingest-from-media), [batch text ingest](../RAG/runtime-and-integration.md#batch-text-ingest)), [Embedding orchestration](../RAG/embedding-orchestration.md), [Vector store](../Glossary/terms/vector-store.md) | `src/domain/rag/` |
 | Change LLM inference / providers | [LLM overview](../LLM/index.md) | [Layered inference](../LLM/layered-inference.md), [LLM executor](../LLM/llm-executor.md), [Providers and selection](../LLM/providers-and-selection.md) | `src/domain/llm/` |
 | MCP exposure / tenant tool bridge | [MCP overview](../MCP/index.md) | [Gateway and runtime](../MCP/gateway-and-runtime.md), [Registry and API](../MCP/registry-and-api.md) | `src/domain/mcp_registry/`, `src/adapters/mcp/` |
 | Human SLA / handoff cases | [Human SLA overview](../Human-SLA/index.md) | [Cases and service](../Human-SLA/cases-and-service.md), [Policies and matching](../Human-SLA/policies-and-matching.md) | `src/domain/human_sla/` |

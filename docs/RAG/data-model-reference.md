@@ -5,7 +5,7 @@ This page summarizes **relational and vector columns** for RAG, where to read th
 ## How it works in this repository
 
 - **`vector_store`** defines the **embedding contract** for an index: operational `embedding_model` string, `embedding_dimension`, `metric`, `version`, `active`.
-- **`rag_config`** points to exactly one **`vector_store_id`** and carries JSON **`options`** (parsed in domain as `RagConfigOptions`). It may reference **`chunking_rule_id`** → **`rag_chunking_rule`** (strategy + params).
+- **`rag_config`** points to exactly one **`vector_store_id`** and carries JSON **`options`** (parsed in domain as `RagConfigOptions`). It references **`chunking_rule_id`** → **`rag_chunking_rule`** (strategy + params JSON validated as a discriminated union). See [Chunking strategies](chunking-strategies.md) for behaviour per **`RagChunkingStrategy`**.
 - **`rag_document`** belongs to a **`rag_config_id`** and tracks ingest/embedding pipeline status (`embedding_status`, attempts, errors, timestamps).
 - **`rag_chunk`** stores **one embedding column** per row plus **`vector_store_id`** so chunks always align with the index used for similarity search.
 - **`rag_query_cache`** stores query embeddings keyed by **`tenant_id`**, **`vector_store_id`**, and **`query_hash`** (see `RagRepository` query-cache helpers).

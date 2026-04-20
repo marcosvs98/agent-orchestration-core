@@ -42,6 +42,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docling = [
+    "docling>=2.0.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
@@ -237,6 +240,8 @@ markers = [
     "slow: slow tests",
     "validation_integration: runs validation suite against docker-compose services",
     "bdd: Gherkin scenarios (pytest-bdd) for behaviour examples",
+    "m1: milestone 1 behaviour slice",
+    "smoke: quick smoke slice",
 ]
 
 [tool.mypy]

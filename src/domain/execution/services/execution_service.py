@@ -132,6 +132,7 @@ from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
 from domain.tools.services.tool_catalog_retriever import ToolCatalogRetriever
 from domain.tools.services.tools_service import ToolsService
 from domain.tools.services.tool_orchestrator import ToolOrchestrator
+from domain.user_input.normalizer import UserInputNormalizer
 from infra.http_tool_executor import HttpToolExecutor
 
 
@@ -157,8 +158,10 @@ class ExecutionService(ExecutionServicePort):
         secret_resolver: SecretResolverPort | None = None,
         llm_moderation_provider: ModerationProviderPort | None = None,
         human_sla_service: HumanSLAService | None = None,
+        user_input_normalizer: UserInputNormalizer | None = None,
     ) -> None:
         self.repository = repository
+        self._user_input_normalizer = user_input_normalizer
         self.idempotency = idempotency
         self.lifecycle = lifecycle
         self.limits = limits
@@ -434,6 +437,36 @@ class ExecutionService(ExecutionServicePort):
             tracer=tracer,
         )
 
+    async def _normalize_flow_run_input(
+        self, tenant_id: UUID, flow_run: FlowRunCreate
+    ) -> FlowRunCreate:
+        if not flow_run.input_parts:
+            return flow_run.model_copy(update={"input_parts": None})
+        if self._user_input_normalizer is None:
+            raise DomainValidationException(message="user_input_normalizer_required")
+        merged = await self._user_input_normalizer.normalize(
+            tenant_id=tenant_id,
+            user_input=flow_run.input.user_input if flow_run.input else None,
+            input_parts=flow_run.input_parts,
+        )
+        return flow_run.model_copy(update={"input": merged, "input_parts": None})
+
+    async def _normalize_resume_input(
+        self, tenant_id: UUID, input_payload: FlowRunResumeInput | None
+    ) -> FlowRunResumeInput | None:
+        if input_payload is None:
+            return None
+        if not input_payload.input_parts:
+            return input_payload.model_copy(update={"input_parts": None})
+        if self._user_input_normalizer is None:
+            raise DomainValidationException(message="user_input_normalizer_required")
+        merged = await self._user_input_normalizer.normalize(
+            tenant_id=tenant_id,
+            user_input=input_payload.user_input,
+            input_parts=input_payload.input_parts,
+        )
+        return FlowRunResumeInput(user_id=input_payload.user_id, user_input=merged.user_input)
+
     @staticmethod
     def _hash_dict(payload: dict[str, Any]) -> str:
         normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -525,6 +558,8 @@ class ExecutionService(ExecutionServicePort):
             existing_session.tenant_id != tenant_id or existing_session.user_id != flow_run.user_id
         ):
             raise DomainConflictException(message="session_user_mismatch")
+
+        flow_run = await self._normalize_flow_run_input(tenant_id, flow_run)
 
         interaction_id: UUID = await self.repository.create_interaction(
             session_id=flow_run.session_id,
@@ -890,6 +925,8 @@ class ExecutionService(ExecutionServicePort):
             raise DomainConflictException(message="session_user_mismatch")
 
         session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
+
+        input_payload = await self._normalize_resume_input(tenant_id, input_payload)
 
         graph_state = await self.repository.get_graph_state(flow_run_id)
         if graph_state is None:

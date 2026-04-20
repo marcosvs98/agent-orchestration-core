@@ -13178,6 +13178,62 @@
                               "body": "{\n  \"detail\": [\n    {\n      \"loc\": [\n        2051,\n        7099\n      ],\n      \"msg\": \"string\",\n      \"type\": \"string\",\n      \"input\": \"\",\n      \"ctx\": {}\n    },\n    {\n      \"loc\": [\n        8795,\n        6122\n      ],\n      \"msg\": \"string\",\n      \"type\": \"string\",\n      \"input\": \"\",\n      \"ctx\": {}\n    }\n  ]\n}"
                             }
                           ]
+                        },
+                        {
+                          "name": "Ingest from media",
+                          "request": {
+                            "auth": {
+                              "type": "bearer",
+                              "bearer": [
+                                {
+                                  "key": "token",
+                                  "value": "{{bearerToken}}",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "method": "POST",
+                            "header": [
+                              {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                              },
+                              {
+                                "key": "Accept",
+                                "value": "application/json"
+                              }
+                            ],
+                            "body": {
+                              "mode": "raw",
+                              "raw": "{\n  \"source\": \"kb/example\",\n  \"doc_type\": \"pdf\",\n  \"metadata\": {\n    \"scope\": \"TENANT_KNOWLEDGE\"\n  },\n  \"media_ref\": \"tenant-1/assets/a1b2c3.pdf\",\n  \"mime_type\": \"application/pdf\"\n}",
+                              "options": {
+                                "raw": {
+                                  "headerFamily": "json",
+                                  "language": "json"
+                                }
+                              }
+                            },
+                            "url": {
+                              "raw": "{{baseUrl}}/core/v1/rag-configs/:rag_config_id/documents:ingestFromMedia",
+                              "host": [
+                                "{{baseUrl}}"
+                              ],
+                              "path": [
+                                "core",
+                                "v1",
+                                "rag-configs",
+                                ":rag_config_id",
+                                "documents:ingestFromMedia"
+                              ],
+                              "variable": [
+                                {
+                                  "key": "rag_config_id",
+                                  "value": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "response": []
                         }
                       ]
                     }
@@ -18262,7 +18318,7 @@
                     ],
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"user_id\": \"string\",\n  \"flow_id\": null,\n  \"flow_version_id\": null,\n  \"session_id\": \"20d67cb9-559a-a6c1-8cb6-cbbbb7bc1974\",\n  \"user_input\": \"string\",\n  \"user_prompt_id\": \"c2919def-1fcd-5537-ab1b-a0a21ff902c1\",\n  \"correlation_id\": \"c6af126a-26c7-efb6-a7e8-0db0ad31a3ea\",\n  \"metadata\": {\n    \"key_0\": \"string\"\n  }\n}",
+                      "raw": "{\n  \"user_id\": \"string\",\n  \"flow_id\": null,\n  \"flow_version_id\": null,\n  \"session_id\": \"20d67cb9-559a-a6c1-8cb6-cbbbb7bc1974\",\n  \"user_input\": \"string\",\n  \"input_parts\": null,\n  \"user_prompt_id\": \"c2919def-1fcd-5537-ab1b-a0a21ff902c1\",\n  \"correlation_id\": \"c6af126a-26c7-efb6-a7e8-0db0ad31a3ea\",\n  \"metadata\": {\n    \"key_0\": \"string\"\n  }\n}",
                       "options": {
                         "raw": {
                           "headerFamily": "json",
@@ -18312,7 +18368,7 @@
                         ],
                         "body": {
                           "mode": "raw",
-                          "raw": "{\n  \"user_id\": \"string\",\n  \"flow_id\": null,\n  \"flow_version_id\": null,\n  \"session_id\": \"20d67cb9-559a-a6c1-8cb6-cbbbb7bc1974\",\n  \"user_input\": \"string\",\n  \"user_prompt_id\": \"c2919def-1fcd-5537-ab1b-a0a21ff902c1\",\n  \"correlation_id\": \"c6af126a-26c7-efb6-a7e8-0db0ad31a3ea\",\n  \"metadata\": {\n    \"key_0\": \"string\"\n  }\n}",
+                          "raw": "{\n  \"user_id\": \"string\",\n  \"flow_id\": null,\n  \"flow_version_id\": null,\n  \"session_id\": \"20d67cb9-559a-a6c1-8cb6-cbbbb7bc1974\",\n  \"user_input\": \"string\",\n  \"input_parts\": null,\n  \"user_prompt_id\": \"c2919def-1fcd-5537-ab1b-a0a21ff902c1\",\n  \"correlation_id\": \"c6af126a-26c7-efb6-a7e8-0db0ad31a3ea\",\n  \"metadata\": {\n    \"key_0\": \"string\"\n  }\n}",
                           "options": {
                             "raw": {
                               "headerFamily": "json",
@@ -18373,7 +18429,7 @@
                         ],
                         "body": {
                           "mode": "raw",
-                          "raw": "{\n  \"user_id\": \"string\",\n  \"flow_id\": null,\n  \"flow_version_id\": null,\n  \"session_id\": \"20d67cb9-559a-a6c1-8cb6-cbbbb7bc1974\",\n  \"user_input\": \"string\",\n  \"user_prompt_id\": \"c2919def-1fcd-5537-ab1b-a0a21ff902c1\",\n  \"correlation_id\": \"c6af126a-26c7-efb6-a7e8-0db0ad31a3ea\",\n  \"metadata\": {\n    \"key_0\": \"string\"\n  }\n}",
+                          "raw": "{\n  \"user_id\": \"string\",\n  \"flow_id\": null,\n  \"flow_version_id\": null,\n  \"session_id\": \"20d67cb9-559a-a6c1-8cb6-cbbbb7bc1974\",\n  \"user_input\": \"string\",\n  \"input_parts\": null,\n  \"user_prompt_id\": \"c2919def-1fcd-5537-ab1b-a0a21ff902c1\",\n  \"correlation_id\": \"c6af126a-26c7-efb6-a7e8-0db0ad31a3ea\",\n  \"metadata\": {\n    \"key_0\": \"string\"\n  }\n}",
                           "options": {
                             "raw": {
                               "headerFamily": "json",

@@ -81,6 +81,7 @@ nav:
                   - Shared utilities: Execution/graph-runtime/nodes/shared-utilities.md
       - RAG:
           - Overview: RAG/index.md
+          - Chunking strategies: RAG/chunking-strategies.md
           - Embedding orchestration: RAG/embedding-orchestration.md
           - Runtime and integration: RAG/runtime-and-integration.md
           - Data model reference: RAG/data-model-reference.md
@@ -134,6 +135,7 @@ nav:
           - Persistence and data: Conversation/persistence-and-data.md
           - Integration and runtime: Conversation/integration-and-runtime.md
           - SSE and runtime: Conversation/sse-and-runtime.md
+          - User input and media: Conversation/user-input-and-media.md
           - Read API: Conversation/read-api.md
       - Flows:
           - Overview: Flows/index.md

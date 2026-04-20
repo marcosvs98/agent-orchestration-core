@@ -188,6 +188,16 @@ class RagDocumentCreate(BaseModel):
     pages: list[str] | None = None
 
 
+class RagIngestFromMediaRequest(BaseModel):
+    """Ingest by resolving a tenant blob ref and converting to text before chunk/embed."""
+
+    source: str
+    doc_type: str
+    metadata: dict[str, str | int | None]
+    media_ref: str
+    mime_type: str
+
+
 class RagDocumentsIngestBatchStatus(StrEnum):
     """Accepted batch ingestion status values."""
 

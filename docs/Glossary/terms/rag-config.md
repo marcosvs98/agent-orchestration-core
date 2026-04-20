@@ -20,4 +20,4 @@
 ## Related
 
 - [Vector store](vector-store.md)
-- [RAG overview](../../RAG/index.md), [Runtime and integration](../../RAG/runtime-and-integration.md), [Data model reference](../../RAG/data-model-reference.md)
+- [RAG overview](../../RAG/index.md), [Chunking strategies](../../RAG/chunking-strategies.md), [Runtime and integration](../../RAG/runtime-and-integration.md), [Data model reference](../../RAG/data-model-reference.md)

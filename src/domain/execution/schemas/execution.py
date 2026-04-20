@@ -6,6 +6,8 @@ from uuid import UUID
 from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from domain.user_input.schemas import MediaRefUserInputPart, TextUserInputPart
+
 if TYPE_CHECKING:
     from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
 
@@ -109,6 +111,7 @@ class FlowRunCreate(BaseModel):
     origin_flow_run_id: UUID | None = None
     correlation_id: UUID | None = None
     input: FlowRunInput | None = None
+    input_parts: list[TextUserInputPart | MediaRefUserInputPart] | None = None
     metadata: dict[str, object] = {}
 
     @model_validator(mode="after")
@@ -123,6 +126,7 @@ class FlowRunCreate(BaseModel):
 class FlowRunResumeInput(BaseModel):
     user_id: str
     user_input: str | None = None
+    input_parts: list[TextUserInputPart | MediaRefUserInputPart] | None = None
 
     @model_validator(mode="after")
     def _validate_user_id(self) -> "FlowRunResumeInput":

@@ -43,6 +43,7 @@ flowchart TD
 
 ## Related
 
+- [Chunking strategies](chunking-strategies.md) — how text becomes chunks before the embedding contract applies
 - [Runtime and integration](runtime-and-integration.md)
 - [Data model reference](data-model-reference.md)
 - [RAG overview](index.md)

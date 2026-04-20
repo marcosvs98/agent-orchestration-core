@@ -38,7 +38,7 @@ Reference seeds: `resources/scripts/seeds/demo/seed_21_rag.py`, `seed_22_tool_ca
 |----------------|-----------|--------|
 | Production path | `RagRuntimeService` | Calls the embedding adapter path for single-query and batch embeddings during ingest and `get_context`. |
 | Adapter wiring | `OpenAIEmbeddingAdapter` | Model and dimensions driven by resolved config and `vector_store`. |
-| Chunking before embed | `_resolve_rag_ingest_bundle` + `_chunks_for_ingest` | Resolves **`rag_chunking_rule`** via `rag_config.chunking_rule_id`, parses params with `parse_rag_chunking_rule_params`, then branches on `RagChunkingStrategy`: **`TOKEN_WINDOW`** → **`_chunk_text`** (tiktoken `cl100k_base`); **`RECURSIVE_CHARACTER`** → **`_recursive_character_chunks`**; **`SEMANTIC`** currently reuses token-window splitting; **`PER_PAGE`** requires page payloads (`ingest_pages` in document metadata). |
+| Chunking before embed | `_resolve_rag_ingest_bundle` + `_chunks_for_ingest` | Loads **`rag_chunking_rule`** from `rag_config.chunking_rule_id`, parses **`params`** with **`parse_rag_chunking_rule_params`**, then dispatches on **`RagChunkingStrategy`**. **Canonical doc:** [Chunking strategies](chunking-strategies.md) (parameter defaults, `SEMANTIC` vs `TOKEN_WINDOW`, **`PER_PAGE`** + `RagDocumentCreate.pages`). |
 
 When **`embedding_job_queue`** is set, workers still finalize vectors through the same domain paths (`embed_document_by_id` / finalize).
 
@@ -48,7 +48,7 @@ When **`embedding_job_queue`** is set, workers still finalize vectors through th
 
 - **Table**: `rag_config` (linked to `vector_store`, tenant-scoped, versioned by semver + `status`).
 - **`corpus_kind`**: Column on `rag_config` used for ingest quota / usage accounting (`finalize_document_embedding_with_usage`), not as the sole retrieval filter (retrieval filters merge `options.retrieval.filters` + caller `filters_override`).
-- **Chunking rule**: `chunking_rule_id` FK → **`rag_chunking_rule`**; runtime ingest resolves strategy and params from that row.
+- **Chunking rule**: `chunking_rule_id` FK → **`rag_chunking_rule`**; runtime ingest resolves strategy and params from that row. Strategy reference: [Chunking strategies](chunking-strategies.md).
 - **Runtime options**: JSON `options` → `RagConfigOptions`: `embedding`, `retrieval`, `generation_contract` (inline chunking in options may still exist for older configs).
 
 ### RAG policy (tenant rules)
@@ -161,11 +161,18 @@ erDiagram
 
 ```mermaid
 flowchart TD
-  subgraph ingest
-    A[POST .../documents:ingest] --> B[RagRuntimeService.ingest_document]
-    B --> C[Chunking strategies]
-    C --> D[Embedding batch]
-    D --> E[(rag_document + rag_chunk)]
+  subgraph textBatch [Text batch ingest]
+    T1[POST documents ingest] --> T2[RagRuntimeService ingest batch]
+  end
+  subgraph mediaRef [Media ref ingest]
+    M1[POST ingestFromMedia] --> M2[RagMediaIngestService]
+    M2 --> M3[BlobStore and DocumentToText]
+    M3 --> M4[RagDocumentCreate content only]
+    M4 --> T2
+  end
+  subgraph sharedPipeline [Shared after HTTP accept]
+    T2 --> C[Chunking then embed]
+    C --> E[(rag_document plus rag_chunk)]
   end
 
   subgraph query
@@ -262,6 +269,7 @@ flowchart TD
 | `GET` | `/core/v1/vector-stores` | `vector_stores:list` (`Scope.VectorStoresList`) | |
 | `POST` | `/core/v1/vector-stores` | `vector_stores:create` (`Scope.VectorStoresCreate`) | |
 | `POST` | `/core/v1/rag-configs/{rag_config_id}/documents:ingest` | — | Batch `RagDocumentCreate`; `202` + async background ingest |
+| `POST` | `/core/v1/rag-configs/{rag_config_id}/documents:ingestFromMedia` | `rag_configs:create` | `RagIngestFromMediaRequest`: resolves `media_ref` via blob store + document-to-text (Docling when enabled), then same ingest path as text; `202` |
 | `GET` | `/core/v1/rag-documents` | — | Optional `rag_config_id` filter |
 | `GET` | `/core/v1/rag-documents/{document_id}/chunks` | — | |
 | `GET` | `/core/v1/rag-chunking-rules` | `rag_configs:list` | |
@@ -270,6 +278,20 @@ flowchart TD
 | `POST` | `/core/v1/rag-retrieval:preview` | `rag_configs:list` | Calls `RagRuntimeService.get_context` with `RagRetrievalPreviewRequest` |
 
 **`RagConfigCreate`:** includes `vector_store_id` (required); `options` may appear as a generic object at the OpenAPI boundary while domain services parse **`RagConfigOptions`** where applicable.
+
+### Batch text ingest
+
+`POST .../documents:ingest` accepts a JSON array of **`RagDocumentCreate`**. The handler returns **`202 Accepted`** immediately and runs **`RagRuntimeService.ingest_documents_batch`** in a **background task** (`asyncio.create_task`). A **`202` response does not guarantee** that embedding finished successfully; poll **`GET /rag-documents`** (and document/chunk state) or rely on logs/metrics to confirm completion. Failures during the async batch are **not** returned in the HTTP response body.
+
+### Ingest from media
+
+`POST .../documents:ingestFromMedia` accepts `source`, `doc_type`, `metadata`, `media_ref`, and `mime_type`. The service loads bytes from the configured **`BlobStorePort`**, runs **`DocumentToTextPort`** (PDF via Docling when `DOCLING_ENABLED=true` and the `docling` extra is installed), builds a **`RagDocumentCreate`** with **`content` only** (no `pages`; see [Chunking strategies — Media ingest vs PER_PAGE](chunking-strategies.md#media-ingest-vs-per_page)), and enqueues the same background ingest path as batch text. **Auth scope:** `rag_configs:create` (see HTTP table above). **Blob storage must be wired** in your deployment; see [User input and media](../Conversation/user-input-and-media.md) and the repository **`DEVELOPMENT.md`** (multimodal / blob).
+
+| Topic | Behaviour |
+|-------|-----------|
+| **`rag_media_ingest_unconfigured`** | Domain error when `RagController` has no `RagMediaIngestService` injected (`_media_ingest_service is None`). Fix **DI** wiring in `src/containers.py`. |
+| **HTTP `202` and background** | Same pattern as batch text: **`202 Accepted`** is returned before chunk/embed completes; **success HTTP does not prove** ingest finished. Verify via **`rag_document`** listing, chunk APIs, or observability. |
+| **Async failures** | Work runs after `create_task`; failures **after** `202` are **not** included in the initial response. Use logs/traces/metrics for operations. |
 
 ## Related
 

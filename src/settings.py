@@ -106,3 +106,15 @@ IDEMPOTENCY_TTL_SECONDS: int = config("IDEMPOTENCY_TTL_SECONDS", default=3600, c
 RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED: bool = config(
     "RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED", default=True, cast=bool
 )
+
+USER_INPUT_COMPOSED_MAX_CHARS: int = config(
+    "USER_INPUT_COMPOSED_MAX_CHARS",
+    default=1_048_576,
+    cast=int,
+)
+DOCUMENT_CONVERSION_TIMEOUT_SECONDS: int = config(
+    "DOCUMENT_CONVERSION_TIMEOUT_SECONDS",
+    default=120,
+    cast=int,
+)
+DOCLING_ENABLED: bool = config("DOCLING_ENABLED", default=False, cast=bool)
