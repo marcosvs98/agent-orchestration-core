@@ -101,30 +101,22 @@ class TenantSummaryService:
         self.ai_repository = ai_repository
         self.execution_limit_policy_repository = execution_limit_policy_repository
 
-    async def get_current_summary(
-        self, *, tenant_id: UUID
-    ) -> TenantOperationalSummaryResponse:
+    async def get_current_summary(self, *, tenant_id: UUID) -> TenantOperationalSummaryResponse:
         tenant = await self.tenants_repository.get_tenant(tenant_id)
         if tenant is None:
             raise NotFoundServiceException(message="tenant_not_found")
         tenant_dict = tenant.to_dict()
         tenant_dict["id"] = tenant_dict.pop("tenant_id")
 
-        snap_task = self.tenant_summary_repository.load_operational_snapshot(
-            tenant_id=tenant_id
-        )
-        metrics_task = self.tenant_summary_repository.load_operational_metrics(
-            tenant_id=tenant_id
-        )
+        snap_task = self.tenant_summary_repository.load_operational_snapshot(tenant_id=tenant_id)
+        metrics_task = self.tenant_summary_repository.load_operational_metrics(tenant_id=tenant_id)
         activation_task = self.tenant_summary_repository.load_policy_activation_sets(
             tenant_id=tenant_id
         )
         gov_gather = asyncio.gather(
             self.governance_policies_service.list_runtime_policies(tenant_id=tenant_id),
             self.governance_policies_service.list_access_policies(tenant_id=tenant_id),
-            self.governance_policies_service.list_rate_limit_policies(
-                tenant_id=tenant_id
-            ),
+            self.governance_policies_service.list_rate_limit_policies(tenant_id=tenant_id),
             self.governance_policies_service.list_billing_policies(tenant_id=tenant_id),
             self.governance_policies_service.list_memory_policies(tenant_id=tenant_id),
             self.governance_policies_service.list_rag_policies(tenant_id=tenant_id),
@@ -153,8 +145,10 @@ class TenantSummaryService:
         exec_limit_policies: list = []
         if self.execution_limit_policy_repository:
             try:
-                exec_limit_policies = await self.execution_limit_policy_repository.list_policies_for_tenant(
-                    tenant_id, limit=SUMMARY_EXEC_LIMIT_POLICIES_LIMIT
+                exec_limit_policies = (
+                    await self.execution_limit_policy_repository.list_policies_for_tenant(
+                        tenant_id, limit=SUMMARY_EXEC_LIMIT_POLICIES_LIMIT
+                    )
                 )
             except Exception:
                 exec_limit_policies = []
@@ -221,8 +215,7 @@ class TenantSummaryService:
                 PolicyRef(
                     id=p.ai_execution_policy_id,
                     name=(p.description or "")[:256] or None,
-                    active=p.ai_execution_policy_id
-                    in activation.ai_execution_published,
+                    active=p.ai_execution_policy_id in activation.ai_execution_published,
                 )
                 for p in ai_exec_policies
             ],
@@ -230,8 +223,7 @@ class TenantSummaryService:
                 PolicyRef(
                     id=p.execution_limit_policy_id,
                     name=p.name,
-                    active=p.execution_limit_policy_id
-                    in activation.execution_limit_published,
+                    active=p.execution_limit_policy_id in activation.execution_limit_published,
                 )
                 for p in exec_limit_policies
             ],
@@ -280,16 +272,12 @@ class TenantSummaryService:
             kind = snap.flow_resolution_kind.get(flow.flow_id, "none")
             resolved_block: ResolvedFlowVersionBlock | None = None
             if fv is not None:
-                pub_at = (
-                    fv.activated_at if kind == "active_flow_version" else fv.created_at
-                )
+                pub_at = fv.activated_at if kind == "active_flow_version" else fv.created_at
                 resolved_block = ResolvedFlowVersionBlock(
                     flow_version_id=fv.flow_version_id,
                     resolution=kind,
                     status=str(fv.status),
-                    version=(
-                        f"{fv.version_major}.{fv.version_minor}.{fv.version_patch}"
-                    ),
+                    version=(f"{fv.version_major}.{fv.version_minor}.{fv.version_patch}"),
                     published_at=pub_at,
                 )
             graph_model = None
@@ -356,9 +344,7 @@ class TenantSummaryService:
                         agent_version_id=b.agent_version_id,
                         agent_version_is_active=b.agent_version_is_active,
                     )
-                    bindings = snap.tool_bindings_by_agent_version.get(
-                        b.agent_version_id, []
-                    )
+                    bindings = snap.tool_bindings_by_agent_version.get(b.agent_version_id, [])
                 at = AiTaskOperationalSummary(
                     allow_rag_tenant=bool(n.allow_rag_tenant),
                     allow_user_memory_structured=bool(n.allow_user_memory_structured),
@@ -387,9 +373,7 @@ class TenantSummaryService:
                 )
 
             graph_present = (
-                graph_model is not None
-                or draft_model is not None
-                or snapshot_model is not None
+                graph_model is not None or draft_model is not None or snapshot_model is not None
             )
             flows_out.append(
                 FlowOperational(

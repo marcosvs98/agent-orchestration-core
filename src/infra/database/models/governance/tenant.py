@@ -11,9 +11,7 @@ class Tenant(ORMBaseModel):
     external_id = Column(PG_UUID(as_uuid=True), nullable=True)
     name = Column(String(length=255), nullable=False)
     description = Column(Text, nullable=True)
-    timezone = Column(
-        String(length=64), nullable=False, server_default="America/Sao_Paulo"
-    )
+    timezone = Column(String(length=64), nullable=False, server_default="America/Sao_Paulo")
     is_active = Column(Boolean, nullable=False, server_default="true")
     currency = Column(String(length=3), nullable=False, server_default="BRL")
     language = Column(String(length=10), nullable=False, server_default="pt_BR")

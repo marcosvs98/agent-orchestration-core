@@ -40,9 +40,7 @@ class ContextBuilder:
         self.tools_repository = tools_repository
         self.memory_retrieval_service = memory_retrieval_service
         self.rag_activation_service = rag_activation_service
-        self.runtime_context_policy = (
-            runtime_context_policy or RuntimeContextLayerPolicy()
-        )
+        self.runtime_context_policy = runtime_context_policy or RuntimeContextLayerPolicy()
         self.tracer = tracer
 
     def _build_session_snapshot(
@@ -78,9 +76,7 @@ class ContextBuilder:
             "node_id": context.current_node_id,
         }
 
-    def _first_tool_id_from_context(
-        self, execution_context: ExecutionContext | None
-    ) -> str | None:
+    def _first_tool_id_from_context(self, execution_context: ExecutionContext | None) -> str | None:
         if execution_context is None:
             return None
         try:
@@ -179,9 +175,7 @@ class ContextBuilder:
         execution_context: ExecutionContext | None,
         task_type: LLMTaskType,
     ) -> LayerUsageDecision:
-        policy = self._user_context_enrichment_policy(
-            execution_context=execution_context
-        )
+        policy = self._user_context_enrichment_policy(execution_context=execution_context)
         if not bool(policy.get("gating", False)):
             return decision
         handle = {}
@@ -236,9 +230,7 @@ class ContextBuilder:
                 )
             )
             allow_user_memory_vector = bool(
-                layers.get(
-                    "allow_user_memory_vector", decision.allow_user_memory_vector
-                )
+                layers.get("allow_user_memory_vector", decision.allow_user_memory_vector)
             )
         except AttributeError:
             return decision
@@ -263,9 +255,7 @@ class ContextBuilder:
         user_input = input_payload.get("user_input") or ""
         state = execution_context.state or {}
         current_node_type = (execution_context.metadata or {}).get("current_node_type")
-        available_tools_models = self._coerce_available_tools(
-            execution_context.available_tools
-        )
+        available_tools_models = self._coerce_available_tools(execution_context.available_tools)
 
         ctx: dict[str, Any] = {
             "meta": {
@@ -367,9 +357,7 @@ class ContextBuilder:
         if agent_version_id is not None:
             persona, agent_version = await self._get_persona(agent_version_id)
             ctx["persona"] = persona.model_dump(mode="json")
-            base_rid = (
-                agent_version.rag_config_id if agent_version is not None else None
-            )
+            base_rid = agent_version.rag_config_id if agent_version is not None else None
             tenant_rag_config_id = base_rid
             if agent_version is not None:
                 agent = await self.agents_repository.get_agent(agent_version.agent_id)
@@ -380,8 +368,8 @@ class ContextBuilder:
             except (ValueError, TypeError):
                 nid = None
             if nid is not None:
-                tenant_rag_config_id = await self.agents_repository.resolve_effective_rag_config_id_for_node(
-                    nid
+                tenant_rag_config_id = (
+                    await self.agents_repository.resolve_effective_rag_config_id_for_node(nid)
                 )
 
         available_tools = []
@@ -413,14 +401,10 @@ class ContextBuilder:
                 task_type=task_type,
                 task_flags=task_flags,
                 rag_config_id=tenant_rag_config_id,
-                tool_config_id=self._extract_tool_config_id(
-                    execution_context=execution_context
-                ),
+                tool_config_id=self._extract_tool_config_id(execution_context=execution_context),
                 context_metadata=self._context_metadata(execution_context),
             )
-            decision = decision.model_copy(
-                update={"allow_tenant_knowledge": tenant_allowed}
-            )
+            decision = decision.model_copy(update={"allow_tenant_knowledge": tenant_allowed})
 
         rag_already_loaded = execution_context.system_context is not None
         if self.memory_retrieval_service is not None:
@@ -428,43 +412,34 @@ class ContextBuilder:
                 if decision.allow_session_context:
                     session_context = self._build_session_snapshot(execution_context)
                     if session_context is not None:
-                        ctx["layers"]["session_context"] = session_context.model_dump(
-                            mode="json"
-                        )
+                        ctx["layers"]["session_context"] = session_context.model_dump(mode="json")
             else:
-                layered_context = (
-                    await self.memory_retrieval_service.get_layered_context(
-                        execution_context=execution_context,
-                        decision=decision,
-                        task_type=task_type,
-                        user_input=user_input,
-                        tenant_id_for_knowledge=tenant_id,
-                        tenant_rag_config_id=tenant_rag_config_id,
-                        user_id_for_memory=execution_context.user_id,
-                        task_flags=task_flags,
-                        tool_config_id=self._extract_tool_config_id(
-                            execution_context=execution_context
-                        ),
-                        context_metadata=self._context_metadata(execution_context),
-                        config=self._memory_retrieval_config(
-                            execution_context=execution_context
-                        ),
-                        tenant_top_k_override=tenant_top_k_override,
-                        tenant_filters_override=tenant_filters_override,
-                    )
+                layered_context = await self.memory_retrieval_service.get_layered_context(
+                    execution_context=execution_context,
+                    decision=decision,
+                    task_type=task_type,
+                    user_input=user_input,
+                    tenant_id_for_knowledge=tenant_id,
+                    tenant_rag_config_id=tenant_rag_config_id,
+                    user_id_for_memory=execution_context.user_id,
+                    task_flags=task_flags,
+                    tool_config_id=self._extract_tool_config_id(
+                        execution_context=execution_context
+                    ),
+                    context_metadata=self._context_metadata(execution_context),
+                    config=self._memory_retrieval_config(execution_context=execution_context),
+                    tenant_top_k_override=tenant_top_k_override,
+                    tenant_filters_override=tenant_filters_override,
                 )
                 session_context = layered_context.session_context
                 if session_context is None and decision.allow_session_context:
                     session_context = self._build_session_snapshot(execution_context)
                 if session_context is not None:
-                    ctx["layers"]["session_context"] = session_context.model_dump(
-                        mode="json"
-                    )
+                    ctx["layers"]["session_context"] = session_context.model_dump(mode="json")
 
                 try:
                     tenant_items = (
-                        layered_context.tenant_knowledge_context.rag_context.context_items
-                        or []
+                        layered_context.tenant_knowledge_context.rag_context.context_items or []
                     )
                 except AttributeError:
                     tenant_items = []
@@ -485,17 +460,14 @@ class ContextBuilder:
 
                 try:
                     ctx["layers"]["user_memory_structured"] = (
-                        layered_context.user_memory_context.structured.model_dump(
-                            mode="json"
-                        )
+                        layered_context.user_memory_context.structured.model_dump(mode="json")
                     )
                 except AttributeError:
                     pass
 
                 try:
                     user_vector_items = (
-                        layered_context.user_memory_context.rag_context.context_items
-                        or []
+                        layered_context.user_memory_context.rag_context.context_items or []
                     )
                 except AttributeError:
                     user_vector_items = []
@@ -507,8 +479,7 @@ class ContextBuilder:
                         continue
                     user_memory_vector.append(
                         {
-                            "reference": item_dump.get("item_id")
-                            or item_dump.get("id"),
+                            "reference": item_dump.get("item_id") or item_dump.get("id"),
                             "content": item_dump.get("content") or "",
                             "score": item_dump.get("score"),
                         }
@@ -536,17 +507,11 @@ class ContextBuilder:
                     execution_context.system_context = "\n".join(parts)
 
         if current_node_type == NodeType.ToolInputFiller:
-            tool_config_id = self._extract_tool_config_id(
-                execution_context=execution_context
-            )
+            tool_config_id = self._extract_tool_config_id(execution_context=execution_context)
             if tool_config_id is not None:
-                tool_config = await self.tools_repository.get_tool_config(
-                    tool_config_id
-                )
+                tool_config = await self.tools_repository.get_tool_config(tool_config_id)
                 if tool_config is not None:
-                    ctx["output_schema"] = (
-                        tool_config.config.get("request_schema") or []
-                    )
+                    ctx["output_schema"] = tool_config.config.get("request_schema") or []
 
         return ctx
 

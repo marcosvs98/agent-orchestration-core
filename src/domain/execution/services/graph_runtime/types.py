@@ -72,9 +72,7 @@ class ToolSelectionReason(StrEnum):  # Todo: Depreciar se não for mais utilizad
     NO_TOOLS_AFTER_INTENT_FILTER = "no_tools_after_intent_filter"
     RAG_CONFIG_NOT_FOUND = "rag_config_not_found"
     RAG_RETURNED_NO_CANDIDATES = "rag_returned_no_candidates"
-    NO_SEMANTIC_EVIDENCE_BUT_SINGLE_CANDIDATE = (
-        "no_semantic_evidence_but_single_candidate"
-    )
+    NO_SEMANTIC_EVIDENCE_BUT_SINGLE_CANDIDATE = "no_semantic_evidence_but_single_candidate"
     ABOVE_CONFIDENCE_THRESHOLD = "above_confidence_threshold"
     BELOW_CONFIDENCE_THRESHOLD = "below_confidence_threshold"
     LLM_SELECTION = "llm_selection"
@@ -128,9 +126,7 @@ class ExecutionContext(BaseModel):
     iteration_counters: Dict[str, int] = Field(default_factory=dict)
     system_prompt: str | None = None
     system_context: str | None = None
-    on_content_delta: Callable[[str], Awaitable[None]] | None = Field(
-        default=None, exclude=True
-    )
+    on_content_delta: Callable[[str], Awaitable[None]] | None = Field(default=None, exclude=True)
 
     def snapshot(self) -> Dict[str, Any]:
         return self.model_dump(mode="json")

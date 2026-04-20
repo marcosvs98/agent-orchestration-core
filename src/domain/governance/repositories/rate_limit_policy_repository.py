@@ -24,13 +24,9 @@ class RateLimitPolicyRepository:
         self.db = database_connection
         self.tracer = tracer
 
-    async def get_default_policy_for_tenant(
-        self, tenant_id: UUID
-    ) -> RateLimitPolicyModel | None:
+    async def get_default_policy_for_tenant(self, tenant_id: UUID) -> RateLimitPolicyModel | None:
         async with self.db.get_session() as session:
-            stmt = select(RateLimitPolicyModel).where(
-                RateLimitPolicyModel.tenant_id == tenant_id
-            )
+            stmt = select(RateLimitPolicyModel).where(RateLimitPolicyModel.tenant_id == tenant_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -61,10 +57,7 @@ class RateLimitPolicyRepository:
         async with self.db.get_session() as session:
             stmt = (
                 select(RateLimitPolicyVersionModel)
-                .where(
-                    RateLimitPolicyVersionModel.rate_limit_policy_id
-                    == rate_limit_policy_id
-                )
+                .where(RateLimitPolicyVersionModel.rate_limit_policy_id == rate_limit_policy_id)
                 .where(RateLimitPolicyVersionModel.status == VersionStatus.PUBLISHED)
                 .where(RateLimitPolicyVersionModel.action == action)
                 .where(RateLimitPolicyVersionModel.principal_type == principal_type)
@@ -103,9 +96,7 @@ class RateLimitPolicyRepository:
 
                 return version
 
-    async def create_policy(
-        self, *, tenant_id: UUID, name: str
-    ) -> RateLimitPolicyModel:
+    async def create_policy(self, *, tenant_id: UUID, name: str) -> RateLimitPolicyModel:
         async with self.db.get_session() as session:
             instance = RateLimitPolicyModel(tenant_id=tenant_id, name=name)
             session.add(instance)
@@ -123,9 +114,7 @@ class RateLimitPolicyRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def get_policy(
-        self, *, rate_limit_policy_id: UUID
-    ) -> RateLimitPolicyModel | None:
+    async def get_policy(self, *, rate_limit_policy_id: UUID) -> RateLimitPolicyModel | None:
         async with self.db.get_session() as session:
             stmt = select(RateLimitPolicyModel).where(
                 RateLimitPolicyModel.rate_limit_policy_id == rate_limit_policy_id
@@ -176,9 +165,7 @@ class RateLimitPolicyRepository:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def set_version_status(
-        self, *, rate_limit_policy_version_id: UUID, status: str
-    ) -> None:
+    async def set_version_status(self, *, rate_limit_policy_version_id: UUID, status: str) -> None:
         async with self.db.get_session() as session:
             stmt = select(RateLimitPolicyVersionModel).where(
                 RateLimitPolicyVersionModel.rate_limit_policy_version_id

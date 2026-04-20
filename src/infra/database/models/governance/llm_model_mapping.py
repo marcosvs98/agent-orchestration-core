@@ -23,9 +23,7 @@ class LLMModelMapping(ORMBaseModel):
     model_alias = Column(String(length=64), nullable=False)
     provider_model = Column(String(length=128), nullable=False)
     status = Column(String(length=16), nullable=False, server_default="ACTIVE")
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_by = Column(String(length=128), nullable=False)
 
     __table_args__ = (

@@ -260,9 +260,7 @@ class FlowsController:
             principal_id=auth.principal_id,
         )
 
-    async def get_flow(
-        self, flow_id: str, auth: AuthContext = Depends(get_auth_context)
-    ) -> Flow:
+    async def get_flow(self, flow_id: str, auth: AuthContext = Depends(get_auth_context)) -> Flow:
         return await self.service.get_flow(tenant_id=auth.tenant_id, flow_id=flow_id)
 
     async def list_flow_versions(
@@ -414,9 +412,7 @@ class FlowsController:
         payload: FlowGraphCreate,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         await self.service.create_flow_graph(
             tenant_id=auth.tenant_id,
@@ -433,13 +429,9 @@ class FlowsController:
         payload: FlowGraphDraftCreate,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
-        await self.service.upsert_flow_graph_draft(
-            tenant_id=auth.tenant_id, payload=payload
-        )
+        await self.service.upsert_flow_graph_draft(tenant_id=auth.tenant_id, payload=payload)
 
     async def validate_flow_graph_draft(
         self,
@@ -448,13 +440,9 @@ class FlowsController:
         payload: FlowGraphCompileRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
-        await self.service.validate_flow_graph_draft(
-            tenant_id=auth.tenant_id, payload=payload
-        )
+        await self.service.validate_flow_graph_draft(tenant_id=auth.tenant_id, payload=payload)
 
     async def compile_flow_graph(
         self,
@@ -463,9 +451,7 @@ class FlowsController:
         payload: FlowGraphCompileRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         await self.service.compile_flow_graph(tenant_id=auth.tenant_id, payload=payload)
 
@@ -534,9 +520,7 @@ class FlowsController:
         auth: AuthContext = Depends(get_auth_context),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> DeploymentComposeResponse:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         if not idempotency_key or not idempotency_key.strip():
             raise RouterValidationException(errors=["idempotency_key_required"])
@@ -553,9 +537,7 @@ class FlowsController:
         payload: FlowArtifactsBatchUpsertRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> FlowArtifactsBatchUpsertResponse:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         return await self.service.batch_upsert_artifacts(
             tenant_id=auth.tenant_id,
@@ -569,9 +551,7 @@ class FlowsController:
         payload: DeploymentComposeRequest,
         auth: AuthContext = Depends(get_auth_context),
     ) -> DeploymentComposeValidateResponse:
-        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(
-            flow_version_id
-        ):
+        if payload.flow_id != UUID(flow_id) or payload.flow_version_id != UUID(flow_version_id):
             raise RouterValidationException(errors=["flow_id_or_version_mismatch"])
         return await self.service.validate_compose_deployment(
             tenant_id=auth.tenant_id,

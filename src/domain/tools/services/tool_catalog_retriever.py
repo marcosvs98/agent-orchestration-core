@@ -37,7 +37,6 @@ class ToolCatalogRetriever:
         top_k: int | None = None,
         agent_version_id: UUID | None = None,
     ) -> list[AvailableTool]:
-
         filters_override: dict[str, object] = {
             "source": "tool_catalog",
             "doc_type": "tool_catalog",
@@ -52,10 +51,8 @@ class ToolCatalogRetriever:
             top_k_override=(top_k or MAX_TOOL_CATALOG_TOP_K) * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER,
             similarity_threshold_cap=TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP,
         )
-        selected: list[ToolDiscoveryCandidate] = (
-            self._get_tools_from_recovery_context(
-                context_items=context.context_items,
-            )
+        selected: list[ToolDiscoveryCandidate] = self._get_tools_from_recovery_context(
+            context_items=context.context_items,
         )
         if agent_version_id is not None:
             bindings = await self.tools_repository.list_tool_bindings_by_agent_version_id(

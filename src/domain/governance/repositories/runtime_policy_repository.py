@@ -176,9 +176,7 @@ class RuntimePolicyRepository:
 
                 return policy
 
-    async def get_active_tenant_policy(
-        self, tenant_id: UUID
-    ) -> RuntimePolicyModel | None:
+    async def get_active_tenant_policy(self, tenant_id: UUID) -> RuntimePolicyModel | None:
         async with self.db.get_session() as session:
             stmt = select(RuntimePolicyModel).where(
                 RuntimePolicyModel.tenant_id == tenant_id,
@@ -211,9 +209,7 @@ class RuntimePolicyRepository:
 
     async def list_policies(self, tenant_id: UUID) -> list[RuntimePolicyModel]:
         async with self.db.get_session() as session:
-            stmt = select(RuntimePolicyModel).where(
-                RuntimePolicyModel.tenant_id == tenant_id
-            )
+            stmt = select(RuntimePolicyModel).where(RuntimePolicyModel.tenant_id == tenant_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(

@@ -1,4 +1,6 @@
 PYTHON ?= python3
+# Pre-commit hooks (mypy, pylint) usam `language: system`; alinhar ao .venv do projeto (requires-python 3.12).
+PC_PYTHON ?= $(CURDIR)/.venv/bin/python
 
 # migrate / seed-demo usam uv run para usar o Alembic e deps do projeto (ver README §4.1–4.2).
 # Postgres do compose usa bind mount em ./docker-volumes/postgres; docker compose down -v não apaga esse diretório.
@@ -9,16 +11,16 @@ validate-setup:
 	resources/scripts/validation_setup.sh
 
 pc-config:
-	@PYTHONPATH=src python3.13 -m pre_commit install --install-hooks
+	@PYTHONPATH=src $(PC_PYTHON) -m pre_commit install --install-hooks
 
 pc-after-commit:
-	@PYTHONPATH=src python3.13 -m pre_commit run --from-ref origin/main --to-ref HEAD
+	@PYTHONPATH=src $(PC_PYTHON) -m pre_commit run --from-ref origin/main --to-ref HEAD
 
 pc-run-all:
-	@PYTHONPATH=src python3.13 -m pre_commit run --all-files
+	@PYTHONPATH=src $(PC_PYTHON) -m pre_commit run --all-files
 
 pc-run:
-	@PYTHONPATH=src python3.13 -m pre_commit run
+	@PYTHONPATH=src $(PC_PYTHON) -m pre_commit run
 
 gen-token:
 	@PYTHONPATH=src python3 resources/generate_jwt_token.py

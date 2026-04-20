@@ -16,9 +16,7 @@ class FlowGraphDraft(ORMBaseModel):
     )
     definition = Column(JSONB, nullable=False)
     status = Column(String(length=32), nullable=False, server_default="DRAFT")
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_by = Column(String(length=128), nullable=False)
     validated_at = Column(DateTime(timezone=True), nullable=True)
     validated_by = Column(String(length=128), nullable=True)

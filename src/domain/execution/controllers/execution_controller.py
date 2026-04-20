@@ -116,9 +116,7 @@ class ExecutionController:
                     trace_uuid = UUID(trace_id_header)
                 except ValueError:
                     trace_uuid = (
-                        UUID(hex=trace_id_header)
-                        if len(trace_id_header) == 32
-                        else uuid4()
+                        UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
                     )
             else:
                 trace_uuid = uuid4()
@@ -172,9 +170,7 @@ class ExecutionController:
             name="domain.execution.controller.execute_tool_run",
             input={"tool_run_id": tool_run_id},
         ):
-            return await self.boundary.execute_tool_run(
-                auth=auth, tool_run_id=UUID(tool_run_id)
-            )
+            return await self.boundary.execute_tool_run(auth=auth, tool_run_id=UUID(tool_run_id))
 
     async def get_flow_run(
         self, flow_run_id: str, _: AuthContext = Depends(get_auth_context)
@@ -186,12 +182,8 @@ class ExecutionController:
     ) -> GraphState:
         raise MethodNotAllowedPlaceholderException()
 
-    async def list_node_runs(
-        self, _: AuthContext = Depends(get_auth_context)
-    ) -> list[NodeRun]:
+    async def list_node_runs(self, _: AuthContext = Depends(get_auth_context)) -> list[NodeRun]:
         raise MethodNotAllowedPlaceholderException()
 
-    async def list_agent_runs(
-        self, _: AuthContext = Depends(get_auth_context)
-    ) -> list[AgentRun]:
+    async def list_agent_runs(self, _: AuthContext = Depends(get_auth_context)) -> list[AgentRun]:
         raise MethodNotAllowedPlaceholderException()

@@ -66,9 +66,7 @@ class LLMNodeExecutor:
     ) -> NodeResult:
         llm_cfg = config.get("llm") or {}
         runtime_policy = (
-            (context.metadata or {}).get("runtime_policy", {})
-            if context.metadata
-            else {}
+            (context.metadata or {}).get("runtime_policy", {}) if context.metadata else {}
         )
         llm_policy = runtime_policy.get("llm", {})
         stream_enabled = bool(llm_policy.get("stream_enabled", False))
@@ -82,10 +80,7 @@ class LLMNodeExecutor:
         should_stream = (
             stream_enabled
             and on_delta is not None
-            and (
-                not stream_eligible_tasks
-                or self.llm_task.value in stream_eligible_tasks
-            )
+            and (not stream_eligible_tasks or self.llm_task.value in stream_eligible_tasks)
         )
         provider = llm_cfg.get("provider") or LLMProviderType.OPENAI.value
         model_alias = llm_cfg.get("model_alias") or llm_policy.get("model_alias")
@@ -125,9 +120,7 @@ class LLMNodeExecutor:
         if not (llm_cfg or {}).get("use_system_context", True):
             system_context = None
         input_schema = resolved_prompt.input_schema or llm_cfg.get("input_schema", {})
-        output_schema = resolved_prompt.output_schema or llm_cfg.get(
-            "output_schema", {}
-        )
+        output_schema = resolved_prompt.output_schema or llm_cfg.get("output_schema", {})
         json_schema = output_schema or llm_cfg.get("output_schema", {})
         user_message = read_user_input(context)
         ceiling = (
@@ -153,8 +146,7 @@ class LLMNodeExecutor:
             input_schema=input_schema,
             output_schema=output_schema,
             json_schema=json_schema,
-            json_schema_name=self.json_schema_name
-            or (self.__class__.__name__.lower() + "_output"),
+            json_schema_name=self.json_schema_name or (self.__class__.__name__.lower() + "_output"),
             model_alias=model_alias,
             temperature=llm_cfg.get("temperature")
             if (llm_cfg and "temperature" in llm_cfg)
@@ -165,12 +157,8 @@ class LLMNodeExecutor:
             retry_limit=llm_policy.get("retry_limit"),
             fallback_model_alias=llm_cfg.get("fallback_model_alias")
             or llm_policy.get("fallback_model_alias"),
-            available_tools=context.available_tools
-            if self.include_available_tools
-            else [],
-            prompt_id=str(resolved_prompt.prompt_id)
-            if resolved_prompt.prompt_id
-            else None,
+            available_tools=context.available_tools if self.include_available_tools else [],
+            prompt_id=str(resolved_prompt.prompt_id) if resolved_prompt.prompt_id else None,
             prompt_version=resolved_prompt.prompt_version,
             prompt_frozen_hash=resolved_prompt.prompt_frozen_hash,
             task_type=self.llm_task,

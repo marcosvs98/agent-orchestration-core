@@ -119,16 +119,13 @@ class TenantSummaryRepository:
     def __init__(self, database_connection: DatabaseConnection) -> None:
         self.db = database_connection
 
-    async def load_policy_activation_sets(
-        self, *, tenant_id: UUID
-    ) -> PolicyActivationSets:
+    async def load_policy_activation_sets(self, *, tenant_id: UUID) -> PolicyActivationSets:
         async with self.db.get_session() as session:
             acc = await session.execute(
                 select(AccessPolicyVersionModel.access_policy_id)
                 .join(
                     AccessPolicyModel,
-                    AccessPolicyModel.access_policy_id
-                    == AccessPolicyVersionModel.access_policy_id,
+                    AccessPolicyModel.access_policy_id == AccessPolicyVersionModel.access_policy_id,
                 )
                 .where(
                     AccessPolicyModel.tenant_id == tenant_id,
@@ -199,9 +196,7 @@ class TenantSummaryRepository:
                 execution_limit_published=frozenset(r[0] for r in el.all()),
             )
 
-    async def load_operational_metrics(
-        self, *, tenant_id: UUID
-    ) -> TenantOperationalMetrics:
+    async def load_operational_metrics(self, *, tenant_id: UUID) -> TenantOperationalMetrics:
         async with self.db.get_session() as session:
             sessions_q = await session.execute(
                 select(func.count())
@@ -241,8 +236,7 @@ class TenantSummaryRepository:
                 .select_from(ResponseArtifactModel)
                 .join(
                     InteractionModel,
-                    ResponseArtifactModel.interaction_id
-                    == InteractionModel.interaction_id,
+                    ResponseArtifactModel.interaction_id == InteractionModel.interaction_id,
                 )
                 .join(
                     SessionModel,
@@ -276,9 +270,7 @@ class TenantSummaryRepository:
                 run_failures=int(failures_q.scalar() or 0),
             )
 
-    async def _aggregate_tenant_counts(
-        self, session, tenant_id: UUID
-    ) -> tuple[int, int]:
+    async def _aggregate_tenant_counts(self, session, tenant_id: UUID) -> tuple[int, int]:
         nodes_q = await session.execute(
             select(func.count())
             .select_from(NodeModel)
@@ -297,9 +289,7 @@ class TenantSummaryRepository:
         )
         return int(nodes_q.scalar() or 0), int(av_q.scalar() or 0)
 
-    async def load_operational_snapshot(
-        self, *, tenant_id: UUID
-    ) -> TenantOperationalDbSnapshot:
+    async def load_operational_snapshot(self, *, tenant_id: UUID) -> TenantOperationalDbSnapshot:
         async with self.db.get_session() as session:
             nodes_total, agent_versions_total = await self._aggregate_tenant_counts(
                 session, tenant_id
@@ -384,9 +374,7 @@ class TenantSummaryRepository:
                     flow_resolved[fid] = None
                     flow_resolution_kind[fid] = "none"
 
-            fv_ids = [
-                fv.flow_version_id for fv in flow_resolved.values() if fv is not None
-            ]
+            fv_ids = [fv.flow_version_id for fv in flow_resolved.values() if fv is not None]
 
             graphs_by_fv: dict[UUID, FlowGraphModel] = {}
             drafts_by_fv: dict[UUID, FlowGraphDraftModel] = {}
@@ -394,9 +382,7 @@ class TenantSummaryRepository:
             nodes_by_fv: dict[UUID, list[NodeModel]] = defaultdict(list)
             if fv_ids:
                 gres = await session.execute(
-                    select(FlowGraphModel).where(
-                        FlowGraphModel.flow_version_id.in_(fv_ids)
-                    )
+                    select(FlowGraphModel).where(FlowGraphModel.flow_version_id.in_(fv_ids))
                 )
                 for g in gres.scalars().all():
                     graphs_by_fv[g.flow_version_id] = g
@@ -461,9 +447,7 @@ class TenantSummaryRepository:
                     )
                     .join(ToolModel, ToolConfigModel.tool_id == ToolModel.tool_id)
                     .where(
-                        AgentVersionToolBindingModel.agent_version_id.in_(
-                            av_ids_for_tools
-                        ),
+                        AgentVersionToolBindingModel.agent_version_id.in_(av_ids_for_tools),
                         ToolConfigModel.tenant_id == tenant_id,
                     )
                 )

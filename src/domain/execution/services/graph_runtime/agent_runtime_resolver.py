@@ -19,9 +19,7 @@ class AgentRuntimeResolver:
         key = f"_agent_system_prompt_{node_id}"
         if key in state:
             return state[key]
-        agent_version_id = await self.agents_repository.get_agent_version_id_by_node_id(
-            node_id
-        )
+        agent_version_id = await self.agents_repository.get_agent_version_id_by_node_id(node_id)
         if agent_version_id is None:
             state[key] = None
             return None

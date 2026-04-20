@@ -81,9 +81,7 @@ class OnboardingController:
         limit: int = Query(default=200, ge=1, le=1000),
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[Onboarding]:
-        return await self.service.list_onboardings(
-            tenant_id=auth.tenant_id, limit=limit
-        )
+        return await self.service.list_onboardings(tenant_id=auth.tenant_id, limit=limit)
 
     async def create_onboarding(
         self,

@@ -285,9 +285,7 @@ class RagController:
         limit: int = Query(default=200, ge=1, le=1000),
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[RagChunk]:
-        return await self.runtime_service.list_chunks(
-            document_id=UUID(document_id), limit=limit
-        )
+        return await self.runtime_service.list_chunks(document_id=UUID(document_id), limit=limit)
 
     async def list_chunking_rules(
         self,
@@ -295,9 +293,7 @@ class RagController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> list[RagChunkingRule]:
         self._ensure_scope(auth, Scope.RagConfigsList)
-        return await self.service.list_chunking_rules(
-            tenant_id=auth.tenant_id, limit=limit
-        )
+        return await self.service.list_chunking_rules(tenant_id=auth.tenant_id, limit=limit)
 
     async def create_chunking_rule(
         self,

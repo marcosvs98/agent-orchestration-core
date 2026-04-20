@@ -16,7 +16,6 @@ from domain.execution.services.graph_runtime.types import (
     USER_CONTEXT_READ_GATE_STATE_KEY,
     ExecutionContext,
     NodeExecutionStatus,
-    RuntimeTraceEdgeEventStatus,
     UserContextEnrichmentMode,
 )
 from domain.execution.services.graph_runtime.execution_plan import (
@@ -119,9 +118,7 @@ class RuntimeExecutor:
             on_content_delta=on_content_delta,
         )
         user_context_policy = definition_dump.get("user_context_enrichment", {})
-        if isinstance(user_context_policy, dict) and bool(
-            user_context_policy.get("enabled")
-        ):
+        if isinstance(user_context_policy, dict) and bool(user_context_policy.get("enabled")):
             gate_key = USER_CONTEXT_READ_GATE_STATE_KEY
             handle = context.state.get(gate_key)
             if not isinstance(handle, dict):
@@ -136,9 +133,7 @@ class RuntimeExecutor:
                 "published": bool(handle.get("published", False)),
                 "published_by_node_id": handle.get("published_by_node_id"),
                 "published_at": handle.get("published_at"),
-                "layers": handle.get("layers")
-                if isinstance(handle.get("layers"), dict)
-                else {},
+                "layers": handle.get("layers") if isinstance(handle.get("layers"), dict) else {},
                 "mode": str(handle.get("mode") or mode),
             }
             context.state[gate_key] = merged_handle
@@ -208,9 +203,7 @@ class RuntimeExecutor:
                     session_id=session_id,
                     flow_run_id=flow_run_id,
                     correlation_id=correlation_id,
-                    node_id=UUID(context.current_node_id)
-                    if context.current_node_id
-                    else None,
+                    node_id=UUID(context.current_node_id) if context.current_node_id else None,
                     payload={"node_id": context.current_node_id},
                     causation_id=None,
                     schema_version=1,
@@ -268,9 +261,7 @@ class RuntimeExecutor:
             new_state = dict(node_result.next_state or context.state)
             snap = dict(new_state.get(NODE_OUTPUTS_BY_NODE_ID_KEY) or {})
             if context.current_node_id:
-                out_data = (
-                    node_result.data if isinstance(node_result.data, dict) else {}
-                )
+                out_data = node_result.data if isinstance(node_result.data, dict) else {}
                 snap[str(context.current_node_id)] = out_data
             new_state[NODE_OUTPUTS_BY_NODE_ID_KEY] = snap
             if node_result.memory is not None:
@@ -279,9 +270,7 @@ class RuntimeExecutor:
                 new_memory = list(context.memory)
             resume_to_node_id = None
             if node_result.status == NodeExecutionStatus.NEEDS_INPUT:
-                resume_to_node_id = (
-                    config.get("resume_to_node_id") or context.current_node_id
-                )
+                resume_to_node_id = config.get("resume_to_node_id") or context.current_node_id
 
             if self.hook:
                 await self.hook.on_node_complete(
@@ -290,9 +279,7 @@ class RuntimeExecutor:
                     session_id=session_id,
                     flow_run_id=flow_run_id,
                     correlation_id=correlation_id,
-                    node_id=UUID(context.current_node_id)
-                    if context.current_node_id
-                    else None,
+                    node_id=UUID(context.current_node_id) if context.current_node_id else None,
                     payload={
                         "node_id": context.current_node_id,
                         "status": node_result.status,
@@ -350,7 +337,6 @@ class RuntimeExecutor:
                 return
 
             if node_type in TERMINAL_NODE_TYPES:
-
                 await self.repository.complete_flow_run(
                     flow_run_id=flow_run_id,
                     status=FlowRunStatus.COMPLETED,
@@ -453,10 +439,7 @@ class RuntimeExecutor:
                 "node_output": node_result.data,
             }
             next_spec = node_specs.get(next_node_id)
-            if (
-                next_spec is not None
-                and next_spec.get("type") == NodeType.HumanFallback.value
-            ):
+            if next_spec is not None and next_spec.get("type") == NodeType.HumanFallback.value:
                 new_metadata = dict(context.metadata or {})
                 new_metadata["fallback_source_node"] = context.current_node_id
                 update_payload["metadata"] = new_metadata
@@ -492,9 +475,7 @@ class RuntimeExecutor:
                 key = f"{edge.from_node}->{edge.to_node}"
                 iteration_counters[key] = iteration_counters.get(key, 0) + 1
                 if iteration_counters[key] > loop_limit:
-                    raise DomainValidationException(
-                        message="loop_iteration_limit_exceeded"
-                    )
+                    raise DomainValidationException(message="loop_iteration_limit_exceeded")
             result = EdgeEvaluator.is_true(
                 "",
                 node_output,
@@ -526,7 +507,6 @@ class RuntimeExecutor:
         to_node: str,
         result: bool,
     ) -> None:
-
         if self.hook:
             edge_id = f"{current_node_id}->{to_node}"
             await self.hook.on_edge_evaluated(

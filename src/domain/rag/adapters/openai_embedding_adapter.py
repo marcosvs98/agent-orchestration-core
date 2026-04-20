@@ -43,9 +43,7 @@ class OpenAIEmbeddingAdapter(EmbeddingPort):
         h = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         return f"embedding:{model_name}:{dims}:{h}"
 
-    def _embedding_batch_cache_key(
-        self, texts: List[str], model_name: str, dims: int
-    ) -> str:
+    def _embedding_batch_cache_key(self, texts: List[str], model_name: str, dims: int) -> str:
         normalized_parts = [self._normalize_text_for_cache(t) for t in texts]
         payload = "\n".join(normalized_parts)
         h = hashlib.sha256(payload.encode("utf-8")).hexdigest()

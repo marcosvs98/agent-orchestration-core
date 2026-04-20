@@ -158,19 +158,13 @@ class CompositeHook(ExecutionEventHook):
 class DbExecutionEventHook(ExecutionEventHook):
     """Execution event hook that persists events to DB; public methods use tracer."""
 
-    def __init__(
-        self, repository: ExecutionRepository, tracer: RuntimeTracerPort
-    ) -> None:
+    def __init__(self, repository: ExecutionRepository, tracer: RuntimeTracerPort) -> None:
         self.repository = repository
         self.tracer = tracer
 
-    async def _safe_emit(
-        self, *, event_type: ExecutionEventType, data: Dict[str, Any]
-    ) -> None:
+    async def _safe_emit(self, *, event_type: ExecutionEventType, data: Dict[str, Any]) -> None:
         try:
-            await self.repository.append_execution_event(
-                **data, event_type=event_type.value
-            )
+            await self.repository.append_execution_event(**data, event_type=event_type.value)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to append execution event (swallowed): %s", exc)
 
@@ -463,9 +457,7 @@ class MemoryExtractionHook(ExecutionEventHook):
                         session_id=session_id,
                         flow_run_id=flow_run_id,
                         correlation_id=correlation_id,
-                        causation_id=causation_id
-                        if isinstance(causation_id, UUID)
-                        else None,
+                        causation_id=causation_id if isinstance(causation_id, UUID) else None,
                     ),
                     trace_id=correlation_id,
                 )

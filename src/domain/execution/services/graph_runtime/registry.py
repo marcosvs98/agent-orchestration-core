@@ -79,10 +79,10 @@ class NodeRegistry:
     def resolve(
         self, node_type: str
     ) -> (
-        type["_ToolResolver"]
-        | type["_IntentClassifier"]
-        | type["_ToolInputFiller"]
-        | type["NodeExecutor"]
+        type[ToolResolver]
+        | type[IntentClassifier]
+        | type[ToolInputFiller]
+        | type[NodeExecutor]
         | None
     ):
         with self.tracer.observe(

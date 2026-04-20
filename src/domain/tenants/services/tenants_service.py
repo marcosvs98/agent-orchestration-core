@@ -34,9 +34,7 @@ class TenantsService(TenantsServicePort):
         self, *, tenant_create: TenantCreate, principal_id: str
     ) -> tuple[TenantResponse, bool]:
         if tenant_create.external_id is not None:
-            existing = await self.repository.get_tenant_by_external_id(
-                tenant_create.external_id
-            )
+            existing = await self.repository.get_tenant_by_external_id(tenant_create.external_id)
             if existing is not None:
                 if self.execution_limit_policy_repository is not None:
                     await self.execution_limit_policy_repository.ensure_default_published_policy_for_tenant(

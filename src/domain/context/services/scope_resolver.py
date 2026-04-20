@@ -22,10 +22,6 @@ def resolve_rag_scope(
         }
         search_user_id = user_id
     if isinstance(filters_override, dict):
-        merged = {
-            k: v
-            for k, v in filters_override.items()
-            if k in ALLOWED_FILTER_OVERRIDE_KEYS
-        }
+        merged = {k: v for k, v in filters_override.items() if k in ALLOWED_FILTER_OVERRIDE_KEYS}
         base.update(merged)
     return base, search_user_id

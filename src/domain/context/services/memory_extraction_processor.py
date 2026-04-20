@@ -97,10 +97,7 @@ class MemoryExtractionProcessor:
                 correlation_id=correlation_id,
             )
             llm_input = json.dumps(flow_output, ensure_ascii=True)
-            prompt = (
-                config.llm.prompt
-                or "Extract memory items from the provided flow output."
-            )
+            prompt = config.llm.prompt or "Extract memory items from the provided flow output."
             request = LLMRequest(
                 prompt=prompt,
                 user_message=llm_input,
@@ -192,10 +189,7 @@ class MemoryExtractionProcessor:
                     item=item,
                     event_context=event_context,
                 )
-                if (
-                    MemoryWriteTarget.USER_MEMORY_PROFILE
-                    in write_result.targets_applied
-                ):
+                if MemoryWriteTarget.USER_MEMORY_PROFILE in write_result.targets_applied:
                     summary.applied_profile += 1
                 else:
                     summary.ignored_profile += 1

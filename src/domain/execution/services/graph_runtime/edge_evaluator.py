@@ -16,9 +16,7 @@ RBRACK = pyparsing.Suppress("]")
 
 INDEX = pyparsing.Word(pyparsing.nums).set_parse_action(lambda t: int(t[0]))
 
-PATH_SEGMENT = pyparsing.Group(
-    IDENTIFIER + pyparsing.ZeroOrMore(LBRACK + INDEX + RBRACK)
-)
+PATH_SEGMENT = pyparsing.Group(IDENTIFIER + pyparsing.ZeroOrMore(LBRACK + INDEX + RBRACK))
 
 PROPERTY_PATH = pyparsing.DelimitedList(
     PATH_SEGMENT,
@@ -43,14 +41,10 @@ NUMBER_SIGN = pyparsing.Word("+-", exact=1)
 REAL_NUMBER = pyparsing.Combine(
     pyparsing.Optional(NUMBER_SIGN)
     + (
-        pyparsing.Word(pyparsing.nums)
-        + "."
-        + pyparsing.Optional(pyparsing.Word(pyparsing.nums))
+        pyparsing.Word(pyparsing.nums) + "." + pyparsing.Optional(pyparsing.Word(pyparsing.nums))
         | ("." + pyparsing.Word(pyparsing.nums))
     )
-    + pyparsing.Optional(
-        E + pyparsing.Optional(NUMBER_SIGN) + pyparsing.Word(pyparsing.nums)
-    )
+    + pyparsing.Optional(E + pyparsing.Optional(NUMBER_SIGN) + pyparsing.Word(pyparsing.nums))
 ).set_parse_action(lambda t: float(t[0]))
 
 INTEGER = pyparsing.Combine(
@@ -128,9 +122,7 @@ class LenVal:
 
     def resolve(self, context: Any) -> int:
         base_value = (
-            self._value.resolve(context)
-            if isinstance(self._value, SubstituteVal)
-            else self._value
+            self._value.resolve(context) if isinstance(self._value, SubstituteVal) else self._value
         )
         try:
             return len(base_value)
@@ -147,9 +139,7 @@ EXPR = pyparsing.Forward()
 
 LIST_ITEM = STRING | REAL_NUMBER | INTEGER | BOOLEAN | NONE | PROPERTY_PATH
 LIST_LITERAL = (
-    LBRACK
-    + pyparsing.Optional(pyparsing.Group(pyparsing.delimitedList(LIST_ITEM)))
-    + RBRACK
+    LBRACK + pyparsing.Optional(pyparsing.Group(pyparsing.delimitedList(LIST_ITEM))) + RBRACK
 ).set_parse_action(lambda t: {"__type__": "list", "values": list(t[0]) if t else []})
 
 FUNC_CALL = (
@@ -228,9 +218,7 @@ CUSTOM_FUNCTIONS = {
     "AllEquals": lambda lst, value: all(x == value for x in lst),
     "AnyNonEmpty": lambda lst: any(bool(item) for item in lst),
     "AllNonEmpty": lambda lst: (
-        isinstance(lst, (list, tuple))
-        and len(lst) > 0
-        and all(bool(item) for item in lst)
+        isinstance(lst, (list, tuple)) and len(lst) > 0 and all(bool(item) for item in lst)
     ),
 }
 
@@ -364,11 +352,7 @@ class EdgeEvaluator:
             return EdgeEvaluator._eval(node.as_list(), context)
 
         if isinstance(node, list):
-            if (
-                len(node) > 0
-                and isinstance(node[0], str)
-                and node[0] in CUSTOM_FUNCTIONS
-            ):
+            if len(node) > 0 and isinstance(node[0], str) and node[0] in CUSTOM_FUNCTIONS:
                 func_name = node[0]
                 args = [EdgeEvaluator._eval(arg, context) for arg in node[1:]]
                 return CUSTOM_FUNCTIONS[func_name](*args)
@@ -493,9 +477,7 @@ class EdgeEvaluator:
         if isinstance(node, dict) and node.get("__type__") == "list":
             return {
                 "__type__": "list",
-                "values": [
-                    EdgeEvaluator._to_serializable(v) for v in node.get("values", [])
-                ],
+                "values": [EdgeEvaluator._to_serializable(v) for v in node.get("values", [])],
             }
         if isinstance(node, list):
             return [EdgeEvaluator._to_serializable(item) for item in node]

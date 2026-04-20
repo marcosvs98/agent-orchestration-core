@@ -25,9 +25,7 @@ class FlowGraphCompiler:
             "edges": edges,
             "schema_version": 1,
         }
-        hash_input = json.dumps(
-            snapshot, sort_keys=True, separators=(",", ":")
-        ).encode()
+        hash_input = json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()
         graph_hash = hashlib.sha256(hash_input).hexdigest()
 
         return snapshot, graph_hash
@@ -41,9 +39,7 @@ class FlowGraphCompiler:
                     "to_node": edge.to_node,
                     "edge_kind": edge.edge_kind,
                     "condition": edge.condition,
-                    "compiled_condition": self.condition_compiler.compile(
-                        edge.condition
-                    ),
+                    "compiled_condition": self.condition_compiler.compile(edge.condition),
                 }
             )
         return compiled

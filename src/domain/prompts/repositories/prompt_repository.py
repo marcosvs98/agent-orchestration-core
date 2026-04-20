@@ -13,9 +13,7 @@ from infra.database.models.prompts.node_prompt import NodePrompt as NodePromptMo
 
 
 class PromptRepository:
-    def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
-    ) -> None:
+    def __init__(self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort) -> None:
         self.db = database_connection
         self.tracer = tracer
 
@@ -81,9 +79,7 @@ class PromptRepository:
                     return NodePrompt.model_validate(model.to_dict())
                 return None
 
-    async def create_prompt(
-        self, prompt: NodePromptCreate, frozen_hash: str
-    ) -> NodePrompt:
+    async def create_prompt(self, prompt: NodePromptCreate, frozen_hash: str) -> NodePrompt:
         async with self.db.get_session() as session:
             stmt = select(NodePromptModel).where(
                 NodePromptModel.node_type == prompt.node_type,

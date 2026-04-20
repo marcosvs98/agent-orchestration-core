@@ -27,12 +27,8 @@ class BillingPolicyVersion(ORMBaseModel):
     version_patch = Column(Integer, nullable=False, default=0)
     config_hash = Column(String(length=128), nullable=True)
     rules = Column(JSONB, nullable=False, server_default="{}")
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     tenant_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("tenant.tenant_id", ondelete="CASCADE"),

@@ -117,9 +117,7 @@ class ConversationReadService:
             has_next=has_next,
         )
         return PaginatedSessionsResponse(
-            items=[
-                SessionSummary(session_id=r.session_id, user_id=r.user_id) for r in rows
-            ],
+            items=[SessionSummary(session_id=r.session_id, user_id=r.user_id) for r in rows],
             limit=limit,
             offset=offset,
             has_next=has_next,
@@ -138,18 +136,13 @@ class ConversationReadService:
             has_next=has_next,
         )
         return PaginatedEndUsersResponse(
-            items=[
-                EndUserListItem(end_user_id=r.end_user_id, user_id=r.user_id)
-                for r in rows
-            ],
+            items=[EndUserListItem(end_user_id=r.end_user_id, user_id=r.user_id) for r in rows],
             limit=limit,
             offset=offset,
             has_next=has_next,
         )
 
-    async def get_end_user_detail(
-        self, *, tenant_id: UUID, user_id: str
-    ) -> EndUserDetailResponse:
+    async def get_end_user_detail(self, *, tenant_id: UUID, user_id: str) -> EndUserDetailResponse:
         end_user_id = await self.read_repository.get_end_user_id(
             tenant_id=tenant_id, user_id=user_id
         )

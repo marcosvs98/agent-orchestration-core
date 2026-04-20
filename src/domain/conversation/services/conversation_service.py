@@ -59,9 +59,7 @@ class ConversationService(ConversationServicePort):
                 user_prompt_id=request.user_prompt_id,
             )
             if selected_prompt is not None:
-                user_input = (
-                    f"{selected_prompt.content}\n\n{request.user_input or ''}".strip()
-                )
+                user_input = f"{selected_prompt.content}\n\n{request.user_input or ''}".strip()
 
         flow_run = FlowRunCreate(
             flow_id=request.flow_id,
@@ -77,9 +75,7 @@ class ConversationService(ConversationServicePort):
 
         async with self._hook_lock:
             original_hook: ExecutionEventHook = self.execution_service.hook
-            original_runtime_hook: ExecutionEventHook | None = (
-                self.execution_service.runtime.hook
-            )
+            original_runtime_hook: ExecutionEventHook | None = self.execution_service.runtime.hook
             composite_hook = CompositeHook([original_hook, stream_bridge])
             self.execution_service.hook = composite_hook
             self.execution_service.runtime.hook = composite_hook

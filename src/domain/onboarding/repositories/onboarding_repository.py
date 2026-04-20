@@ -24,15 +24,11 @@ class OnboardingRepository:
     async def get_onboarding(self, onboarding_id: UUID) -> OnboardingModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(OnboardingModel).where(
-                    OnboardingModel.onboarding_id == onboarding_id
-                )
+                select(OnboardingModel).where(OnboardingModel.onboarding_id == onboarding_id)
             )
             return result.scalar_one_or_none()
 
-    async def list_onboardings(
-        self, *, tenant_id: UUID, limit: int
-    ) -> list[OnboardingModel]:
+    async def list_onboardings(self, *, tenant_id: UUID, limit: int) -> list[OnboardingModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(OnboardingModel)
@@ -47,9 +43,7 @@ class OnboardingRepository:
         self, *, tenant_id: UUID, name: str | None, created_by: str
     ) -> OnboardingModel:
         async with self.db.get_session() as session:
-            instance = OnboardingModel(
-                tenant_id=tenant_id, name=name, created_by=created_by
-            )
+            instance = OnboardingModel(tenant_id=tenant_id, name=name, created_by=created_by)
             session.add(instance)
             await session.commit()
             await session.refresh(instance)
@@ -61,15 +55,12 @@ class OnboardingRepository:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(OnboardingVersionModel).where(
-                    OnboardingVersionModel.onboarding_version_id
-                    == onboarding_version_id
+                    OnboardingVersionModel.onboarding_version_id == onboarding_version_id
                 )
             )
             return result.scalar_one_or_none()
 
-    async def list_onboarding_versions(
-        self, onboarding_id: UUID
-    ) -> list[OnboardingVersionModel]:
+    async def list_onboarding_versions(self, onboarding_id: UUID) -> list[OnboardingVersionModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(OnboardingVersionModel)
@@ -97,8 +88,7 @@ class OnboardingRepository:
             if source_version_id is not None:
                 source_version = await session.execute(
                     select(OnboardingVersionModel).where(
-                        OnboardingVersionModel.onboarding_version_id
-                        == source_version_id
+                        OnboardingVersionModel.onboarding_version_id == source_version_id
                     )
                 )
                 source = source_version.scalar_one_or_none()
@@ -111,11 +101,7 @@ class OnboardingRepository:
                 if version_patch is None:
                     version_patch = source.version_patch + 1
             else:
-                if (
-                    version_major is None
-                    or version_minor is None
-                    or version_patch is None
-                ):
+                if version_major is None or version_minor is None or version_patch is None:
                     last_version = await session.execute(
                         select(OnboardingVersionModel)
                         .where(OnboardingVersionModel.onboarding_id == onboarding_id)
@@ -151,9 +137,7 @@ class OnboardingRepository:
             await session.refresh(instance)
             return instance
 
-    async def get_onboarding_run(
-        self, onboarding_run_id: UUID
-    ) -> OnboardingRunModel | None:
+    async def get_onboarding_run(self, onboarding_run_id: UUID) -> OnboardingRunModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(OnboardingRunModel).where(
@@ -168,8 +152,7 @@ class OnboardingRepository:
         async with self.db.get_session() as session:
             version = await session.execute(
                 select(OnboardingVersionModel).where(
-                    OnboardingVersionModel.onboarding_version_id
-                    == onboarding_version_id
+                    OnboardingVersionModel.onboarding_version_id == onboarding_version_id
                 )
             )
             if version.scalar_one_or_none() is None:
@@ -180,9 +163,7 @@ class OnboardingRepository:
             await session.refresh(instance)
             return instance
 
-    async def get_onboarding_step(
-        self, onboarding_step_id: UUID
-    ) -> OnboardingStepModel | None:
+    async def get_onboarding_step(self, onboarding_step_id: UUID) -> OnboardingStepModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(OnboardingStepModel).where(
@@ -191,15 +172,11 @@ class OnboardingRepository:
             )
             return result.scalar_one_or_none()
 
-    async def list_onboarding_steps(
-        self, onboarding_version_id: UUID
-    ) -> list[OnboardingStepModel]:
+    async def list_onboarding_steps(self, onboarding_version_id: UUID) -> list[OnboardingStepModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(OnboardingStepModel)
-                .where(
-                    OnboardingStepModel.onboarding_version_id == onboarding_version_id
-                )
+                .where(OnboardingStepModel.onboarding_version_id == onboarding_version_id)
                 .order_by(OnboardingStepModel.created_at.asc())
             )
             result = await session.execute(stmt)

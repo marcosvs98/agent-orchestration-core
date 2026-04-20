@@ -72,14 +72,10 @@ class GraphCompiler:
                 ):
                     compiled = edge.get("compiled_condition")
                     if compiled is None:
-                        raise DomainValidationException(
-                            message="compiled_condition_missing"
-                        )
+                        raise DomainValidationException(message="compiled_condition_missing")
                     edge_kind_str = edge.get("edge_kind", EdgeKind.NORMAL.value)
                     edge_kind = (
-                        EdgeKind(edge_kind_str)
-                        if isinstance(edge_kind_str, str)
-                        else edge_kind_str
+                        EdgeKind(edge_kind_str) if isinstance(edge_kind_str, str) else edge_kind_str
                     )
                     ce = CompiledEdge(
                         from_node=edge.get("from_node"),

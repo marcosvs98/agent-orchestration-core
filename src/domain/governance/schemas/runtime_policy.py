@@ -47,9 +47,7 @@ class RuntimePolicyLlmSchema(BaseModel):
     history_enabled_tasks: list[str] | None = None
     temperature: float | None = None
     max_tokens: int | None = None
-    inference_layers: RuntimePolicyLlmInferenceLayersSchema | Dict[str, Any] | None = (
-        None
-    )
+    inference_layers: RuntimePolicyLlmInferenceLayersSchema | Dict[str, Any] | None = None
 
 
 class RuntimePolicyExecutionSchema(BaseModel):
@@ -66,9 +64,7 @@ class RuntimePolicyToolsCircuitBreakerSchema(BaseModel):
 
 class RuntimePolicyToolsSchema(BaseModel):
     max_retries: int | None = None
-    circuit_breaker: RuntimePolicyToolsCircuitBreakerSchema | Dict[str, Any] | None = (
-        None
-    )
+    circuit_breaker: RuntimePolicyToolsCircuitBreakerSchema | Dict[str, Any] | None = None
 
 
 class RuntimePolicyModerationProviderSchema(BaseModel):
@@ -131,9 +127,9 @@ class RuntimePolicyMemoryRetrievalTemporalScoringSchema(BaseModel):
 
 
 class RuntimePolicyMemoryRetrievalSchema(BaseModel):
-    temporal_scoring: (
-        RuntimePolicyMemoryRetrievalTemporalScoringSchema | Dict[str, Any] | None
-    ) = None
+    temporal_scoring: RuntimePolicyMemoryRetrievalTemporalScoringSchema | Dict[str, Any] | None = (
+        None
+    )
 
 
 class RuntimePolicyDefinition(BaseModel):
@@ -146,9 +142,7 @@ class RuntimePolicyDefinition(BaseModel):
     tools: RuntimePolicyToolsSchema | Dict[str, Any] = Field(
         default_factory=RuntimePolicyToolsSchema
     )
-    llm: RuntimePolicyLlmSchema | Dict[str, Any] = Field(
-        default_factory=RuntimePolicyLlmSchema
-    )
+    llm: RuntimePolicyLlmSchema | Dict[str, Any] = Field(default_factory=RuntimePolicyLlmSchema)
     moderation: RuntimePolicyModerationSchema | Dict[str, Any] = Field(
         default_factory=RuntimePolicyModerationSchema
     )
@@ -161,9 +155,9 @@ class RuntimePolicyDefinition(BaseModel):
     memory_retrieval: RuntimePolicyMemoryRetrievalSchema | Dict[str, Any] = Field(
         default_factory=RuntimePolicyMemoryRetrievalSchema
     )
-    user_context_enrichment: (
-        RuntimePolicyUserContextEnrichmentSchema | Dict[str, Any]
-    ) = Field(default_factory=RuntimePolicyUserContextEnrichmentSchema)
+    user_context_enrichment: RuntimePolicyUserContextEnrichmentSchema | Dict[str, Any] = Field(
+        default_factory=RuntimePolicyUserContextEnrichmentSchema
+    )
 
 
 class ResolvedRuntimePolicy(BaseModel):

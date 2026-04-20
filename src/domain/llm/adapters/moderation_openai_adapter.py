@@ -68,12 +68,10 @@ class ModerationOpenAIAdapter:
             input={"text_hash": text_hash[:16], "model": model},
         ) as guardrail_handle:
             try:
-                moderation: ModerationCreateResponse = (
-                    await self.client.moderations.create(
-                        input=text,
-                        timeout=timeout,
-                        model=model,
-                    )
+                moderation: ModerationCreateResponse = await self.client.moderations.create(
+                    input=text,
+                    timeout=timeout,
+                    model=model,
                 )
                 result: Moderation = moderation.results[0]
                 categories_raw = result.categories.model_dump()

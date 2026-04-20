@@ -158,7 +158,5 @@ class LLMProviderRepository:
                 session.add(instance)
                 await session.commit()
                 if self.cache_adapter:
-                    await self.cache_adapter.delete(
-                        f"llm_provider_config:{tenant_id}:{provider}"
-                    )
+                    await self.cache_adapter.delete(f"llm_provider_config:{tenant_id}:{provider}")
                 return instance

@@ -203,9 +203,7 @@ class ExecutionBoundary:
             raise NotFoundServiceException(message="flow_run_not_found")
         return flow_run
 
-    async def get_graph_state(
-        self, *, auth: AuthContext, flow_run_id: str
-    ) -> GraphState:
+    async def get_graph_state(self, *, auth: AuthContext, flow_run_id: str) -> GraphState:
         await self.rate_limit_service.enforce(
             tenant_id=auth.tenant_id,
             principal_type=auth.principal_type,

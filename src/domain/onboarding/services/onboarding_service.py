@@ -28,12 +28,8 @@ class OnboardingService(OnboardingServicePort):
         self.repository = repository
         self.authoring_events = authoring_events
 
-    async def list_onboardings(
-        self, *, tenant_id: UUID, limit: int = 200
-    ) -> list[Onboarding]:
-        onboardings = await self.repository.list_onboardings(
-            tenant_id=tenant_id, limit=limit
-        )
+    async def list_onboardings(self, *, tenant_id: UUID, limit: int = 200) -> list[Onboarding]:
+        onboardings = await self.repository.list_onboardings(tenant_id=tenant_id, limit=limit)
         return [
             Onboarding(
                 id=onboarding.onboarding_id,
@@ -62,9 +58,7 @@ class OnboardingService(OnboardingServicePort):
             justification="create onboarding",
             schema_version=1,
         )
-        return Onboarding(
-            id=model.onboarding_id, name=model.name, created_by=model.created_by
-        )
+        return Onboarding(id=model.onboarding_id, name=model.name, created_by=model.created_by)
 
     async def list_onboarding_versions(
         self, *, tenant_id: UUID, onboarding_id: str
@@ -121,16 +115,12 @@ class OnboardingService(OnboardingServicePort):
             onboarding_version_id=model.onboarding_version_id,
         )
 
-    async def get_onboarding_run(
-        self, *, tenant_id: UUID, onboarding_run_id: str
-    ) -> OnboardingRun:
+    async def get_onboarding_run(self, *, tenant_id: UUID, onboarding_run_id: str) -> OnboardingRun:
         run_uuid = UUID(onboarding_run_id)
         run = await self.repository.get_onboarding_run(run_uuid)
         if run is None:
             raise NotFoundServiceException(message="onboarding_run_not_found")
-        version = await self.repository.get_onboarding_version(
-            run.onboarding_version_id
-        )
+        version = await self.repository.get_onboarding_version(run.onboarding_version_id)
         if version is None:
             raise NotFoundServiceException(message="onboarding_version_not_found")
         onboarding = await self.repository.get_onboarding(version.onboarding_id)
@@ -141,16 +131,12 @@ class OnboardingService(OnboardingServicePort):
             onboarding_version_id=run.onboarding_version_id,
         )
 
-    async def list_steps(
-        self, *, tenant_id: UUID, onboarding_run_id: str
-    ) -> list[StepRun]:
+    async def list_steps(self, *, tenant_id: UUID, onboarding_run_id: str) -> list[StepRun]:
         run_uuid = UUID(onboarding_run_id)
         run = await self.repository.get_onboarding_run(run_uuid)
         if run is None:
             raise NotFoundServiceException(message="onboarding_run_not_found")
-        version = await self.repository.get_onboarding_version(
-            run.onboarding_version_id
-        )
+        version = await self.repository.get_onboarding_version(run.onboarding_version_id)
         if version is None:
             raise NotFoundServiceException(message="onboarding_version_not_found")
         onboarding = await self.repository.get_onboarding(version.onboarding_id)
@@ -171,16 +157,12 @@ class OnboardingService(OnboardingServicePort):
             for step in steps
         ]
 
-    async def get_current_step(
-        self, *, tenant_id: UUID, onboarding_run_id: str
-    ) -> StepRun | None:
+    async def get_current_step(self, *, tenant_id: UUID, onboarding_run_id: str) -> StepRun | None:
         run_uuid = UUID(onboarding_run_id)
         run = await self.repository.get_onboarding_run(run_uuid)
         if run is None:
             raise NotFoundServiceException(message="onboarding_run_not_found")
-        version = await self.repository.get_onboarding_version(
-            run.onboarding_version_id
-        )
+        version = await self.repository.get_onboarding_version(run.onboarding_version_id)
         if version is None:
             raise NotFoundServiceException(message="onboarding_version_not_found")
         onboarding = await self.repository.get_onboarding(version.onboarding_id)
@@ -201,16 +183,12 @@ class OnboardingService(OnboardingServicePort):
                 )
         return None
 
-    async def is_run_completed(
-        self, *, tenant_id: UUID, onboarding_run_id: str
-    ) -> bool:
+    async def is_run_completed(self, *, tenant_id: UUID, onboarding_run_id: str) -> bool:
         run_uuid = UUID(onboarding_run_id)
         run = await self.repository.get_onboarding_run(run_uuid)
         if run is None:
             raise NotFoundServiceException(message="onboarding_run_not_found")
-        version = await self.repository.get_onboarding_version(
-            run.onboarding_version_id
-        )
+        version = await self.repository.get_onboarding_version(run.onboarding_version_id)
         if version is None:
             raise NotFoundServiceException(message="onboarding_version_not_found")
         onboarding = await self.repository.get_onboarding(version.onboarding_id)
@@ -235,9 +213,7 @@ class OnboardingService(OnboardingServicePort):
         run = await self.repository.get_onboarding_run(run_uuid)
         if run is None:
             raise NotFoundServiceException(message="onboarding_run_not_found")
-        version = await self.repository.get_onboarding_version(
-            run.onboarding_version_id
-        )
+        version = await self.repository.get_onboarding_version(run.onboarding_version_id)
         if version is None:
             raise NotFoundServiceException(message="onboarding_version_not_found")
         onboarding = await self.repository.get_onboarding(version.onboarding_id)
@@ -247,9 +223,7 @@ class OnboardingService(OnboardingServicePort):
         if step_run is None or step_run.onboarding_run_id != run_uuid:
             raise NotFoundServiceException(message="step_run_not_found")
         if step_run.status not in ("PENDING", "IN_PROGRESS"):
-            raise DomainValidationException(
-                message="step_run_not_in_valid_status_for_advance"
-            )
+            raise DomainValidationException(message="step_run_not_in_valid_status_for_advance")
         was_pending = step_run.status == "PENDING"
         if was_pending:
             updated_step = await self.repository.update_step_status(
@@ -291,9 +265,7 @@ class OnboardingService(OnboardingServicePort):
             justification="step completed",
             schema_version=1,
         )
-        all_steps = await self.repository.list_onboarding_steps(
-            version.onboarding_version_id
-        )
+        all_steps = await self.repository.list_onboarding_steps(version.onboarding_version_id)
         current_step_index = next(
             (
                 i

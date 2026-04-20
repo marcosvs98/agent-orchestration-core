@@ -110,7 +110,9 @@ class ToolExecutor(NodeExecutor):
         context: ExecutionContext,
         tool_run: ToolRunInput,
     ) -> ToolRunResult:
-        idempotency_key = f"{context.flow_run_id}:{context.current_node_run_id}:{tool_run.operation_id}"
+        idempotency_key = (
+            f"{context.flow_run_id}:{context.current_node_run_id}:{tool_run.operation_id}"
+        )
         async with semaphore:
             tool_run_id: UUID | None = None
             try:
@@ -201,9 +203,7 @@ class ToolExecutor(NodeExecutor):
 
         if raw_result is None:
             if strict_mode:
-                raise DomainValidationException(
-                    message="param_extraction_result_missing"
-                )
+                raise DomainValidationException(message="param_extraction_result_missing")
             return [], []
 
         parsed_operations: list[_ParamExtractionOperation] = []

@@ -27,14 +27,10 @@ class OpenAPIParser:
             else:
                 spec_dict = yaml.safe_load(content)
         except (json.JSONDecodeError, yaml.YAMLError) as e:
-            raise DomainValidationException(
-                message=f"invalid_openapi_format: {str(e)}"
-            ) from e
+            raise DomainValidationException(message=f"invalid_openapi_format: {str(e)}") from e
 
         if not isinstance(spec_dict, dict):
-            raise DomainValidationException(
-                message="invalid_openapi_spec: root must be an object"
-            )
+            raise DomainValidationException(message="invalid_openapi_spec: root must be an object")
         if "openapi" not in spec_dict and "swagger" not in spec_dict:
             raise DomainValidationException(
                 message="invalid_openapi_spec: missing 'openapi' or 'swagger' version field"
@@ -79,9 +75,7 @@ class OpenAPIParser:
                     continue
 
                 request_schema = self.build_merged_request_schema(operation, schemas)
-                response_schema = self.extract_success_json_response_schema(
-                    operation, schemas
-                )
+                response_schema = self.extract_success_json_response_schema(operation, schemas)
 
                 operations.append(
                     OpenAPIOperation(
@@ -166,9 +160,7 @@ class OpenAPIParser:
             if type(param_desc) is str and param_desc.strip():
                 existing = prop_schema.get("description")
                 if type(existing) is str and existing.strip():
-                    prop_schema["description"] = (
-                        f"{existing.strip()} {param_desc.strip()}".strip()
-                    )
+                    prop_schema["description"] = f"{existing.strip()} {param_desc.strip()}".strip()
                 else:
                     prop_schema["description"] = param_desc.strip()
             merged_property_schemas[parameter_name] = prop_schema
@@ -217,9 +209,7 @@ class OpenAPIParser:
         if type(required_block) is list:
             for entry in required_block:
                 required_names.append(str(entry))
-        filtered_required = [
-            name for name in required_names if name in properties_block
-        ]
+        filtered_required = [name for name in required_names if name in properties_block]
         return properties_block, filtered_required
 
     def dereference_schema_node(

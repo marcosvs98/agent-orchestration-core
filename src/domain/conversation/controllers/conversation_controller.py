@@ -48,9 +48,7 @@ class ConversationController:
             try:
                 parsed_last_event_id = int(last_event_id_header)
             except ValueError as exc:
-                raise RouterValidationException(
-                    errors=["invalid_last_event_id"]
-                ) from exc
+                raise RouterValidationException(errors=["invalid_last_event_id"]) from exc
             if parsed_last_event_id < 0:
                 raise RouterValidationException(errors=["invalid_last_event_id"])
 
@@ -59,9 +57,7 @@ class ConversationController:
             try:
                 trace_uuid = UUID(trace_id_header)
             except ValueError:
-                trace_uuid = (
-                    UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
-                )
+                trace_uuid = UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
         else:
             trace_uuid = uuid4()
 

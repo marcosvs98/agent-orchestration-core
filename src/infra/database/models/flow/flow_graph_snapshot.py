@@ -16,7 +16,5 @@ class FlowGraphSnapshot(ORMBaseModel):
     )
     graph_hash = Column(String(length=128), nullable=False, unique=True)
     snapshot = Column(JSONB, nullable=False)
-    compiled_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    compiled_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     compiled_by = Column(String(length=128), nullable=False)

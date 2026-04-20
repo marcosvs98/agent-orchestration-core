@@ -76,19 +76,15 @@ class BillingPolicyRepository:
     ) -> BillingPolicyVersionModel | None:
         async with self.db.get_session() as session:
             stmt = select(BillingPolicyVersionModel).where(
-                BillingPolicyVersionModel.billing_policy_version_id
-                == billing_policy_version_id
+                BillingPolicyVersionModel.billing_policy_version_id == billing_policy_version_id
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def set_version_status(
-        self, *, billing_policy_version_id: UUID, status: str
-    ) -> None:
+    async def set_version_status(self, *, billing_policy_version_id: UUID, status: str) -> None:
         async with self.db.get_session() as session:
             stmt = select(BillingPolicyVersionModel).where(
-                BillingPolicyVersionModel.billing_policy_version_id
-                == billing_policy_version_id
+                BillingPolicyVersionModel.billing_policy_version_id == billing_policy_version_id
             )
             result = await session.execute(stmt)
             instance = result.scalar_one_or_none()
@@ -116,8 +112,7 @@ class BillingPolicyRepository:
                 row.is_active = False
 
             stmt = select(BillingPolicyVersionModel).where(
-                BillingPolicyVersionModel.billing_policy_version_id
-                == billing_policy_version_id
+                BillingPolicyVersionModel.billing_policy_version_id == billing_policy_version_id
             )
             target = (await session.execute(stmt)).scalar_one_or_none()
             if target is None:

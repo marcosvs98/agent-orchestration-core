@@ -58,9 +58,7 @@ class McpRegistryService:
             tenant_id=tenant_id, flow_deployment_id=body.flow_deployment_id
         )
         if not ok_deployment:
-            raise DomainValidationException(
-                message="mcp_flow_deployment_tenant_mismatch"
-            )
+            raise DomainValidationException(message="mcp_flow_deployment_tenant_mismatch")
         name = body.name.strip() if body.name and body.name.strip() else "mcp-server"
         server, raw_key = await self.repository.create_server_with_bindings(
             tenant_id=tenant_id,
@@ -100,9 +98,7 @@ class McpRegistryService:
             for server in servers
         ]
 
-    async def get_server(
-        self, *, tenant_id: UUID, mcp_server_id: UUID
-    ) -> McpServerDetail:
+    async def get_server(self, *, tenant_id: UUID, mcp_server_id: UUID) -> McpServerDetail:
         server = await self.repository.get_server_by_tenant(
             tenant_id=tenant_id,
             mcp_server_id=mcp_server_id,

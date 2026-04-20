@@ -52,20 +52,13 @@ class HumanFallback(LLMNodeExecutor):
     async def execute(
         self, context: ExecutionContext, config: Dict[str, Any] | None = None
     ) -> NodeResult:
-        if (
-            self.human_sla_service is not None
-            and context.current_node_run_id is not None
-        ):
+        if self.human_sla_service is not None and context.current_node_run_id is not None:
             metadata = context.metadata or {}
-            node = metadata.get("fallback_source_node") or metadata.get(
-                "current_node_type", ""
-            )
+            node = metadata.get("fallback_source_node") or metadata.get("current_node_type", "")
             raw_reason = metadata.get("fallback_reason")
             if isinstance(raw_reason, SLAFallbackReason):
                 fallback_reason = raw_reason
-            elif isinstance(raw_reason, str) and raw_reason in (
-                e.value for e in SLAFallbackReason
-            ):
+            elif isinstance(raw_reason, str) and raw_reason in (e.value for e in SLAFallbackReason):
                 fallback_reason = SLAFallbackReason(raw_reason)
             else:
                 fallback_reason = SLAFallbackReason.LOW_CONFIDENCE

@@ -155,12 +155,8 @@ class HumanSLAService:
         )
         return [SLACaseResponse.model_validate(case) for case in cases]
 
-    async def get_case_detail(
-        self, tenant_id: UUID, sla_case_id: UUID
-    ) -> SLACaseResponse:
-        case = await self.repository.get_case(
-            sla_case_id=sla_case_id, tenant_id=tenant_id
-        )
+    async def get_case_detail(self, tenant_id: UUID, sla_case_id: UUID) -> SLACaseResponse:
+        case = await self.repository.get_case(sla_case_id=sla_case_id, tenant_id=tenant_id)
         if case is None:
             raise NotFoundServiceException(message="sla_case_not_found")
         return SLACaseResponse.model_validate(case)
@@ -198,9 +194,7 @@ class HumanSLAService:
         case = await self.repository.get_case(sla_case_id=case_id, tenant_id=tenant_id)
         if case is None or case.human_sla_policy_id is None:
             return
-        policy = await self.policy_repository.get_policy_with_rules(
-            case.human_sla_policy_id
-        )
+        policy = await self.policy_repository.get_policy_with_rules(case.human_sla_policy_id)
         if policy is None:
             return
         now = datetime.now(timezone.utc)
@@ -211,25 +205,18 @@ class HumanSLAService:
         )
         elapsed_hours = (now - opened).total_seconds() / 3600.0
         for r in policy.escalation_rules:
-            if (
-                elapsed_hours >= r.trigger_after_hours
-                and r.level > case.current_escalation_level
-            ):
+            if elapsed_hours >= r.trigger_after_hours and r.level > case.current_escalation_level:
                 await self.repository.update_case_escalation(
                     sla_case_id=case_id,
                     tenant_id=tenant_id,
                     priority=r.new_priority,
                     level=r.level,
                 )
-                case = await self.repository.get_case(
-                    sla_case_id=case_id, tenant_id=tenant_id
-                )
+                case = await self.repository.get_case(sla_case_id=case_id, tenant_id=tenant_id)
                 if case is None:
                     return
         if (
             policy.target_resolution_hours is not None
             and elapsed_hours >= policy.target_resolution_hours
         ):
-            await self.repository.update_case_sla_breached(
-                sla_case_id=case_id, tenant_id=tenant_id
-            )
+            await self.repository.update_case_sla_breached(sla_case_id=case_id, tenant_id=tenant_id)

@@ -64,10 +64,8 @@ class ToolResolver(LLMNodeExecutor):
         top_k = config.get("top_k", 5)
         user_input = (context.input_payload or {}).get("user_input", "") or ""
 
-        rag_config_id: UUID = (
-            await self.agents_repository.resolve_effective_rag_config_id_for_node(
-                UUID(context.current_node_id)
-            )
+        rag_config_id: UUID = await self.agents_repository.resolve_effective_rag_config_id_for_node(
+            UUID(context.current_node_id)
         )
 
         agent_version_id = await self.agents_repository.get_agent_version_id_by_node_id(
@@ -146,7 +144,6 @@ class ToolResolver(LLMNodeExecutor):
                 ),
             )
             indexed += 1
-
 
     @staticmethod
     def _extract_selected_tools(result: NodeResult) -> list[dict[str, Any]]:

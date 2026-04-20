@@ -50,9 +50,7 @@ def _spec_cache_key(spec: McpServerBuildSpec) -> tuple:
         (
             str(b.tool_config_id),
             b.mcp_name,
-            hashlib.sha256(
-                json.dumps(b.request_schema, sort_keys=True).encode()
-            ).hexdigest()[:16],
+            hashlib.sha256(json.dumps(b.request_schema, sort_keys=True).encode()).hexdigest()[:16],
             hashlib.sha256(
                 json.dumps(b.response_schema or {}, sort_keys=True).encode()
             ).hexdigest()[:16],
@@ -85,9 +83,7 @@ class _McpHttpProxyTool(Tool):
             jsonschema.validate(instance=arguments, schema=self.parameters, **vkwargs)
         except jsonschema.ValidationError as exc:
             return ToolResult(
-                content=json.dumps(
-                    {"error": "arguments_validation_failed", "detail": exc.message}
-                ),
+                content=json.dumps({"error": "arguments_validation_failed", "detail": exc.message}),
                 structured_content={
                     "error": "arguments_validation_failed",
                     "detail": exc.message,
@@ -196,9 +192,7 @@ class _McpHttpProxyTool(Tool):
         dumped = HttpToolResult.model_validate(result).model_dump(mode="json")
         return ToolResult(
             content=json.dumps(dumped, default=str),
-            structured_content=dumped
-            if isinstance(dumped, dict)
-            else {"result": dumped},
+            structured_content=dumped if isinstance(dumped, dict) else {"result": dumped},
         )
 
 

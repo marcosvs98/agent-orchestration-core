@@ -164,9 +164,7 @@ class LimitExceededException(BaseServiceException):
     message = "Execution limit exceeded."
 
 
-async def router_http_exception_handler(
-    request: Request, exc: BaseServiceException
-) -> Response:
+async def router_http_exception_handler(request: Request, exc: BaseServiceException) -> Response:
     """Handle BaseServiceException and format structured JSON response."""
     headers = exc.headers
     if not is_body_allowed_for_status_code(exc.status_code):
@@ -190,9 +188,7 @@ async def router_http_exception_handler(
     return JSONResponse(response_data, status_code=exc.status_code, headers=headers)
 
 
-async def format_exception(
-    reason: str, correlation_id: str, exc: BaseException
-) -> dict:
+async def format_exception(reason: str, correlation_id: str, exc: BaseException) -> dict:
     if isinstance(exc, BaseServiceException):
         return {
             "correlation_id": correlation_id,

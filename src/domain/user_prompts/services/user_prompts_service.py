@@ -29,9 +29,7 @@ class UserPromptsService(UserPromptsServicePort):
             for item in items
         ]
 
-    async def get_user_prompt(
-        self, *, tenant_id: UUID, user_prompt_id: UUID
-    ) -> UserPrompt:
+    async def get_user_prompt(self, *, tenant_id: UUID, user_prompt_id: UUID) -> UserPrompt:
         item = await self.repository.get_by_id(
             tenant_id=tenant_id,
             user_prompt_id=user_prompt_id,
@@ -71,9 +69,7 @@ class UserPromptsService(UserPromptsServicePort):
             updated_at=created.updated_at,
         )
 
-    async def deactivate_user_prompt(
-        self, *, tenant_id: UUID, user_prompt_id: UUID
-    ) -> None:
+    async def deactivate_user_prompt(self, *, tenant_id: UUID, user_prompt_id: UUID) -> None:
         deactivated = await self.repository.deactivate(
             tenant_id=tenant_id,
             user_prompt_id=user_prompt_id,

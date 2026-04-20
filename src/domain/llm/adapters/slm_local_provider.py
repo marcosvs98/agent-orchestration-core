@@ -29,7 +29,7 @@ class SLMLocalProvider(LLMProviderPort):
         self._engine_instance()
 
     def _engine_instance(self) -> Llama:
-        return None # Todo: Lembrar disso depois
+        return None  # Todo: Lembrar disso depois
         if self._engine:
             return self._engine
 

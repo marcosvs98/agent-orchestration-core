@@ -26,9 +26,7 @@ class AgentsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def validate_agent_version(
-        self, *, tenant_id, agent_id: UUID, agent_version_id: UUID
-    ):
+    async def validate_agent_version(self, *, tenant_id, agent_id: UUID, agent_version_id: UUID):
         raise NotImplementedServiceException()
 
     @abstractmethod

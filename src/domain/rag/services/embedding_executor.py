@@ -46,9 +46,7 @@ class EmbeddingExecutor:
                 return embedding
             raise DomainValidationException(message="rag_embedding_dimension_mismatch")
 
-    async def execute_batch(
-        self, request: EmbeddingBatchExecutionRequest
-    ) -> list[list[float]]:
+    async def execute_batch(self, request: EmbeddingBatchExecutionRequest) -> list[list[float]]:
         with self.tracer.observe(
             as_type="span",
             name="domain.rag.embedding_executor.execute_batch",
@@ -69,9 +67,7 @@ class EmbeddingExecutor:
             )
             for embedding in embeddings:
                 if len(embedding) != request.contract.dimension:
-                    raise DomainValidationException(
-                        message="rag_embedding_dimension_mismatch"
-                    )
+                    raise DomainValidationException(message="rag_embedding_dimension_mismatch")
             if span_handler:
                 span_handler.update(output={"found": True})
             return embeddings

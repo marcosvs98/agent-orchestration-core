@@ -1,0 +1,188 @@
+site_name: agent-orchestration-core
+site_description: Agent orchestration runtime and governance service
+repo_url: https://github.com/OWNER/agent-orchestration-core
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Get Started:
+      - Installation: Get-Started/installation.md
+  - Architecture:
+      - Overview: Architecture/ARCHITECTURE.md
+      - Architecture (site entry): ARCHITECTURE.md
+      - Runtime vs authoring: Architecture/runtime-vs-authoring.md
+  - Models:
+      - Domain overview: Models/domain-overview.md
+  - Glossary:
+      - Index: Glossary/index.md
+      - Persistence tables: Glossary/persistence-tables.md
+      - Terms:
+          - Tenant: Glossary/terms/tenant.md
+          - Flow: Glossary/terms/flow.md
+          - Flow version: Glossary/terms/flow-version.md
+          - Flow graph snapshot: Glossary/terms/flow-graph-snapshot.md
+          - Flow run: Glossary/terms/flow-run.md
+          - Agent version: Glossary/terms/agent-version.md
+          - Tool config: Glossary/terms/tool-config.md
+          - Execution event: Glossary/terms/execution-event.md
+          - Authoring event: Glossary/terms/authoring-event.md
+          - RAG config: Glossary/terms/rag-config.md
+          - Vector store: Glossary/terms/vector-store.md
+          - Governance policy versioning: Glossary/terms/governance-policy-versioning.md
+  - AI:
+      - Documentation map: AI/documentation-map.md
+  - Develop:
+      - Tracing and cost: Develop/tracing-and-cost.md
+      - Token cost and context strategy: Develop/token-cost-and-context-strategy.md
+      - System events reference: Develop/system-events-reference.md
+      - Coverage incremental loop: Develop/coverage-incremental-loop.md
+      - Dead code pipeline: Develop/dead-code-pipeline.md
+  - Deployment:
+      - Docker: Deployment/docker.md
+  - Communication: COMMUNICATION.md
+  - Domain documentation:
+      - Execution:
+          - Overview: Execution/index.md
+          - Flow lifecycle: Execution/flow-lifecycle.md
+          - Execution service: Execution/execution-service.md
+          - State machine: Execution/state-machine.md
+          - Runtime policy resolver: Execution/runtime-policy-resolver.md
+          - Observability and hooks: Execution/observability-and-hooks.md
+          - Guardrail engine: Execution/guardrail-engine.md
+          - Node templates: Execution/node-templates.md
+          - Demo seed graph: Execution/demo-seed-graph.md
+          - Graph runtime:
+              - Overview: Execution/graph-runtime/index.md
+              - Execution plan: Execution/graph-runtime/execution-plan.md
+              - Graph compiler: Execution/graph-runtime/graph-compiler.md
+              - Edge evaluator: Execution/graph-runtime/edge-evaluator.md
+              - Runtime executor: Execution/graph-runtime/runtime-executor.md
+              - Node registry: Execution/graph-runtime/node-registry.md
+              - Agent runtime resolver: Execution/graph-runtime/agent-runtime-resolver.md
+              - Nodes:
+                  - Overview: Execution/graph-runtime/nodes/index.md
+                  - LLM node base: Execution/graph-runtime/nodes/llm-node-base.md
+                  - LLM-backed nodes: Execution/graph-runtime/nodes/llm-nodes.md
+                  - Non-LLM nodes: Execution/graph-runtime/nodes/non-llm-nodes.md
+                  - Shared utilities: Execution/graph-runtime/nodes/shared-utilities.md
+      - RAG:
+          - Overview: RAG/index.md
+          - Embedding orchestration: RAG/embedding-orchestration.md
+          - Runtime and integration: RAG/runtime-and-integration.md
+          - Data model reference: RAG/data-model-reference.md
+          - GLM-OCR (external): RAG/glm-ocr.md
+      - LLM:
+          - Overview: LLM/index.md
+          - Layered inference: LLM/layered-inference.md
+          - LLM executor: LLM/llm-executor.md
+          - Context builder: LLM/context-builder.md
+          - Providers and selection: LLM/providers-and-selection.md
+          - Semantic cache: LLM/semantic-cache.md
+          - Structured output and budget: LLM/structured-output-and-budget.md
+          - Resilience and moderation: LLM/resilience-and-moderation.md
+      - MCP:
+          - Overview: MCP/index.md
+          - Registry and API: MCP/registry-and-api.md
+          - Gateway and runtime: MCP/gateway-and-runtime.md
+      - Human SLA:
+          - Overview: Human-SLA/index.md
+          - Policies and matching: Human-SLA/policies-and-matching.md
+          - Cases and service: Human-SLA/cases-and-service.md
+      - Governance:
+          - Overview: Governance/index.md
+          - Policy model and versioning: Governance/policy-model-and-versioning.md
+          - HTTP API and scopes: Governance/http-api-and-scopes.md
+          - Enforcement and limits: Governance/enforcement-and-limits.md
+          - Runtime resolution: Governance/runtime-resolution.md
+          - Authoring events: Governance/authoring-events.md
+      - Agents:
+          - Overview: Agents/index.md
+          - Persistence and data: Agents/persistence-and-data.md
+          - Integration and runtime: Agents/integration-and-runtime.md
+          - HTTP API: Agents/http-api.md
+      - AI policy:
+          - Overview: AI-Policy/index.md
+          - Persistence and data: AI-Policy/persistence-and-data.md
+          - Integration and runtime: AI-Policy/integration-and-runtime.md
+          - HTTP API and lifecycle: AI-Policy/http-api-and-lifecycle.md
+      - Auth:
+          - Overview: Auth/index.md
+          - Persistence and data: Auth/persistence-and-data.md
+          - Integration and runtime: Auth/integration-and-runtime.md
+          - HTTP API: Auth/http-api.md
+      - Context:
+          - Overview: Context/index.md
+          - Persistence and data: Context/persistence-and-data.md
+          - Integration and runtime: Context/integration-and-runtime.md
+          - Services and ports: Context/services-and-ports.md
+      - Conversation:
+          - Overview: Conversation/index.md
+          - Persistence and data: Conversation/persistence-and-data.md
+          - Integration and runtime: Conversation/integration-and-runtime.md
+          - SSE and runtime: Conversation/sse-and-runtime.md
+          - Read API: Conversation/read-api.md
+      - Flows:
+          - Overview: Flows/index.md
+          - Persistence and data: Flows/persistence-and-data.md
+          - Integration and runtime: Flows/integration-and-runtime.md
+          - HTTP API overview: Flows/http-api-overview.md
+          - Graph and compiler: Flows/graph-and-compiler.md
+          - Authoring and persistence: Flows/authoring-and-persistence.md
+      - Onboarding:
+          - Overview: Onboarding/index.md
+          - Persistence and data: Onboarding/persistence-and-data.md
+          - Integration and runtime: Onboarding/integration-and-runtime.md
+          - HTTP API: Onboarding/http-api.md
+      - Prompts:
+          - Overview: Prompts/index.md
+          - Persistence and data: Prompts/persistence-and-data.md
+          - Integration and runtime: Prompts/integration-and-runtime.md
+          - HTTP API: Prompts/http-api.md
+      - Tenants:
+          - Overview: Tenants/index.md
+          - Persistence and data: Tenants/persistence-and-data.md
+          - Integration and runtime: Tenants/integration-and-runtime.md
+          - HTTP API: Tenants/http-api.md
+      - Tools:
+          - Overview: Tools/index.md
+          - Persistence and data: Tools/persistence-and-data.md
+          - Integration and runtime: Tools/integration-and-runtime.md
+          - HTTP API: Tools/http-api.md
+          - Runtime execution: Tools/runtime-execution.md
+      - User prompts:
+          - Overview: User-Prompts/index.md
+          - Persistence and data: User-Prompts/persistence-and-data.md
+          - Integration and runtime: User-Prompts/integration-and-runtime.md
+          - HTTP API: User-Prompts/http-api.md
+  - Contributing:
+      - Docs hub: Contributing/README.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - neoteroi.mkdocsoad:
+      use_pymdownx: true

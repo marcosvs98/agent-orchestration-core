@@ -66,9 +66,7 @@ class StructuredOutputSchemaComposer:
             if type(missing_fields_container) is dict:
                 missing_field_item_schema = missing_fields_container.get("items")
                 if type(missing_field_item_schema) is dict:
-                    self.apply_strict_required_keys_to_object_schema(
-                        missing_field_item_schema
-                    )
+                    self.apply_strict_required_keys_to_object_schema(missing_field_item_schema)
                     updated_result_properties["missing_fields"] = {
                         **missing_fields_container,
                         "items": missing_field_item_schema,
@@ -83,9 +81,7 @@ class StructuredOutputSchemaComposer:
         self, execution_context: ExecutionContext
     ) -> UUID | None:
         try:
-            tool_selection = (
-                execution_context.get_node_output(NodeType.ToolResolver) or {}
-            )
+            tool_selection = execution_context.get_node_output(NodeType.ToolResolver) or {}
             result_rows = tool_selection.get("result") or []
             if not result_rows:
                 return None
@@ -102,9 +98,7 @@ class StructuredOutputSchemaComposer:
         except (AttributeError, TypeError, ValueError):
             return None
 
-    async def load_request_schema_for_tool_config(
-        self, tool_config_id: UUID
-    ) -> dict[str, Any]:
+    async def load_request_schema_for_tool_config(self, tool_config_id: UUID) -> dict[str, Any]:
         tool_config = await self.tools_repository.get_tool_config(tool_config_id)
         if tool_config is None:
             return {}
@@ -144,8 +138,8 @@ class StructuredOutputSchemaComposer:
             if property_name in openapi_required:
                 final_properties[property_name] = prop_schema
             else:
-                final_properties[property_name] = (
-                    self._optional_param_schema_allowing_null(prop_schema)
+                final_properties[property_name] = self._optional_param_schema_allowing_null(
+                    prop_schema
                 )
 
         all_keys = sorted(final_properties.keys())
@@ -182,9 +176,7 @@ class StructuredOutputSchemaComposer:
             return None
         return item_schema
 
-    def apply_strict_required_keys_to_object_schema(
-        self, object_schema: dict[str, Any]
-    ) -> None:
+    def apply_strict_required_keys_to_object_schema(self, object_schema: dict[str, Any]) -> None:
         properties_block = object_schema.get("properties")
         if type(properties_block) is not dict:
             return

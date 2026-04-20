@@ -35,9 +35,7 @@ class LogLevel(Enum):
         try:
             return LogLevel[value.upper()].value
         except KeyError as e:
-            raise DomainValidationException(
-                message=f"{value} is not a valid LogLevel"
-            ) from e
+            raise DomainValidationException(message=f"{value} is not a valid LogLevel") from e
 
 
 LOG_LEVEL = config("LOG_LEVEL", default="CRITICAL", cast=LogLevel.cast_log_level)

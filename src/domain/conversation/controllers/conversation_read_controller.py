@@ -113,6 +113,4 @@ class ConversationReadController:
         user_id: str = Path(..., max_length=255),
         auth: AuthContext = Depends(get_auth_context),
     ) -> EndUserDetailResponse:
-        return await self.service.get_end_user_detail(
-            tenant_id=auth.tenant_id, user_id=user_id
-        )
+        return await self.service.get_end_user_detail(tenant_id=auth.tenant_id, user_id=user_id)

@@ -47,17 +47,13 @@ class FlowsRepository:
 
     async def get_flow(self, flow_id: UUID) -> FlowModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(FlowModel).where(FlowModel.flow_id == flow_id)
-            )
+            result = await session.execute(select(FlowModel).where(FlowModel.flow_id == flow_id))
             return result.scalar_one_or_none()
 
     async def get_flow_version(self, flow_version_id: UUID) -> FlowVersionModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(FlowVersionModel).where(
-                    FlowVersionModel.flow_version_id == flow_version_id
-                )
+                select(FlowVersionModel).where(FlowVersionModel.flow_version_id == flow_version_id)
             )
             return result.scalar_one_or_none()
 
@@ -66,9 +62,7 @@ class FlowsRepository:
     ) -> None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(FlowVersionModel).where(
-                    FlowVersionModel.flow_version_id == flow_version_id
-                )
+                select(FlowVersionModel).where(FlowVersionModel.flow_version_id == flow_version_id)
             )
             instance = result.scalar_one_or_none()
             if instance is None:
@@ -78,14 +72,10 @@ class FlowsRepository:
 
     async def get_node(self, node_id: UUID) -> NodeModel | None:
         async with self.db.get_session() as session:
-            result = await session.execute(
-                select(NodeModel).where(NodeModel.node_id == node_id)
-            )
+            result = await session.execute(select(NodeModel).where(NodeModel.node_id == node_id))
             return result.scalar_one_or_none()
 
-    async def get_node_template(
-        self, node_template_id: UUID
-    ) -> NodeTemplateModel | None:
+    async def get_node_template(self, node_template_id: UUID) -> NodeTemplateModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(NodeTemplateModel).where(
@@ -133,9 +123,7 @@ class FlowsRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def list_nodes_for_flow_version(
-        self, flow_version_id: UUID
-    ) -> list[NodeModel]:
+    async def list_nodes_for_flow_version(self, flow_version_id: UUID) -> list[NodeModel]:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(NodeModel).where(NodeModel.flow_version_id == flow_version_id)
@@ -155,14 +143,10 @@ class FlowsRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def get_flow_graph_by_flow_version(
-        self, flow_version_id: UUID
-    ) -> FlowGraphModel | None:
+    async def get_flow_graph_by_flow_version(self, flow_version_id: UUID) -> FlowGraphModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(FlowGraphModel).where(
-                    FlowGraphModel.flow_version_id == flow_version_id
-                )
+                select(FlowGraphModel).where(FlowGraphModel.flow_version_id == flow_version_id)
             )
             return result.scalar_one_or_none()
 
@@ -171,9 +155,7 @@ class FlowsRepository:
     ) -> FlowGraphModel:
         async with self.db.get_session() as session:
             existing = await session.execute(
-                select(FlowGraphModel).where(
-                    FlowGraphModel.flow_version_id == flow_version_id
-                )
+                select(FlowGraphModel).where(FlowGraphModel.flow_version_id == flow_version_id)
             )
             if existing.scalar_one_or_none():
                 raise NotFoundServiceException(message="flow_graph_exists")
@@ -232,9 +214,7 @@ class FlowsRepository:
             target.justification = justification
             await session.commit()
 
-    async def get_flow_graph_draft(
-        self, flow_version_id: UUID
-    ) -> FlowGraphDraftModel | None:
+    async def get_flow_graph_draft(self, flow_version_id: UUID) -> FlowGraphDraftModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(FlowGraphDraftModel).where(
@@ -611,9 +591,7 @@ class FlowsRepository:
     ) -> NodeModel:
         async with self.db.get_session() as session:
             version = await session.execute(
-                select(FlowVersionModel).where(
-                    FlowVersionModel.flow_version_id == flow_version_id
-                )
+                select(FlowVersionModel).where(FlowVersionModel.flow_version_id == flow_version_id)
             )
             if version.scalar_one_or_none() is None:
                 raise NotFoundServiceException(message="flow_version_not_found")
@@ -650,9 +628,7 @@ class FlowsRepository:
     ) -> NodeModel:
         async with self.db.get_session() as session:
             version = await session.execute(
-                select(FlowVersionModel).where(
-                    FlowVersionModel.flow_version_id == flow_version_id
-                )
+                select(FlowVersionModel).where(FlowVersionModel.flow_version_id == flow_version_id)
             )
             if version.scalar_one_or_none() is None:
                 raise NotFoundServiceException(message="flow_version_not_found")
@@ -691,9 +667,7 @@ class FlowsRepository:
     ) -> NodeModel:
         async with self.db.get_session() as session:
             version = await session.execute(
-                select(FlowVersionModel).where(
-                    FlowVersionModel.flow_version_id == flow_version_id
-                )
+                select(FlowVersionModel).where(FlowVersionModel.flow_version_id == flow_version_id)
             )
             if version.scalar_one_or_none() is None:
                 raise NotFoundServiceException(message="flow_version_not_found")
@@ -715,9 +689,7 @@ class FlowsRepository:
             await session.refresh(instance)
             return instance
 
-    async def list_routers(
-        self, *, tenant_id: UUID, limit: int = 200
-    ) -> list[RouterModel]:
+    async def list_routers(self, *, tenant_id: UUID, limit: int = 200) -> list[RouterModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(RouterModel)
@@ -743,9 +715,7 @@ class FlowsRepository:
 
     async def create_router(self, *, node_id: UUID, created_by: str) -> RouterModel:
         async with self.db.get_session() as session:
-            node = await session.execute(
-                select(NodeModel).where(NodeModel.node_id == node_id)
-            )
+            node = await session.execute(select(NodeModel).where(NodeModel.node_id == node_id))
             if node.scalar_one_or_none() is None:
                 raise NotFoundServiceException(message="node_not_found")
             instance = RouterModel(node_id=node_id)
@@ -783,8 +753,7 @@ class FlowsRepository:
 
             condition = await session.execute(
                 select(ConditionExpressionModel).where(
-                    ConditionExpressionModel.condition_expression_id
-                    == condition_expression_id
+                    ConditionExpressionModel.condition_expression_id == condition_expression_id
                 )
             )
             if condition.scalar_one_or_none() is None:
@@ -813,12 +782,9 @@ class FlowsRepository:
 
             if (
                 from_node_instance.flow_version_id != to_node_instance.flow_version_id
-                or from_node_instance.flow_version_id
-                != router_node_instance.flow_version_id
+                or from_node_instance.flow_version_id != router_node_instance.flow_version_id
             ):
-                raise DomainValidationException(
-                    message="nodes_must_belong_to_same_flow_version"
-                )
+                raise DomainValidationException(message="nodes_must_belong_to_same_flow_version")
 
             instance = RoutingRuleModel(
                 router_id=router_id,

@@ -117,9 +117,7 @@ def _jwt_auth_context_from_bearer(
         try:
             tenant_id = UUID(str(tenant_value))
         except ValueError:
-            raise AuthorizationDeniedException(
-                message="tenant_id_claim_invalid"
-            ) from None
+            raise AuthorizationDeniedException(message="tenant_id_claim_invalid") from None
 
     principal_type = payload.get("principal_type")
     if principal_type not in {"human", "machine"}:

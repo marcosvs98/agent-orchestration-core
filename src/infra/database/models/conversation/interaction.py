@@ -32,7 +32,5 @@ class Interaction(ORMBaseModel):
     external_message_id = Column(String(length=128), nullable=True)
     request_id = Column(String(length=128), nullable=True)
     trace_id = Column(String(length=128), nullable=True)
-    received_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    received_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)

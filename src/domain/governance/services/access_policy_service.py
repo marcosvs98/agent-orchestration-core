@@ -9,9 +9,7 @@ from exceptions.service_exceptions import AuthorizationDeniedException
 
 
 class AccessPolicyService(AccessPolicyServicePort):
-    def __init__(
-        self, repository: AccessPolicyRepository, tracer: RuntimeTracerPort
-    ) -> None:
+    def __init__(self, repository: AccessPolicyRepository, tracer: RuntimeTracerPort) -> None:
         self.repository = repository
         self.tracer = tracer
 
@@ -48,9 +46,7 @@ class AccessPolicyService(AccessPolicyServicePort):
                             "action": action,
                         },
                     )
-                raise AuthorizationDeniedException(
-                    message="access_policy_not_configured"
-                )
+                raise AuthorizationDeniedException(message="access_policy_not_configured")
 
             policy_version = await self.repository.get_published_policy_version(
                 policy.access_policy_id
@@ -65,9 +61,7 @@ class AccessPolicyService(AccessPolicyServicePort):
                             "policy_id": str(policy.access_policy_id),
                         },
                     )
-                raise AuthorizationDeniedException(
-                    message="access_policy_version_not_published"
-                )
+                raise AuthorizationDeniedException(message="access_policy_version_not_published")
 
             rules: dict = policy_version.rules or {}
             allowed: set[str] = {str(s) for s in (rules.get("allow") or [])}

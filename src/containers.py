@@ -637,9 +637,7 @@ class OnboardingContainer(containers.DeclarativeContainer):
         repository=onboarding_repository,
         authoring_events=authoring_event_repository,
     )
-    onboarding_controller = providers.Factory(
-        OnboardingController, service=onboarding_service
-    )
+    onboarding_controller = providers.Factory(OnboardingController, service=onboarding_service)
 
 
 class PromptsContainer(containers.DeclarativeContainer):
@@ -842,9 +840,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     prompts = providers.Container(
         PromptsContainer, core=core, adapters=adapters, execution=execution
     )
-    user_prompts = providers.Container(
-        UserPromptsContainer, core=core, adapters=adapters
-    )
+    user_prompts = providers.Container(UserPromptsContainer, core=core, adapters=adapters)
     conversation = providers.Container(
         ConversationContainer,
         core=core,

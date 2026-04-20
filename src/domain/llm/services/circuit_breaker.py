@@ -35,23 +35,17 @@ class CircuitBreaker:
                 try:
                     data = await self.redis.get(self._key(scope))
                     if data and data.get("state") == "open":
-                            raise DomainValidationException(
-                                message="llm_circuit_breaker_open"
-                            )
+                        raise DomainValidationException(message="llm_circuit_breaker_open")
                 except Exception:
                     if ensure_handle:
-                        ensure_handle.success(
-                            output={"state": "closed", "swallowed": True}
-                        )
+                        ensure_handle.success(output={"state": "closed", "swallowed": True})
                     return
                 if ensure_handle:
                     ensure_handle.success(output={"state": "closed"})
             else:
                 data = await self.redis.get(self._key(scope))
                 if data and data.get("state") == "open":
-                        raise DomainValidationException(
-                            message="llm_circuit_breaker_open"
-                        )
+                    raise DomainValidationException(message="llm_circuit_breaker_open")
             if ensure_handle:
                 ensure_handle.success(output={"state": "closed"})
 
@@ -62,9 +56,7 @@ class CircuitBreaker:
             input={"scope": scope},
         ) as failure_handle:
             try:
-                count = await self.redis.incr_with_ttl(
-                    self._key(scope), self.window_seconds
-                )
+                count = await self.redis.incr_with_ttl(self._key(scope), self.window_seconds)
                 transitioned = count >= self.failure_threshold
                 if transitioned:
                     await self.redis.set(

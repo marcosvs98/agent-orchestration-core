@@ -15,7 +15,5 @@ class FlowGraph(ORMBaseModel):
         unique=True,
     )
     definition = Column(JSONB, nullable=False)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_by = Column(String(length=128), nullable=False)

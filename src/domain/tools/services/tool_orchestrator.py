@@ -63,9 +63,7 @@ class ToolOrchestrator:
                     name="domain.tools.tool_orchestrator.resolve_secret",
                     input={"secret_ref": secret_ref},
                 ):
-                    secret_value = await self.secret_resolver.resolve(
-                        secret_ref=secret_ref
-                    )
+                    secret_value = await self.secret_resolver.resolve(secret_ref=secret_ref)
                 resolved[str(key)] = secret_value
                 used_secret_refs.append(secret_ref)
                 continue
@@ -134,9 +132,7 @@ class ToolOrchestrator:
         result: dict | None = None
         try:
             if secret_refs:
-                session_id, tenant_id = await self.repository.get_flow_context(
-                    flow_run_id
-                )
+                session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
                 with self.tracer.observe(
                     as_type="tool",
                     name="domain.tools.tool_orchestrator.append_secret_accessed_event",
@@ -193,9 +189,7 @@ class ToolOrchestrator:
         except Exception as exc:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             retries = max(attempt - 1, 0)
-            flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
-                tool_run.tool_run_id
-            )
+            flow_run_id = await self.repository.get_flow_run_id_for_tool_run(tool_run.tool_run_id)
             session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
             if isinstance(exc, DomainValidationException):
                 with self.tracer.observe(
@@ -278,9 +272,7 @@ class ToolOrchestrator:
             if isinstance(result, dict)
             else 0
         )
-        flow_run_id = await self.repository.get_flow_run_id_for_tool_run(
-            tool_run.tool_run_id
-        )
+        flow_run_id = await self.repository.get_flow_run_id_for_tool_run(tool_run.tool_run_id)
         session_id, tenant_id = await self.repository.get_flow_context(flow_run_id)
         await self.repository.update_tool_run_result(
             tool_run_id=tool_run.tool_run_id,

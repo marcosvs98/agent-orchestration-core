@@ -19,9 +19,7 @@ class RagPolicyService:
         self.repository = repository
 
     async def resolve(self, *, tenant_id: UUID) -> ResolvedRagPolicy:
-        policy_version_id = await self.repository.get_active_rag_policy_version_id(
-            tenant_id
-        )
+        policy_version_id = await self.repository.get_active_rag_policy_version_id(tenant_id)
         if policy_version_id is None:
             return ResolvedRagPolicy(
                 source=ResolvedRagPolicySource.DEFAULT_NONE,
@@ -37,9 +35,7 @@ class RagPolicyService:
                 policy_version_id=None,
                 definition=None,
             )
-        definition = RagPolicyDefinition.model_validate(
-            policy_version.policy_definition or {}
-        )
+        definition = RagPolicyDefinition.model_validate(policy_version.policy_definition or {})
         return ResolvedRagPolicy(
             source=ResolvedRagPolicySource.TENANT_ACTIVE,
             tenant_id=tenant_id,

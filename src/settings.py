@@ -2,9 +2,7 @@
 from decouple import config
 
 ENVIRONMENT: str = config("ENVIRONMENT", default="development", cast=str)
-APPLICATION_NAME: str = config(
-    "APPLICATION_NAME", default="agent-orchestration-core", cast=str
-)
+APPLICATION_NAME: str = config("APPLICATION_NAME", default="agent-orchestration-core", cast=str)
 APPLICATION_DESCRIPTION: str = config(
     "APPLICATION_DESCRIPTION", default="Agent Orchestration Core API"
 )
@@ -81,24 +79,16 @@ EMBEDDING_FALLBACK_MODEL: str = config(
 SLM_MODEL_PATH: str = config(
     "SLM_MODEL_PATH", default="models/Qwen2.5-1.5B-Instruct-GGUF", cast=str
 )
-SLM_INFERENCE_TIMEOUT_MS: int = config(
-    "SLM_INFERENCE_TIMEOUT_MS", default=500, cast=int
-)
-LLM_DEFAULT_MAX_LATENCY_MS: int = config(
-    "LLM_DEFAULT_MAX_LATENCY_MS", default=15000, cast=int
-)
+SLM_INFERENCE_TIMEOUT_MS: int = config("SLM_INFERENCE_TIMEOUT_MS", default=500, cast=int)
+LLM_DEFAULT_MAX_LATENCY_MS: int = config("LLM_DEFAULT_MAX_LATENCY_MS", default=15000, cast=int)
 
 LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)
 LANGFUSE_SECRET_KEY: str | None = config("LANGFUSE_SECRET_KEY", default=None)
-LANGFUSE_HOST: str = config(
-    "LANGFUSE_HOST", default="https://cloud.langfuse.com", cast=str
-)
+LANGFUSE_HOST: str = config("LANGFUSE_HOST", default="https://cloud.langfuse.com", cast=str)
 TRACING_ENABLED: bool = config("TRACING_ENABLED", default=True, cast=bool)
 TRACING_LEVEL: str = config("TRACING_LEVEL", default="DEFAULT", cast=str)
 
-OTEL_SERVICE_NAME: str = config(
-    "OTEL_SERVICE_NAME", default="agent-orchestration-core", cast=str
-)
+OTEL_SERVICE_NAME: str = config("OTEL_SERVICE_NAME", default="agent-orchestration-core", cast=str)
 OTEL_EXPORTER_OTLP_ENDPOINT: str = config(
     "OTEL_EXPORTER_OTLP_ENDPOINT", default="http://localhost:4317", cast=str
 )

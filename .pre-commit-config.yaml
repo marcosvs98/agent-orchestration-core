@@ -50,6 +50,7 @@ repos:
           - pre-commit
       - id: no-commit-to-branch
         name: '[A12] Impedindo commits em branches principais'
+
         stages:
           - pre-commit
           - pre-push

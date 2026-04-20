@@ -79,16 +79,14 @@ class MemoryRetrievalService:
             and tenant_rag_config_id is not None
             and user_input
         ):
-            tenant_knowledge_context = (
-                await self.tenant_knowledge_retriever.retrieve(
-                    query=TenantKnowledgeQuery(
-                        tenant_id=tenant_id_for_knowledge,
-                        rag_config_id=tenant_rag_config_id,
-                        user_input=user_input,
-                    ),
-                    top_k_override=tenant_top_k_override,
-                    filters_override=tenant_filters_override,
-                )
+            tenant_knowledge_context = await self.tenant_knowledge_retriever.retrieve(
+                query=TenantKnowledgeQuery(
+                    tenant_id=tenant_id_for_knowledge,
+                    rag_config_id=tenant_rag_config_id,
+                    user_input=user_input,
+                ),
+                top_k_override=tenant_top_k_override,
+                filters_override=tenant_filters_override,
             )
 
         user_memory_context = None
@@ -101,8 +99,7 @@ class MemoryRetrievalService:
             base_top_k = user_top_k_override
             candidate_top_k = user_top_k_override
             temporal_enabled = (
-                decision.allow_user_memory_vector
-                and retrieval_config.temporal_scoring.enabled
+                decision.allow_user_memory_vector and retrieval_config.temporal_scoring.enabled
             )
             if temporal_enabled and base_top_k is not None:
                 multiplier = max(
@@ -117,9 +114,7 @@ class MemoryRetrievalService:
                     rag_config_id=tenant_rag_config_id
                     if decision.allow_user_memory_vector
                     else None,
-                    user_input=user_input
-                    if decision.allow_user_memory_vector
-                    else "",
+                    user_input=user_input if decision.allow_user_memory_vector else "",
                 ),
                 task_type=task_type,
                 task_flags=task_flags,
@@ -192,9 +187,7 @@ class MemoryRetrievalService:
         timestamp_source: TemporalTimestampSource,
     ) -> datetime | None:
         if timestamp_source == TemporalTimestampSource.CREATED_AT:
-            return self._ensure_utc(item.created_at) or self._ensure_utc(
-                item.observed_at
-            )
+            return self._ensure_utc(item.created_at) or self._ensure_utc(item.observed_at)
         return self._ensure_utc(item.observed_at) or self._ensure_utc(item.created_at)
 
     def _ensure_utc(self, value: datetime | None) -> datetime | None:

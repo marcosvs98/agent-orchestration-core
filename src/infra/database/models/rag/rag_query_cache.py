@@ -26,12 +26,8 @@ class RagQueryCache(ORMBaseModel):
     embedding = Column(Vector(), nullable=True)
     use_count = Column(Integer, nullable=False, server_default="0")
     last_used_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint(

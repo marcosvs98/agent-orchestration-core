@@ -53,9 +53,7 @@ class AuthService:
         now = time.time()
         cutoff = now - _TENANT_TOKEN_RATE_WINDOW_SECONDS
         with _rate_lock:
-            _rate_store[principal_id] = [
-                t for t in _rate_store[principal_id] if t > cutoff
-            ]
+            _rate_store[principal_id] = [t for t in _rate_store[principal_id] if t > cutoff]
             if len(_rate_store[principal_id]) >= _TENANT_TOKEN_RATE_MAX_REQUESTS:
                 raise RateLimitExceededException(message="tenant_token_rate_limit")
             _rate_store[principal_id].append(now)

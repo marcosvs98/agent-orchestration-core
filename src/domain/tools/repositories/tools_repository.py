@@ -188,9 +188,7 @@ class ToolsRepository:
     ) -> int:
         async with self.db.get_session() as session:
             stmt = select(
-                func.coalesce(func.max(ToolConfigModel.version_patch), -1).label(
-                    "max_patch"
-                )
+                func.coalesce(func.max(ToolConfigModel.version_patch), -1).label("max_patch")
             ).where(
                 ToolConfigModel.tool_id == tool_id,
                 ToolConfigModel.tenant_id == tenant_id,
@@ -215,9 +213,7 @@ class ToolsRepository:
 
     async def get_tool_config(self, tool_config_id: UUID) -> ToolConfigModel | None:
         async with self.db.get_session() as session:
-            stmt = select(ToolConfigModel).where(
-                ToolConfigModel.tool_config_id == tool_config_id
-            )
+            stmt = select(ToolConfigModel).where(ToolConfigModel.tool_config_id == tool_config_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -318,9 +314,7 @@ class ToolsRepository:
                         "tool_config_ids": [str(x) for x in tool_config_ids],
                     },
                 },
-                metadata={
-                    "retriever_name": "list_published_tool_configs_with_tools_by_config_ids"
-                },
+                metadata={"retriever_name": "list_published_tool_configs_with_tools_by_config_ids"},
             ) as retriever_handle:
                 result = await session.execute(stmt)
                 rows = list(result.all())
@@ -507,13 +501,9 @@ class ToolsRepository:
                 await session.refresh(instance)
                 return instance
 
-    async def set_tool_config_status(
-        self, *, tool_config_id: UUID, status: VersionStatus
-    ) -> None:
+    async def set_tool_config_status(self, *, tool_config_id: UUID, status: VersionStatus) -> None:
         async with self.db.get_session() as session:
-            stmt = select(ToolConfigModel).where(
-                ToolConfigModel.tool_config_id == tool_config_id
-            )
+            stmt = select(ToolConfigModel).where(ToolConfigModel.tool_config_id == tool_config_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -582,9 +572,7 @@ class ToolsRepository:
             if agent_version_instance is None:
                 raise NotFoundServiceException(message="agent_version_not_found")
 
-            stmt = select(AgentModel).where(
-                AgentModel.agent_id == agent_version_instance.agent_id
-            )
+            stmt = select(AgentModel).where(AgentModel.agent_id == agent_version_instance.agent_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -610,9 +598,7 @@ class ToolsRepository:
             if agent_instance is None:
                 raise NotFoundServiceException(message="agent_not_found")
 
-            stmt = select(ToolConfigModel).where(
-                ToolConfigModel.tool_config_id == tool_config_id
-            )
+            stmt = select(ToolConfigModel).where(ToolConfigModel.tool_config_id == tool_config_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(

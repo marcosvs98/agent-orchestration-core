@@ -27,9 +27,7 @@ class RuntimePolicyResolver:
         self.default_policy = default_policy
         self.tracer = tracer
 
-    async def resolve(
-        self, *, tenant_id: UUID, flow_id: UUID | None
-    ) -> ResolvedRuntimePolicy:
+    async def resolve(self, *, tenant_id: UUID, flow_id: UUID | None) -> ResolvedRuntimePolicy:
         with self.tracer.observe(
             as_type="agent",
             name="domain.execution.runtime_policy_resolver.resolve",
@@ -54,9 +52,7 @@ class RuntimePolicyResolver:
                         flow_id=flow_id,
                     )
             else:
-                tenant_policy = await self.repository.get_active_tenant_policy(
-                    tenant_id=tenant_id
-                )
+                tenant_policy = await self.repository.get_active_tenant_policy(tenant_id=tenant_id)
                 if tenant_policy:
                     resolved_policy: ResolvedRuntimePolicy = ResolvedRuntimePolicy(
                         source=RuntimePolicySource.TENANT,
@@ -81,8 +77,6 @@ class RuntimePolicyResolver:
                     )
 
             if agent_handle:
-                agent_handle.success(
-                    output={"policy": resolved_policy.model_dump(mode="json")}
-                )
+                agent_handle.success(output={"policy": resolved_policy.model_dump(mode="json")})
 
             return resolved_policy

@@ -103,9 +103,11 @@ class PromptResolver:
                 and self.structured_output_schema_composer is not None
                 and output_schema
             ):
-                output_schema = await self.structured_output_schema_composer.compose_for_slot_filling(
-                    execution_context=context,
-                    prompt_output_schema=output_schema,
+                output_schema = (
+                    await self.structured_output_schema_composer.compose_for_slot_filling(
+                        execution_context=context,
+                        prompt_output_schema=output_schema,
+                    )
                 )
 
             return ResolvedPrompt(
@@ -196,9 +198,7 @@ class PromptResolver:
         if not node_id:
             return None
 
-        return await self.context_builder.agents_repository.get_agent_version_id_by_node_id(
-            node_id
-        )
+        return await self.context_builder.agents_repository.get_agent_version_id_by_node_id(node_id)
 
     async def _get_task_flags(self, node_id: UUID | None) -> AITaskContextFlags | None:
         if not node_id:

@@ -137,9 +137,7 @@ def init_routes(app: FastAPI, controllers: list[Any]) -> None:
             "environment": ENVIRONMENT,
             "components": components,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "uptime_seconds": int(
-                (datetime.now(timezone.utc) - _APP_START_TIME).total_seconds()
-            ),
+            "uptime_seconds": int((datetime.now(timezone.utc) - _APP_START_TIME).total_seconds()),
             "response_time_ms": round(total_duration, 2),
         }
 
@@ -174,12 +172,8 @@ def init_routes(app: FastAPI, controllers: list[Any]) -> None:
         return await service_http_exception_handler(request, exc)
 
     @app.exception_handler(RequestValidationError)
-    async def request_validation_exception_handler(
-        _: Request, exc: RequestValidationError
-    ) -> None:
+    async def request_validation_exception_handler(_: Request, exc: RequestValidationError) -> None:
         validation_error = ValidationError.from_exception_data(
             "RequestValidationError", line_errors=exc.errors()
         )
-        raise RouterValidationException(
-            errors=validation_error.errors(include_url=False)
-        )
+        raise RouterValidationException(errors=validation_error.errors(include_url=False))

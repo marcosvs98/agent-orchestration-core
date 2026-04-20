@@ -24,9 +24,7 @@ class TemporalScoringConfig(BaseModel):
 
 
 class MemoryRetrievalConfig(BaseModel):
-    temporal_scoring: TemporalScoringConfig = Field(
-        default_factory=TemporalScoringConfig
-    )
+    temporal_scoring: TemporalScoringConfig = Field(default_factory=TemporalScoringConfig)
 
 
 class LayeredMemoryContext(BaseModel):

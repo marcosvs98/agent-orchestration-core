@@ -1,0 +1,22 @@
+codecov:
+  require_ci_to_pass: false
+
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 1%
+    patch:
+      default:
+        target: 60%
+        informational: true
+
+ignore:
+  - "src/**/migrations/**/*"
+  - "tests/**/*"
+  - "**/__init__.py"
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default

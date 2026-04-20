@@ -21,20 +21,14 @@ from domain.rag.services.rag_runtime_service import RagRuntimeService
 from infra.database import DatabaseConnection, async_session, engine
 
 
-async def process_embedding_job(
-    ctx: dict[str, Any], payload_data: dict[str, object]
-) -> None:
+async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, object]) -> None:
     payload = EmbeddingJobPayload.model_validate(payload_data)
     execution_repository: ExecutionRepository = ctx["execution_repository"]
     rag_repository: RagRepository = ctx["rag_repository"]
     rag_runtime_service: RagRuntimeService = ctx["rag_runtime_service"]
     tracer = ctx["tracer"]
-    existing_document = await rag_repository.get_document_by_id(
-        document_id=payload.document_id
-    )
-    attempt = (
-        (int(existing_document.embedding_attempts) + 1) if existing_document else 1
-    )
+    existing_document = await rag_repository.get_document_by_id(document_id=payload.document_id)
+    attempt = (int(existing_document.embedding_attempts) + 1) if existing_document else 1
     with tracer.observe(
         as_type="event",
         name="domain.rag.embedding.started",
@@ -99,17 +93,13 @@ async def process_embedding_job(
                 event_payload={
                     "document_id": str(payload.document_id),
                     "rag_config_id": str(payload.rag_config_id),
-                    "flow_run_id": str(payload.flow_run_id)
-                    if payload.flow_run_id
-                    else None,
+                    "flow_run_id": str(payload.flow_run_id) if payload.flow_run_id else None,
                 },
             )
             if event_span:
                 event_span.update(output=embedded_payload)
     except Exception as exc:
-        document = await rag_repository.get_document_by_id(
-            document_id=payload.document_id
-        )
+        document = await rag_repository.get_document_by_id(document_id=payload.document_id)
         attempt = int(document.embedding_attempts) if document else attempt
         error_code = exc.__class__.__name__
         with tracer.observe(
@@ -126,9 +116,7 @@ async def process_embedding_job(
             event_payload: dict = {
                 "document_id": str(payload.document_id),
                 "rag_config_id": str(payload.rag_config_id),
-                "flow_run_id": str(payload.flow_run_id)
-                if payload.flow_run_id
-                else None,
+                "flow_run_id": str(payload.flow_run_id) if payload.flow_run_id else None,
                 "attempt": attempt,
                 "error_code": error_code,
             }
@@ -147,9 +135,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     db = DatabaseConnection(engine=engine, sessionmaker=async_session)
     tracer = LangfuseRuntimeTracer()
     cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
-    execution_repository = ExecutionRepository(
-        db, tracer=tracer, cache_adapter=cache_adapter
-    )
+    execution_repository = ExecutionRepository(db, tracer=tracer, cache_adapter=cache_adapter)
     rag_repository = RagRepository(db, tracer=tracer, cache_adapter=cache_adapter)
 
     embedding_adapter = OpenAIEmbeddingAdapter(
@@ -193,11 +179,7 @@ async def _append_execution_event(
     event_type: ExecutionEventType,
     event_payload: dict[str, object],
 ) -> None:
-    if (
-        payload.session_id is None
-        or payload.flow_run_id is None
-        or payload.correlation_id is None
-    ):
+    if payload.session_id is None or payload.flow_run_id is None or payload.correlation_id is None:
         return
     await repository.append_execution_event(
         tenant_id=payload.tenant_id,

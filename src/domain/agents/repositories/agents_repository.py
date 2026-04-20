@@ -61,9 +61,7 @@ class AgentsRepository:
                     )
                 return agent
 
-    async def get_agent_version(
-        self, agent_version_id: UUID
-    ) -> AgentVersionModel | None:
+    async def get_agent_version(self, agent_version_id: UUID) -> AgentVersionModel | None:
         key = f"agent_version_by_id:{agent_version_id}"
         if cached := await self.cache_adapter.get(key):
             return AgentVersionModel.from_dict(cached)
@@ -225,9 +223,7 @@ class AgentsRepository:
             ):
                 await session.commit()
 
-    async def list_agents(
-        self, *, tenant_id: UUID, limit: int = 200
-    ) -> list[AgentModel]:
+    async def list_agents(self, *, tenant_id: UUID, limit: int = 200) -> list[AgentModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(AgentModel)
@@ -385,9 +381,7 @@ class AgentsRepository:
                 if supported_tool_schema_version is None:
                     supported_tool_schema_version = source.supported_tool_schema_version
                 if supported_tool_config_hash_prefix is None:
-                    supported_tool_config_hash_prefix = (
-                        source.supported_tool_config_hash_prefix
-                    )
+                    supported_tool_config_hash_prefix = source.supported_tool_config_hash_prefix
                 if persona_config is None:
                     persona_config = source.persona_config
                 if system_prompt is None:
@@ -548,9 +542,7 @@ class AgentsRepository:
             if flow_version_instance is None:
                 raise NotFoundServiceException(message="flow_version_not_found")
 
-            stmt_flow = select(FlowModel).where(
-                FlowModel.flow_id == flow_version_instance.flow_id
-            )
+            stmt_flow = select(FlowModel).where(FlowModel.flow_id == flow_version_instance.flow_id)
             query_sql_flow = compile_query(stmt_flow)
 
             with self.tracer.observe(
@@ -605,9 +597,7 @@ class AgentsRepository:
                 raise NotFoundServiceException(message="agent_not_found")
 
             if flow_instance.tenant_id != agent_instance.tenant_id:
-                raise DomainValidationException(
-                    message="node_and_agent_must_belong_to_same_tenant"
-                )
+                raise DomainValidationException(message="node_and_agent_must_belong_to_same_tenant")
 
             with self.tracer.observe(
                 as_type="tool",
@@ -617,9 +607,7 @@ class AgentsRepository:
                     "agent_version_id": str(agent_version_id),
                 },
             ):
-                instance = NodeAgentBindingModel(
-                    node_id=node_id, agent_version_id=agent_version_id
-                )
+                instance = NodeAgentBindingModel(node_id=node_id, agent_version_id=agent_version_id)
                 session.add(instance)
                 await session.commit()
                 await session.refresh(instance)
@@ -639,9 +627,7 @@ class AgentsRepository:
             return UUID(agent_version_id) if agent_version_id else None
 
         async with self.db.get_session() as session:
-            stmt = select(NodeAgentBindingModel).where(
-                NodeAgentBindingModel.node_id == node_id
-            )
+            stmt = select(NodeAgentBindingModel).where(NodeAgentBindingModel.node_id == node_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -668,19 +654,13 @@ class AgentsRepository:
 
                 await self.cache_adapter.set(
                     key,
-                    {
-                        "agent_version_id": str(agent_version_id)
-                        if agent_version_id
-                        else None
-                    },
+                    {"agent_version_id": str(agent_version_id) if agent_version_id else None},
                     ttl=AGENT_VERSION_BY_NODE_CACHE_TTL,
                 )
                 return agent_version_id
 
     # Todo: this code should staying here ?
-    async def resolve_effective_rag_config_id_for_node(
-        self, node_id: UUID
-    ) -> UUID | None:
+    async def resolve_effective_rag_config_id_for_node(self, node_id: UUID) -> UUID | None:
         async with self.db.get_session() as session:
             stmt = select(NodeModel.rag_config_id).where(NodeModel.node_id == node_id)
             query_sql = compile_query(stmt)

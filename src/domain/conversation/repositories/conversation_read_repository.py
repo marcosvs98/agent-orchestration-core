@@ -161,11 +161,7 @@ class ConversationReadRepository:
             )
             if user_id is not None:
                 stmt = stmt.where(SessionModel.user_id == user_id)
-            stmt = (
-                stmt.order_by(SessionModel.session_id.desc())
-                .limit(limit + 1)
-                .offset(offset)
-            )
+            stmt = stmt.order_by(SessionModel.session_id.desc()).limit(limit + 1).offset(offset)
             result = await session.execute(stmt)
             raw = result.all()
             has_next = len(raw) > limit

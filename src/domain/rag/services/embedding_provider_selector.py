@@ -11,9 +11,7 @@ class EmbeddingProviderSelector:
     def __init__(self, *, tracer: RuntimeTracerPort) -> None:
         self.tracer = tracer
 
-    async def select(
-        self, *, contract: EmbeddingContract
-    ) -> EmbeddingProviderSelection:
+    async def select(self, *, contract: EmbeddingContract) -> EmbeddingProviderSelection:
         with self.tracer.observe(
             as_type="agent",
             name="domain.rag.embedding_provider_selector.select",

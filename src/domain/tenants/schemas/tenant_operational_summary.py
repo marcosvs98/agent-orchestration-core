@@ -166,9 +166,7 @@ class TenantOperationalSummaryResponse(BaseModel):
     )
     agents: list[AgentOperationalSummary] = Field(default_factory=list)
     flows: list[FlowOperational] = Field(default_factory=list)
-    policies: TenantPoliciesOperational = Field(
-        default_factory=TenantPoliciesOperational
-    )
+    policies: TenantPoliciesOperational = Field(default_factory=TenantPoliciesOperational)
     rag: RagOperationalBlock = Field(default_factory=RagOperationalBlock)
     capabilities: CapabilitiesBlock = Field(default_factory=CapabilitiesBlock)
     counts: CountsBlock = Field(default_factory=CountsBlock)

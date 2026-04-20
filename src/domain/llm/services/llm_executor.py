@@ -48,8 +48,7 @@ class LLMExecutor(LLMExecutorPort):
         circuit_breaker: CircuitBreaker | None = None,
         cost_engine: CostEngine | None = None,
         provider_selector: LLMProviderSelector | None = None,
-        provider_factory: Callable[[LLMProviderSelection], LLMProviderPort]
-        | None = None,
+        provider_factory: Callable[[LLMProviderSelection], LLMProviderPort] | None = None,
         guardrail_engine: GuardrailEngine | None = None,
         tracer: RuntimeTracerPort,
     ) -> None:
@@ -133,13 +132,9 @@ class LLMExecutor(LLMExecutorPort):
                 completion_tokens = token_usage.get("output_tokens")
             if completion_tokens is None:
                 completion_tokens = token_usage.get("total_tokens")
-            used = (
-                completion_tokens if isinstance(completion_tokens, (int, float)) else 0
-            )
+            used = completion_tokens if isinstance(completion_tokens, (int, float)) else 0
             if used > request.max_tokens:
-                raise DomainValidationException(
-                    message="llm_policy_max_tokens_exceeded"
-                )
+                raise DomainValidationException(message="llm_policy_max_tokens_exceeded")
         if request.max_cost_usd is not None and result.cost_usd is not None:
             if result.cost_usd > request.max_cost_usd:
                 raise DomainValidationException(message="llm_policy_cost_exceeded")
@@ -271,9 +266,7 @@ class LLMExecutor(LLMExecutorPort):
         if request.user_message:
             llm_input["user_message"] = request.user_message
         if request.messages:
-            llm_input["messages"] = [
-                m.model_dump(mode="json") for m in request.messages
-            ]
+            llm_input["messages"] = [m.model_dump(mode="json") for m in request.messages]
         if task_type_value:
             llm_input["task_type"] = task_type_value
         if request.user_id:
@@ -325,28 +318,22 @@ class LLMExecutor(LLMExecutorPort):
                             },
                             metadata={"guardrail_type": "LLM"},
                         ) as guardrail_handle:
-                            guardrail_decision = (
-                                await self.guardrail_engine.check_and_reserve(
-                                    tenant_id=tenant_id,
-                                    flow_run_id=flow_run_id,
-                                    request=request,
-                                    policy_llm=policy_llm,
-                                    provider=provider,
-                                    provider_model=provider_model,
-                                )
+                            guardrail_decision = await self.guardrail_engine.check_and_reserve(
+                                tenant_id=tenant_id,
+                                flow_run_id=flow_run_id,
+                                request=request,
+                                policy_llm=policy_llm,
+                                provider=provider,
+                                provider_model=provider_model,
                             )
                             guardrail_output = {
                                 "decision": guardrail_decision.decision.value,
                                 "reason_code": guardrail_decision.reason_code,
-                                "applied_limits": guardrail_decision.applied_limits
-                                or {},
+                                "applied_limits": guardrail_decision.applied_limits or {},
                                 "overrides": guardrail_decision.overrides,
                             }
                             if guardrail_handle:
-                                if (
-                                    guardrail_decision.decision
-                                    is GuardrailDecisionType.BLOCK
-                                ):
+                                if guardrail_decision.decision is GuardrailDecisionType.BLOCK:
                                     guardrail_handle.update(
                                         level="ERROR",
                                         status_message=f"Guardrail blocked: {guardrail_decision.reason_code}",
@@ -356,11 +343,7 @@ class LLMExecutor(LLMExecutorPort):
                                     guardrail_handle.success(output=guardrail_output)
 
                         applied_limits = guardrail_decision.applied_limits or {}
-                        limit_label = (
-                            ",".join(applied_limits.keys())
-                            if applied_limits
-                            else "none"
-                        )
+                        limit_label = ",".join(applied_limits.keys()) if applied_limits else "none"
                         current_value = (
                             applied_limits.get("projected_cost")
                             or applied_limits.get("current_calls")
@@ -428,15 +411,10 @@ class LLMExecutor(LLMExecutorPort):
                                 )
                                 provider_model = selection.provider_model
                                 provider_instance = self.provider_factory(selection)
-                                request = request.model_copy(
-                                    update={"model_alias": provider_model}
-                                )
+                                request = request.model_copy(update={"model_alias": provider_model})
                             sanitized_overrides: Dict[str, Any] = {}
                             for key, value in overrides.items():
-                                if (
-                                    isinstance(value, (str, int, float, bool))
-                                    or value is None
-                                ):
+                                if isinstance(value, (str, int, float, bool)) or value is None:
                                     sanitized_overrides[key] = value
                                 else:
                                     sanitized_overrides[key] = str(value)
@@ -501,20 +479,13 @@ class LLMExecutor(LLMExecutorPort):
                                 result = result.model_copy(update={"cost_usd": cost})
                             if generation_handle:
                                 usage_details = {
-                                    "prompt_tokens": result.token_usage.get(
-                                        "prompt_tokens"
-                                    )
+                                    "prompt_tokens": result.token_usage.get("prompt_tokens")
                                     or result.token_usage.get("input_tokens")
                                     or 0,
-                                    "completion_tokens": result.token_usage.get(
-                                        "completion_tokens"
-                                    )
+                                    "completion_tokens": result.token_usage.get("completion_tokens")
                                     or result.token_usage.get("output_tokens")
                                     or 0,
-                                    "total_tokens": result.token_usage.get(
-                                        "total_tokens"
-                                    )
-                                    or 0,
+                                    "total_tokens": result.token_usage.get("total_tokens") or 0,
                                 }
                                 cost_details = (
                                     {"total_cost": result.cost_usd}
@@ -528,8 +499,7 @@ class LLMExecutor(LLMExecutorPort):
                                     metadata={
                                         "latency_ms": result.latency_ms,
                                         "pipeline_latency_ms": result.pipeline_latency_ms,
-                                        "model_used": result.model_alias
-                                        or provider_model,
+                                        "model_used": result.model_alias or provider_model,
                                         "provider": provider,
                                         "cost_usd": result.cost_usd,
                                     },
@@ -541,14 +511,20 @@ class LLMExecutor(LLMExecutorPort):
                                     generation_handle.error(
                                         error_type=type(infer_exc).__name__,
                                         error_message=str(infer_exc),
-                                        output={"status": "error", "errors": infer_exc.errors, "input_data": infer_exc.input_data},
+                                        output={
+                                            "status": "error",
+                                            "errors": infer_exc.errors,
+                                            "input_data": infer_exc.input_data,
+                                        },
                                     )
                                     raise infer_exc from infer_exc
-                            
+
                                 generation_handle.error(
                                     error_type=type(infer_exc).__name__,
                                     error_message=str(infer_exc),
-                                    output={"status": "error",},
+                                    output={
+                                        "status": "error",
+                                    },
                                 )
                             raise infer_exc from infer_exc
 
@@ -556,9 +532,7 @@ class LLMExecutor(LLMExecutorPort):
                     if isinstance(result.output, str):
                         try:
                             output_to_validate = orjson.loads(result.output)
-                            result = result.model_copy(
-                                update={"output": output_to_validate}
-                            )
+                            result = result.model_copy(update={"output": output_to_validate})
                         except orjson.JSONDecodeError as json_exc:
                             raise DomainValidationException(
                                 message="llm_output_json_parse_error",
@@ -574,9 +548,7 @@ class LLMExecutor(LLMExecutorPort):
                             try:
                                 parsed_content = orjson.loads(content_str)
                                 output_to_validate = parsed_content
-                                result = result.model_copy(
-                                    update={"output": parsed_content}
-                                )
+                                result = result.model_copy(update={"output": parsed_content})
                             except orjson.JSONDecodeError as json_exc:
                                 raise DomainValidationException(
                                     message="llm_output_json_parse_error",
@@ -598,17 +570,13 @@ class LLMExecutor(LLMExecutorPort):
                             "prompt_tokens": result.token_usage.get("prompt_tokens")
                             or result.token_usage.get("input_tokens")
                             or 0,
-                            "completion_tokens": result.token_usage.get(
-                                "completion_tokens"
-                            )
+                            "completion_tokens": result.token_usage.get("completion_tokens")
                             or result.token_usage.get("output_tokens")
                             or 0,
                             "total_tokens": result.token_usage.get("total_tokens") or 0,
                         }
                         cost_details = (
-                            {"total_cost": result.cost_usd}
-                            if result.cost_usd is not None
-                            else None
+                            {"total_cost": result.cost_usd} if result.cost_usd is not None else None
                         )
                         chain_handler.success(
                             output=result.output,

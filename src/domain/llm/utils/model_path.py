@@ -47,9 +47,7 @@ def resolve_slm_model_path(path: str) -> str:
             for f in files:
                 if not f.endswith(".gguf"):
                     continue
-                if "smollm2" in f.lower() or any(
-                    "schematron" in p.lower() for p in root.parts
-                ):
+                if "smollm2" in f.lower() or any("schematron" in p.lower() for p in root.parts):
                     found = root / f
                     if found.is_file():
                         return str(found.resolve())

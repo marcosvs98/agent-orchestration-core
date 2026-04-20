@@ -51,9 +51,7 @@ class HumanSLAPolicyRepository:
                 return None
             return HumanSLAPolicy.model_validate(row)
 
-    async def get_policy_with_rules(
-        self, human_sla_policy_id: UUID
-    ) -> HumanSLAPolicy | None:
+    async def get_policy_with_rules(self, human_sla_policy_id: UUID) -> HumanSLAPolicy | None:
         async with self.db.get_session() as session:
             stmt = select(HumanSLAPolicyORM).where(
                 HumanSLAPolicyORM.human_sla_policy_id == human_sla_policy_id
@@ -64,16 +62,11 @@ class HumanSLAPolicyRepository:
                 return None
             rules_stmt = (
                 select(HumanSLAEscalationRuleORM)
-                .where(
-                    HumanSLAEscalationRuleORM.human_sla_policy_id == human_sla_policy_id
-                )
+                .where(HumanSLAEscalationRuleORM.human_sla_policy_id == human_sla_policy_id)
                 .order_by(HumanSLAEscalationRuleORM.level)
             )
             rules_result = await session.execute(rules_stmt)
-            rules = [
-                HumanSLAEscalationRule.model_validate(r)
-                for r in rules_result.scalars().all()
-            ]
+            rules = [HumanSLAEscalationRule.model_validate(r) for r in rules_result.scalars().all()]
             return HumanSLAPolicy.model_validate(policy_row).model_copy(
                 update={"escalation_rules": rules}
             )

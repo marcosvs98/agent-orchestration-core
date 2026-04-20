@@ -64,6 +64,10 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+
+# Dead-code pipeline (generated locally/CI; baseline stays versioned)
+artifacts/vulture-latest.txt
+artifacts/dead-code-correlation.txt
 *.cover
 .hypothesis/
 .pytest_cache/
@@ -77,6 +81,7 @@ dump.rdb
 # Temporary files
 tmp/
 temp/
+site/
 
 data/
 .idea/

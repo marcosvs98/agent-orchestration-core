@@ -126,9 +126,7 @@ class LLMPricingRepository:
                 ):
                     await session.execute(
                         update(LLMPricingModel)
-                        .where(
-                            LLMPricingModel.llm_pricing_id == instance.llm_pricing_id
-                        )
+                        .where(LLMPricingModel.llm_pricing_id == instance.llm_pricing_id)
                         .values(
                             unit=unit,
                             input_cost_per_1k=input_cost_per_1k,
@@ -139,9 +137,7 @@ class LLMPricingRepository:
                     )
                     await session.commit()
                     if self.cache_adapter:
-                        await self.cache_adapter.delete(
-                            f"llm_pricing:{provider}:{provider_model}"
-                        )
+                        await self.cache_adapter.delete(f"llm_pricing:{provider}:{provider_model}")
                     await session.refresh(instance)
                     return instance
 
@@ -163,7 +159,5 @@ class LLMPricingRepository:
                 session.add(instance)
                 await session.commit()
                 if self.cache_adapter:
-                    await self.cache_adapter.delete(
-                        f"llm_pricing:{provider}:{provider_model}"
-                    )
+                    await self.cache_adapter.delete(f"llm_pricing:{provider}:{provider_model}")
                 return instance

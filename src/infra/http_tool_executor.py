@@ -31,11 +31,7 @@ class HttpToolExecutor(ToolExecutorPort):
         req_params = None
         if m == "GET":
             if json_body:
-                req_params = {
-                    k: v
-                    for k, v in json_body.items()
-                    if v is not None
-                }
+                req_params = {k: v for k, v in json_body.items() if v is not None}
                 if not req_params:
                     req_params = None
             else:
@@ -49,9 +45,9 @@ class HttpToolExecutor(ToolExecutorPort):
                 req_json = None
 
         if req_params:
-            payload_bytes = urlencode(
-                [(str(k), str(v)) for k, v in req_params.items()]
-            ).encode("utf-8")
+            payload_bytes = urlencode([(str(k), str(v)) for k, v in req_params.items()]).encode(
+                "utf-8"
+            )
         elif req_json:
             payload_bytes = json.dumps(json_body, default=str).encode("utf-8")
         else:

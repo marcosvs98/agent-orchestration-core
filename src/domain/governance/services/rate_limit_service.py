@@ -42,14 +42,10 @@ class RateLimitService:
         ) as enforce_handle:
             policy = await self.repository.get_default_policy_for_tenant(tenant_id)
             if enforce_handle:
-                enforce_handle.success(
-                    output={"policy": policy.to_dict() if policy else None}
-                )
+                enforce_handle.success(output={"policy": policy.to_dict() if policy else None})
 
         if policy is None:
-            raise AuthorizationDeniedException(
-                message="rate_limit_policy_not_configured"
-            )
+            raise AuthorizationDeniedException(message="rate_limit_policy_not_configured")
 
         version = await self.repository.get_published_policy_version(
             policy.rate_limit_policy_id,
@@ -57,9 +53,7 @@ class RateLimitService:
             principal_type=principal_type,
         )
         if version is None:
-            raise AuthorizationDeniedException(
-                message="rate_limit_policy_not_published"
-            )
+            raise AuthorizationDeniedException(message="rate_limit_policy_not_published")
         key = f"rate:{tenant_id}:{principal_type}:{principal_id}:{action}"
 
         with self.tracer.observe(

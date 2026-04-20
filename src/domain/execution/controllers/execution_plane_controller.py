@@ -114,9 +114,7 @@ class ExecutionPlaneController:
             try:
                 trace_uuid = UUID(trace_id_header)
             except ValueError:
-                trace_uuid = (
-                    UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
-                )
+                trace_uuid = UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
         else:
             trace_uuid = uuid4()
         trace_id_str = str(trace_uuid)
@@ -172,9 +170,7 @@ class ExecutionPlaneController:
             name="domain.execution.plane_controller.execute_tool_run",
             input={"tool_run_id": tool_run_id},
         ):
-            return await self.boundary.execute_tool_run(
-                auth=auth, tool_run_id=UUID(tool_run_id)
-            )
+            return await self.boundary.execute_tool_run(auth=auth, tool_run_id=UUID(tool_run_id))
 
     async def get_flow_run(
         self, flow_run_id: UUID, auth: AuthContext = Depends(get_auth_context)
@@ -184,9 +180,7 @@ class ExecutionPlaneController:
             name="domain.execution.plane_controller.get_flow_run",
             input={"flow_run_id": str(flow_run_id)},
         ):
-            return await self.boundary.get_flow_run(
-                auth=auth, flow_run_id=str(flow_run_id)
-            )
+            return await self.boundary.get_flow_run(auth=auth, flow_run_id=str(flow_run_id))
 
     async def resume_flow_run(
         self,
@@ -200,9 +194,7 @@ class ExecutionPlaneController:
             try:
                 trace_uuid = UUID(trace_id_header)
             except ValueError:
-                trace_uuid = (
-                    UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
-                )
+                trace_uuid = UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
         else:
             trace_uuid = uuid4()
         trace_id_str = str(trace_uuid)
@@ -233,9 +225,7 @@ class ExecutionPlaneController:
             name="domain.execution.plane_controller.get_graph_state",
             input={"flow_run_id": str(flow_run_id)},
         ):
-            return await self.boundary.get_graph_state(
-                auth=auth, flow_run_id=str(flow_run_id)
-            )
+            return await self.boundary.get_graph_state(auth=auth, flow_run_id=str(flow_run_id))
 
     async def list_node_runs(
         self,

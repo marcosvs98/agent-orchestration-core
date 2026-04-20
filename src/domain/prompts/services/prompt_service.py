@@ -86,9 +86,7 @@ class PromptService:
 
         prompt = await self.repository.get_active_prompt(node_type)
         if prompt:
-            self._cache[node_type] = PromptCacheEntry(
-                prompt, time.time(), self.cache_ttl
-            )
+            self._cache[node_type] = PromptCacheEntry(prompt, time.time(), self.cache_ttl)
         return prompt
 
     async def get_prompt_by_id(self, prompt_id: UUID) -> Optional[NodePrompt]:
@@ -173,9 +171,7 @@ class PromptService:
 
             return prompt
 
-    async def deactivate_prompt(
-        self, node_type: str, tenant_id: UUID | None = None
-    ) -> None:
+    async def deactivate_prompt(self, node_type: str, tenant_id: UUID | None = None) -> None:
         prompt = await self.repository.get_active_prompt(node_type)
         if prompt:
             with self.tracer.observe(

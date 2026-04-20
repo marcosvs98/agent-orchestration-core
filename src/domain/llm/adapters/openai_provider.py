@@ -32,9 +32,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
         self.cache_adapter: RedisAdapter = cache_adapter
         self.openai_client: AsyncOpenAI = openai_client
 
-    async def _get_or_create_conversation_id(
-        self, conversation_key: str
-    ) -> ConversationId:
+    async def _get_or_create_conversation_id(self, conversation_key: str) -> ConversationId:
         cache_key = f"openai:conversation:{conversation_key}"
 
         cached = await self.cache_adapter.get(cache_key)
@@ -57,9 +55,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
     async def _get_previous_response_id(
         self, conversation_key: str
     ) -> Optional[ConversationResponseID]:
-        cached = await self.cache_adapter.get(
-            f"openai:previous_response:{conversation_key}"
-        )
+        cached = await self.cache_adapter.get(f"openai:previous_response:{conversation_key}")
         return ConversationResponseID(cached) if cached else None
 
     async def _set_previous_response_id(
@@ -95,9 +91,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
         payload: Dict[str, Any] = {
             "model": request.model_alias,
             "input": messages if messages else request.prompt,
-            "temperature": request.temperature
-            if request.temperature is not None
-            else 0.2,
+            "temperature": request.temperature if request.temperature is not None else 0.2,
         }
 
         if schema_payload:
@@ -130,9 +124,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
             payload["user"] = request.user_id
 
         if request.conversation_key:
-            conversation_id = await self._get_or_create_conversation_id(
-                request.conversation_key
-            )
+            conversation_id = await self._get_or_create_conversation_id(request.conversation_key)
             previous_response_id: Optional[ConversationResponseID] = None
             if request.stateless:
                 payload["conversation"] = conversation_id

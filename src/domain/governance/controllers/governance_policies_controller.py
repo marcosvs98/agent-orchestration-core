@@ -321,9 +321,7 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> AccessPolicyResponse:
         self._ensure_scope(auth, Scope.AccessPoliciesCreate)
-        return await self.service.create_access_policy(
-            tenant_id=auth.tenant_id, payload=payload
-        )
+        return await self.service.create_access_policy(tenant_id=auth.tenant_id, payload=payload)
 
     async def list_access_policies(
         self,
@@ -421,9 +419,7 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> BillingPolicyResponse:
         self._ensure_scope(auth, Scope.BillingPoliciesCreate)
-        return await self.service.create_billing_policy(
-            tenant_id=auth.tenant_id, payload=payload
-        )
+        return await self.service.create_billing_policy(tenant_id=auth.tenant_id, payload=payload)
 
     async def list_billing_policies(
         self,
@@ -485,9 +481,7 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> MemoryPolicyResponse:
         self._ensure_scope(auth, Scope.MemoryPoliciesCreate)
-        return await self.service.create_memory_policy(
-            tenant_id=auth.tenant_id, payload=payload
-        )
+        return await self.service.create_memory_policy(tenant_id=auth.tenant_id, payload=payload)
 
     async def list_memory_policies(
         self,
@@ -549,9 +543,7 @@ class GovernancePoliciesController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> RagPolicyResponse:
         self._ensure_scope(auth, Scope.RagPoliciesCreate)
-        return await self.service.create_rag_policy(
-            tenant_id=auth.tenant_id, payload=payload
-        )
+        return await self.service.create_rag_policy(tenant_id=auth.tenant_id, payload=payload)
 
     async def list_rag_policies(
         self,

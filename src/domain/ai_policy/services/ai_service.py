@@ -58,9 +58,7 @@ class AIService(AIServicePort):
             justification="create ai execution policy",
             schema_version=1,
         )
-        return AIExecutionPolicy(
-            id=model.ai_execution_policy_id, description=model.description
-        )
+        return AIExecutionPolicy(id=model.ai_execution_policy_id, description=model.description)
 
     async def create_ai_execution_policy_version(
         self,
@@ -73,9 +71,7 @@ class AIService(AIServicePort):
         policy = await self.repository.get_ai_execution_policy(policy_uuid)
         if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="ai_execution_policy_not_found")
-        model = await self.repository.get_model(
-            ai_execution_policy_version_create.model_id
-        )
+        model = await self.repository.get_model(ai_execution_policy_version_create.model_id)
         if model is None:
             raise NotFoundServiceException(message="model_not_found")
         version_model = await self.repository.create_ai_execution_policy_version(
@@ -126,21 +122,15 @@ class AIService(AIServicePort):
             raise NotFoundServiceException(message="ai_execution_policy_not_found")
         version = await self.repository.get_ai_execution_policy_version(version_uuid)
         if version is None or version.ai_execution_policy_id != policy_uuid:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         if version.status != VersionStatus.DRAFT:
-            raise ResourceBlockedServiceException(
-                message="ai_execution_policy_version_not_draft"
-            )
+            raise ResourceBlockedServiceException(message="ai_execution_policy_version_not_draft")
         await self.repository.set_ai_execution_policy_version_status(
             ai_execution_policy_version_id=version_uuid, status=VersionStatus.VALIDATED
         )
         refreshed = await self.repository.get_ai_execution_policy_version(version_uuid)
         if refreshed is None:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         return AIExecutionPolicyVersion(
             id=refreshed.ai_execution_policy_version_id,
             ai_execution_policy_id=refreshed.ai_execution_policy_id,
@@ -215,9 +205,7 @@ class AIService(AIServicePort):
             raise NotFoundServiceException(message="ai_execution_policy_not_found")
         version = await self.repository.get_ai_execution_policy_version(version_uuid)
         if version is None or version.ai_execution_policy_id != policy_uuid:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         if version.status != VersionStatus.VALIDATED:
             raise ResourceBlockedServiceException(
                 message="ai_execution_policy_version_not_validated"
@@ -240,9 +228,7 @@ class AIService(AIServicePort):
         )
         refreshed = await self.repository.get_ai_execution_policy_version(version_uuid)
         if refreshed is None:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         return AIExecutionPolicyVersion(
             id=refreshed.ai_execution_policy_version_id,
             ai_execution_policy_id=refreshed.ai_execution_policy_id,
@@ -271,9 +257,7 @@ class AIService(AIServicePort):
             raise NotFoundServiceException(message="ai_execution_policy_not_found")
         version = await self.repository.get_ai_execution_policy_version(version_uuid)
         if version is None or version.ai_execution_policy_id != policy_uuid:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         if version.status != VersionStatus.PUBLISHED:
             raise ResourceBlockedServiceException(
                 message="ai_execution_policy_version_not_published"
@@ -296,9 +280,7 @@ class AIService(AIServicePort):
         )
         refreshed = await self.repository.get_ai_execution_policy_version(version_uuid)
         if refreshed is None:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         return AIExecutionPolicyVersion(
             id=refreshed.ai_execution_policy_version_id,
             ai_execution_policy_id=refreshed.ai_execution_policy_id,
@@ -327,9 +309,7 @@ class AIService(AIServicePort):
             raise NotFoundServiceException(message="ai_execution_policy_not_found")
         version = await self.repository.get_ai_execution_policy_version(version_uuid)
         if version is None or version.ai_execution_policy_id != policy_uuid:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         if version.status not in (VersionStatus.PUBLISHED, VersionStatus.DEPRECATED):
             raise ResourceBlockedServiceException(
                 message="ai_execution_policy_version_not_published_or_deprecated"
@@ -352,9 +332,7 @@ class AIService(AIServicePort):
         )
         refreshed = await self.repository.get_ai_execution_policy_version(version_uuid)
         if refreshed is None:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         return AIExecutionPolicyVersion(
             id=refreshed.ai_execution_policy_version_id,
             ai_execution_policy_id=refreshed.ai_execution_policy_id,
@@ -372,18 +350,14 @@ class AIService(AIServicePort):
         *,
         node_ai_execution_policy_binding_create: NodeAIExecutionPolicyBindingCreate,
     ) -> NodeAIExecutionPolicyBinding:
-        node = await self.repository.get_node(
-            node_ai_execution_policy_binding_create.node_id
-        )
+        node = await self.repository.get_node(node_ai_execution_policy_binding_create.node_id)
         if node is None:
             raise NotFoundServiceException(message="node_not_found")
         policy_version = await self.repository.get_ai_execution_policy_version(
             node_ai_execution_policy_binding_create.ai_execution_policy_version_id
         )
         if policy_version is None:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         if policy_version.status != VersionStatus.PUBLISHED:
             raise ResourceBlockedServiceException(
                 message="ai_execution_policy_version_not_published"
@@ -424,9 +398,7 @@ class AIService(AIServicePort):
             for row in rows
         ]
 
-    async def delete_node_ai_execution_policy_binding(
-        self, *, binding_id: UUID
-    ) -> None:
+    async def delete_node_ai_execution_policy_binding(self, *, binding_id: UUID) -> None:
         await self.repository.delete_node_ai_execution_policy_binding(
             node_ai_execution_policy_binding_id=binding_id
         )

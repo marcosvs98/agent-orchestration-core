@@ -212,9 +212,7 @@ class AIController:
             change_request=change,
         )
 
-    async def list_models(
-        self, auth: AuthContext = Depends(get_auth_context)
-    ) -> list[Model]:
+    async def list_models(self, auth: AuthContext = Depends(get_auth_context)) -> list[Model]:
         return await self.service.list_models()
 
     async def create_model(
@@ -255,6 +253,4 @@ class AIController:
         auth: AuthContext = Depends(get_auth_context),
     ) -> None:
         self._ensure_scope(auth, Scope.NodeAIExecutionPolicyBindingsDelete)
-        await self.service.delete_node_ai_execution_policy_binding(
-            binding_id=binding_id
-        )
+        await self.service.delete_node_ai_execution_policy_binding(binding_id=binding_id)

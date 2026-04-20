@@ -47,9 +47,7 @@ class ToolCatalogIndexer:
             version=version,
         )
 
-    async def index_document(
-        self, *, tenant_id: UUID, document: ToolCatalogDocument
-    ) -> bool:
+    async def index_document(self, *, tenant_id: UUID, document: ToolCatalogDocument) -> bool:
         rag_config = await self._select_rag_config(tenant_id=tenant_id)
         if rag_config is None:
             return False

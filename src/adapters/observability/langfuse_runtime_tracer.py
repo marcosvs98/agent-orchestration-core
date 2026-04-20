@@ -139,9 +139,7 @@ class LangfuseRuntimeTracer:
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            raise DomainValidationException(
-                message="langfuse_initialization_failed"
-            ) from e
+            raise DomainValidationException(message="langfuse_initialization_failed") from e
 
     def start_flow_trace(
         self,
@@ -166,9 +164,7 @@ class LangfuseRuntimeTracer:
             if trace_id is not None:
                 trace_id_val = trace_id
             elif self._enabled and self.langfuse and external_request_id:
-                deterministic_trace_id = self.langfuse.create_trace_id(
-                    seed=external_request_id
-                )
+                deterministic_trace_id = self.langfuse.create_trace_id(seed=external_request_id)
                 trace_id_val = UUID(deterministic_trace_id)
             else:
                 trace_id_val = flow_run_id
@@ -251,9 +247,7 @@ class LangfuseRuntimeTracer:
                 trace_context={"trace_id": trace.trace_id.hex},
                 input=input,
                 metadata=_langfuse_safe_metadata(
-                    _merge_metadata(
-                        {"flow_name": trace.flow_name} if trace.flow_name else None
-                    )
+                    _merge_metadata({"flow_name": trace.flow_name} if trace.flow_name else None)
                 ),
             ) as flow_span:
                 handle = ObservationHandle(flow_span)
@@ -266,9 +260,7 @@ class LangfuseRuntimeTracer:
                     user_id=trace.user_id,
                     session_id=str(trace.session_id) if trace.session_id else None,
                     metadata=_langfuse_safe_metadata(_get_contextvars_metadata()),
-                    version=str(trace.flow_version_id)
-                    if trace.flow_version_id
-                    else None,
+                    version=str(trace.flow_version_id) if trace.flow_version_id else None,
                 ):
                     yield handle
         except Exception as e:

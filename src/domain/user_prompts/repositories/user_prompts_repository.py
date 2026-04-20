@@ -9,15 +9,11 @@ from utils.query_compiler import compile_query
 
 
 class UserPromptsRepository:
-    def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
-    ) -> None:
+    def __init__(self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort) -> None:
         self.db = database_connection
         self.tracer = tracer
 
-    async def list_active(
-        self, tenant_id: UUID, limit: int = 200
-    ) -> list[UserPromptModel]:
+    async def list_active(self, tenant_id: UUID, limit: int = 200) -> list[UserPromptModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(UserPromptModel)
@@ -50,9 +46,7 @@ class UserPromptsRepository:
                     )
                 return items
 
-    async def get_by_id(
-        self, tenant_id: UUID, user_prompt_id: UUID
-    ) -> UserPromptModel | None:
+    async def get_by_id(self, tenant_id: UUID, user_prompt_id: UUID) -> UserPromptModel | None:
         async with self.db.get_session() as session:
             stmt = select(UserPromptModel).where(
                 UserPromptModel.tenant_id == tenant_id,

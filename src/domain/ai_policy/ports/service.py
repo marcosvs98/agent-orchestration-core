@@ -120,7 +120,5 @@ class AIServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def delete_node_ai_execution_policy_binding(
-        self, *, binding_id: UUID
-    ) -> None:
+    async def delete_node_ai_execution_policy_binding(self, *, binding_id: UUID) -> None:
         raise NotImplementedServiceException()

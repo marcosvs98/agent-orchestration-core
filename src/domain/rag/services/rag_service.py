@@ -110,9 +110,9 @@ class RagService(RagServicePort):
         rag_config_create: RagConfigCreate,
         principal_id: str,
     ) -> RagConfig:
-        options = RagConfigOptions.model_validate(
-            rag_config_create.options or {}
-        ).model_dump(mode="json")
+        options = RagConfigOptions.model_validate(rag_config_create.options or {}).model_dump(
+            mode="json"
+        )
         vector_store = await self.repository.get_vector_store(
             rag_config_create.vector_store_id,
             tenant_id=tenant_id,
@@ -304,9 +304,7 @@ class RagService(RagServicePort):
         if config is None or config.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rag_config_not_found")
         if config.status not in (VersionStatus.PUBLISHED, VersionStatus.DEPRECATED):
-            raise ResourceBlockedServiceException(
-                message="rag_config_not_published_or_deprecated"
-            )
+            raise ResourceBlockedServiceException(message="rag_config_not_published_or_deprecated")
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
         await self.repository.set_rag_config_status(
@@ -342,9 +340,7 @@ class RagService(RagServicePort):
     async def list_chunking_rules(
         self, *, tenant_id: UUID, limit: int = 200
     ) -> list[RagChunkingRule]:
-        rows = await self.repository.list_chunking_rules(
-            tenant_id=tenant_id, limit=limit
-        )
+        rows = await self.repository.list_chunking_rules(tenant_id=tenant_id, limit=limit)
         return [self._chunking_rule_to_schema(r) for r in rows]
 
     async def create_chunking_rule(
@@ -394,13 +390,9 @@ class RagService(RagServicePort):
         if existing is None:
             raise NotFoundServiceException(message="rag_chunking_rule_not_found")
         next_strategy = (
-            payload.strategy.value
-            if payload.strategy is not None
-            else existing.strategy
+            payload.strategy.value if payload.strategy is not None else existing.strategy
         )
-        next_params = (
-            payload.params if payload.params is not None else existing.params or {}
-        )
+        next_params = payload.params if payload.params is not None else existing.params or {}
         raw_validate = dict(next_params)
         raw_validate["strategy"] = next_strategy
         parse_rag_chunking_rule_params(raw_validate)

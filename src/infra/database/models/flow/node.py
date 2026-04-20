@@ -19,9 +19,7 @@ class Node(ORMBaseModel):
         nullable=False,
     )
     allow_rag_tenant = Column(Boolean, nullable=False, server_default="false")
-    allow_user_memory_structured = Column(
-        Boolean, nullable=False, server_default="false"
-    )
+    allow_user_memory_structured = Column(Boolean, nullable=False, server_default="false")
     allow_user_memory_vector = Column(Boolean, nullable=False, server_default="false")
     rag_config_id = Column(
         PG_UUID(as_uuid=True),

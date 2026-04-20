@@ -23,13 +23,9 @@ class AccessPolicyRepository:
         self.db = database_connection
         self.tracer = tracer
 
-    async def get_default_policy_for_tenant(
-        self, tenant_id: UUID
-    ) -> AccessPolicyModel | None:
+    async def get_default_policy_for_tenant(self, tenant_id: UUID) -> AccessPolicyModel | None:
         async with self.db.get_session() as session:
-            stmt = select(AccessPolicyModel).where(
-                AccessPolicyModel.tenant_id == tenant_id
-            )
+            stmt = select(AccessPolicyModel).where(AccessPolicyModel.tenant_id == tenant_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -150,19 +146,15 @@ class AccessPolicyRepository:
     ) -> AccessPolicyVersionModel | None:
         async with self.db.get_session() as session:
             stmt = select(AccessPolicyVersionModel).where(
-                AccessPolicyVersionModel.access_policy_version_id
-                == access_policy_version_id
+                AccessPolicyVersionModel.access_policy_version_id == access_policy_version_id
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def set_version_status(
-        self, *, access_policy_version_id: UUID, status: str
-    ) -> None:
+    async def set_version_status(self, *, access_policy_version_id: UUID, status: str) -> None:
         async with self.db.get_session() as session:
             stmt = select(AccessPolicyVersionModel).where(
-                AccessPolicyVersionModel.access_policy_version_id
-                == access_policy_version_id
+                AccessPolicyVersionModel.access_policy_version_id == access_policy_version_id
             )
             result = await session.execute(stmt)
             instance = result.scalar_one_or_none()

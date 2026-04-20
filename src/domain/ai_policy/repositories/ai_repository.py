@@ -21,9 +21,7 @@ from utils.query_compiler import compile_query
 
 
 class AIRepository:
-    def __init__(
-        self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort
-    ) -> None:
+    def __init__(self, database_connection: DatabaseConnection, tracer: RuntimeTracerPort) -> None:
         self.db = database_connection
         self.tracer = tracer
 
@@ -99,9 +97,7 @@ class AIRepository:
 
                 return items
 
-    async def create_model(
-        self, *, name: str, provider: str, model_type: str
-    ) -> ModelModel:
+    async def create_model(self, *, name: str, provider: str, model_type: str) -> ModelModel:
         async with self.db.get_session() as session:
             instance = ModelModel(
                 name=name,
@@ -185,9 +181,7 @@ class AIRepository:
         self, *, tenant_id: UUID, description: str | None, created_by: str
     ) -> AIExecutionPolicyModel:
         async with self.db.get_session() as session:
-            instance = AIExecutionPolicyModel(
-                tenant_id=tenant_id, description=description
-            )
+            instance = AIExecutionPolicyModel(tenant_id=tenant_id, description=description)
             session.add(instance)
             await session.commit()
             await session.refresh(instance)
@@ -209,9 +203,7 @@ class AIRepository:
                 input={
                     "query": query_sql,
                     "params": {
-                        "ai_execution_policy_version_id": str(
-                            ai_execution_policy_version_id
-                        ),
+                        "ai_execution_policy_version_id": str(ai_execution_policy_version_id),
                     },
                 },
                 metadata={"retriever_name": "get_ai_execution_policy_version"},
@@ -249,13 +241,10 @@ class AIRepository:
             )
             if ai_execution_policy_id is not None:
                 stmt = stmt.where(
-                    AIExecutionPolicyVersionModel.ai_execution_policy_id
-                    == ai_execution_policy_id
+                    AIExecutionPolicyVersionModel.ai_execution_policy_id == ai_execution_policy_id
                 )
             if status_filter is not None:
-                stmt = stmt.where(
-                    AIExecutionPolicyVersionModel.status.in_(status_filter)
-                )
+                stmt = stmt.where(AIExecutionPolicyVersionModel.status.in_(status_filter))
             stmt = stmt.order_by(
                 AIExecutionPolicyVersionModel.version_major.desc(),
                 AIExecutionPolicyVersionModel.version_minor.desc(),
@@ -349,11 +338,7 @@ class AIRepository:
                 if config_hash is None:
                     config_hash = source.config_hash
             else:
-                if (
-                    version_major is None
-                    or version_minor is None
-                    or version_patch is None
-                ):
+                if version_major is None or version_minor is None or version_patch is None:
                     stmt_last = (
                         select(AIExecutionPolicyVersionModel)
                         .where(
@@ -433,9 +418,7 @@ class AIRepository:
                 input={
                     "query": query_sql,
                     "params": {
-                        "ai_execution_policy_version_id": str(
-                            ai_execution_policy_version_id
-                        ),
+                        "ai_execution_policy_version_id": str(ai_execution_policy_version_id),
                     },
                 },
                 metadata={
@@ -454,9 +437,7 @@ class AIRepository:
                     )
 
             if instance is None:
-                raise NotFoundServiceException(
-                    message="ai_execution_policy_version_not_found"
-                )
+                raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
             instance.status = str(status)
             await session.commit()
 
@@ -495,9 +476,7 @@ class AIRepository:
                     NodeAIExecutionPolicyBindingModel.ai_execution_policy_version_id
                     == ai_execution_policy_version_id
                 )
-            stmt = stmt.order_by(
-                NodeAIExecutionPolicyBindingModel.created_at.desc()
-            ).limit(limit)
+            stmt = stmt.order_by(NodeAIExecutionPolicyBindingModel.created_at.desc()).limit(limit)
             result = await session.execute(stmt)
             return list(result.scalars().all())
 

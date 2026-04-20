@@ -67,9 +67,7 @@ class HumanSLARepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def list_cases_by_session(
-        self, tenant_id: UUID, session_id: UUID
-    ) -> list[SLACase]:
+    async def list_cases_by_session(self, tenant_id: UUID, session_id: UUID) -> list[SLACase]:
         async with self.db.get_session() as session:
             stmt = (
                 select(SLACase)
@@ -175,9 +173,7 @@ class HumanSLARepository:
             await session.execute(stmt)
             await session.commit()
 
-    async def update_case_sla_breached(
-        self, sla_case_id: UUID, tenant_id: UUID
-    ) -> None:
+    async def update_case_sla_breached(self, sla_case_id: UUID, tenant_id: UUID) -> None:
         async with self.db.get_session() as session:
             stmt = (
                 update(SLACase)

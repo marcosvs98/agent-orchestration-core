@@ -55,8 +55,6 @@ class RagActivationService:
         intent_metadata: dict[str, object] | None = None,
         context_metadata: dict[str, object] | None = None,
     ) -> RagActivationDecision:
-        input_len = len(user_input.strip()) if isinstance(user_input, str) else 0
-        input_kind = self._classify_input(user_input=user_input)
         structural_allowed = self._structural_gate(scope=scope, task_flags=task_flags)
         if not structural_allowed:
             decision = RagActivationDecision(
@@ -213,10 +211,7 @@ class RagActivationService:
             return False
         if scope == RagActivationScope.TENANT_KNOWLEDGE:
             return bool(task_flags.allow_rag_tenant)
-        return bool(
-            task_flags.allow_user_memory_structured
-            or task_flags.allow_user_memory_vector
-        )
+        return bool(task_flags.allow_user_memory_structured or task_flags.allow_user_memory_vector)
 
     async def _tool_scope_metadata(
         self,
@@ -243,9 +238,7 @@ class RagActivationService:
             return None, None
         enabled = scope_cfg.get("enabled")
         filters_override = scope_cfg.get("filters_override")
-        normalized_filters = (
-            filters_override if isinstance(filters_override, dict) else None
-        )
+        normalized_filters = filters_override if isinstance(filters_override, dict) else None
         if isinstance(enabled, bool):
             return enabled, normalized_filters
         return None, normalized_filters
@@ -259,11 +252,7 @@ class RagActivationService:
     ) -> dict[str, object]:
         allowed_keys = {"tags", "namespace", "doc_type"}
         scoped_override = (
-            {
-                key: value
-                for key, value in filters_override.items()
-                if key in allowed_keys
-            }
+            {key: value for key, value in filters_override.items() if key in allowed_keys}
             if isinstance(filters_override, dict)
             else {}
         )

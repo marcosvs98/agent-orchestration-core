@@ -36,9 +36,7 @@ class ModerationSLMAdapter:
         self.max_tokens = max_tokens
         self._load_lock = asyncio.Lock()
 
-    async def _ensure_prompt_loaded(
-        self, prompt_key: str
-    ) -> tuple[str, dict[str, object]]:
+    async def _ensure_prompt_loaded(self, prompt_key: str) -> tuple[str, dict[str, object]]:
         if self._prompt_text is not None and self._output_schema is not None:
             return self._prompt_text, self._output_schema
         if self.prompt_service is None:
@@ -64,9 +62,7 @@ class ModerationSLMAdapter:
         prompt_text = cfg.get("prompt_text")
         output_schema = cfg.get("output_schema")
         prompt_key = str(cfg.get("prompt_key") or self.prompt_key)
-        model_alias = str(
-            cfg.get("model_alias") or cfg.get("slm_model_alias") or self.model_alias
-        )
+        model_alias = str(cfg.get("model_alias") or cfg.get("slm_model_alias") or self.model_alias)
         max_tokens = int(cfg.get("max_tokens") or self.max_tokens)
         resolved_prompt_text, resolved_output_schema = await self._resolve_prompt(
             prompt_text=prompt_text,

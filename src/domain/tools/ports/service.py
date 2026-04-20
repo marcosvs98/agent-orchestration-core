@@ -16,7 +16,5 @@ class ToolsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def create_agent_version_tool_binding(
-        self, agent_version_tool_binding_create
-    ):
+    async def create_agent_version_tool_binding(self, agent_version_tool_binding_create):
         raise NotImplementedServiceException()

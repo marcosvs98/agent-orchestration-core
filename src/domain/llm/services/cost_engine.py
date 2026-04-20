@@ -8,9 +8,7 @@ from exceptions.service_exceptions import DomainValidationException
 
 
 class CostEngine:
-    def __init__(
-        self, pricing_repository: LLMPricingRepository, tracer: RuntimeTracerPort
-    ) -> None:
+    def __init__(self, pricing_repository: LLMPricingRepository, tracer: RuntimeTracerPort) -> None:
         self.pricing_repository = pricing_repository
         self.tracer = tracer
 

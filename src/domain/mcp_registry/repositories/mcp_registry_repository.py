@@ -215,8 +215,7 @@ class McpRegistryRepository:
                 select(FlowSnapshotModel.flow_snapshot_id)
                 .join(
                     FlowVersionModel,
-                    FlowVersionModel.flow_version_id
-                    == FlowSnapshotModel.flow_version_id,
+                    FlowVersionModel.flow_version_id == FlowSnapshotModel.flow_version_id,
                 )
                 .join(FlowModel, FlowModel.flow_id == FlowVersionModel.flow_id)
                 .where(
@@ -296,9 +295,7 @@ class McpRegistryRepository:
                 flow_deployment_id=server_row.flow_deployment_id,
             )
 
-    async def fetch_mcp_server_build_spec(
-        self, state: McpBindingState
-    ) -> McpServerBuildSpec:
+    async def fetch_mcp_server_build_spec(self, state: McpBindingState) -> McpServerBuildSpec:
         tool_rows: list[McpServerToolBinding] = []
         used_names: dict[str, int] = {}
         async with self.db.get_session() as session:
@@ -321,9 +318,7 @@ class McpRegistryRepository:
                 result = await session.execute(stmt)
                 for tcid, tname, cfg in result.all():
                     cfg = cfg or {}
-                    desc = (
-                        str(cfg.get("description") or cfg.get("summary") or "")
-                    ).strip()
+                    desc = (str(cfg.get("description") or cfg.get("summary") or "")).strip()
                     base = (tname or "").strip() or f"tool_{str(tcid)[:8]}"
                     if base not in used_names:
                         used_names[base] = 0
@@ -370,9 +365,7 @@ class McpRegistryRepository:
                     if slug in slugs:
                         slug = f"{slug}_{str(up.user_prompt_id).replace('-', '')[:8]}"
                     slugs[slug] = 1
-                    prompt_rows.append(
-                        (up.user_prompt_id, slug, up.title or "", up.content or "")
-                    )
+                    prompt_rows.append((up.user_prompt_id, slug, up.title or "", up.content or ""))
             vss = tuple(sorted(state.vector_store_ids, key=lambda x: str(x)))
             tool_rows.sort(key=lambda b: str(b.tool_config_id))
             prompt_rows.sort(key=lambda x: str(x[0]))

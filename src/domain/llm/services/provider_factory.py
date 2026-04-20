@@ -31,8 +31,6 @@ class LLMProviderFactory:
                 provider = self.slm_local_provider
             if provider is not None:
                 if agent_handle:
-                    agent_handle.success(
-                        output={"provider": provider.__class__.__name__}
-                    )
+                    agent_handle.success(output={"provider": provider.__class__.__name__})
                 return provider
             raise ValueError(f"unsupported_provider:{selection.provider}")

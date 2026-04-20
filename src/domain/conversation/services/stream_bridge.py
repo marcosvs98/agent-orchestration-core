@@ -11,12 +11,8 @@ class StreamBridge(ExecutionEventHook):
     def __init__(self, queue: asyncio.Queue[ConversationEvent | None]) -> None:
         self._queue = queue
 
-    async def _push(
-        self, event_type: SSEEventType, payload: dict[str, Any] | None = None
-    ) -> None:
-        await self._queue.put(
-            ConversationEvent(event_type=event_type, payload=payload or {})
-        )
+    async def _push(self, event_type: SSEEventType, payload: dict[str, Any] | None = None) -> None:
+        await self._queue.put(ConversationEvent(event_type=event_type, payload=payload or {}))
 
     async def _done(self) -> None:
         await self._queue.put(None)
@@ -44,9 +40,7 @@ class StreamBridge(ExecutionEventHook):
             SSEEventType.NODE_STARTED,
             {
                 "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id"))
-                if kwargs.get("node_id")
-                else None,
+                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
                 "payload": kwargs.get("payload") or {},
             },
         )
@@ -56,9 +50,7 @@ class StreamBridge(ExecutionEventHook):
             SSEEventType.NODE_COMPLETED,
             {
                 "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id"))
-                if kwargs.get("node_id")
-                else None,
+                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
                 "payload": kwargs.get("payload") or {},
             },
         )
@@ -68,9 +60,7 @@ class StreamBridge(ExecutionEventHook):
             SSEEventType.EDGE_EVALUATED,
             {
                 "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id"))
-                if kwargs.get("node_id")
-                else None,
+                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
                 "edge_id": kwargs.get("edge_id"),
                 "payload": kwargs.get("payload") or {},
             },

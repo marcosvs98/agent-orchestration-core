@@ -134,7 +134,7 @@ class MemoryCommitNode:
                     node_id=node_uuid,
                 ),
             )
-        except BaseServiceException as exc:
+        except BaseServiceException:
             return
 
     async def execute(

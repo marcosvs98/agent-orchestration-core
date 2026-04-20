@@ -28,20 +28,14 @@ class HardenedHttpClient:
         json_body: Mapping[str, Any],
         timeout_seconds: float | None = None,
     ) -> httpx.Response:
-        timeout = (
-            timeout_seconds if timeout_seconds is not None else self.timeout_seconds
-        )
+        timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
         attempt = 0
         last_exc: Exception | None = None
         try:
-            async with httpx.AsyncClient(
-                timeout=timeout, follow_redirects=True
-            ) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 while attempt <= self.max_retries:
                     try:
-                        response = await client.post(
-                            url, headers=headers, json=json_body
-                        )
+                        response = await client.post(url, headers=headers, json=json_body)
                         if response.status_code not in RETRY_STATUS_CODES:
                             return response
                     except Exception as exc:  # noqa: BLE001

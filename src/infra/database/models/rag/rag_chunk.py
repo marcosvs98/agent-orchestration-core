@@ -35,12 +35,8 @@ class RagChunk(ORMBaseModel):
     token_count = Column(Integer, nullable=False)
     embedding = Column(Vector(), nullable=True)
     chunk_metadata = Column("metadata", JSONB, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint(

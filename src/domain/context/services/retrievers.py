@@ -118,9 +118,7 @@ class UserMemoryReader:
                 if effective_top_k_override is None:
                     effective_top_k_override = activation_decision.effective_top_k
                 if isinstance(activation_decision.effective_filters_override, dict):
-                    filters_override.update(
-                        activation_decision.effective_filters_override
-                    )
+                    filters_override.update(activation_decision.effective_filters_override)
             if self.memory_policy_service:
                 resolved_policy = await self.memory_policy_service.resolve(
                     tenant_id=query.tenant_id

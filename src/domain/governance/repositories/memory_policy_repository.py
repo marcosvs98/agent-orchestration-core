@@ -82,19 +82,15 @@ class MemoryPolicyRepository:
     ) -> MemoryPolicyVersionModel | None:
         async with self.db.get_session() as session:
             stmt = select(MemoryPolicyVersionModel).where(
-                MemoryPolicyVersionModel.memory_policy_version_id
-                == memory_policy_version_id
+                MemoryPolicyVersionModel.memory_policy_version_id == memory_policy_version_id
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def set_version_status(
-        self, *, memory_policy_version_id: UUID, status: str
-    ) -> None:
+    async def set_version_status(self, *, memory_policy_version_id: UUID, status: str) -> None:
         async with self.db.get_session() as session:
             stmt = select(MemoryPolicyVersionModel).where(
-                MemoryPolicyVersionModel.memory_policy_version_id
-                == memory_policy_version_id
+                MemoryPolicyVersionModel.memory_policy_version_id == memory_policy_version_id
             )
             result = await session.execute(stmt)
             instance = result.scalar_one_or_none()
@@ -122,8 +118,7 @@ class MemoryPolicyRepository:
                 row.is_active = False
 
             stmt = select(MemoryPolicyVersionModel).where(
-                MemoryPolicyVersionModel.memory_policy_version_id
-                == memory_policy_version_id
+                MemoryPolicyVersionModel.memory_policy_version_id == memory_policy_version_id
             )
             target = (await session.execute(stmt)).scalar_one_or_none()
             if target is None:

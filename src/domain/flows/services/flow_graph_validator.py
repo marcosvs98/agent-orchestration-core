@@ -89,9 +89,7 @@ class FlowGraphValidator:
                 raise DomainValidationException(message="rag_pipeline_config_invalid")
 
         memory_commit_ids = [
-            node_id
-            for node_id, spec in nodes.items()
-            if spec.type == "MemoryCommitNode"
+            node_id for node_id, spec in nodes.items() if spec.type == "MemoryCommitNode"
         ]
         if len(memory_commit_ids) > 1:
             raise DomainValidationException(message="multiple_memory_commit_nodes")
@@ -104,9 +102,7 @@ class FlowGraphValidator:
                 continue
             for rule in dm:
                 if not isinstance(rule, dict):
-                    raise DomainValidationException(
-                        message="memory_commit_data_merge_rule_invalid"
-                    )
+                    raise DomainValidationException(message="memory_commit_data_merge_rule_invalid")
                 fid = rule.get("from_node_id")
                 if not fid or fid not in nodes:
                     raise DomainValidationException(

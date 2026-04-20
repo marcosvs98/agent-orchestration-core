@@ -160,9 +160,7 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
                 agent_handle.success(output={"inference_layer": inference_layer.value})
             return result
 
-    def _resolve_layer_policy(
-        self, policy_llm: Dict[str, Any] | None
-    ) -> InferenceLayerPolicy:
+    def _resolve_layer_policy(self, policy_llm: Dict[str, Any] | None) -> InferenceLayerPolicy:
         if policy_llm is None:
             return self.policy
         raw_layer_policy = policy_llm.get("inference_layers")
@@ -173,9 +171,7 @@ class LayeredInferenceOrchestrator(LLMExecutorPort):
         except Exception:
             return self.policy
 
-    def _passes_confidence_gate(
-        self, *, result: LLMResult, request: LLMRequest
-    ) -> bool:
+    def _passes_confidence_gate(self, *, result: LLMResult, request: LLMRequest) -> bool:
         if not result.output:
             return False
         if not request.output_schema:

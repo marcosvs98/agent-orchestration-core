@@ -62,7 +62,7 @@ O sistema segue **Domain-Driven Design (DDD)** com separação clara entre **aut
 - `src/adapters/` - Entradas e saídas do sistema
 - `src/infra/` - Implementações técnicas substituíveis
 
-Para detalhes completos, consulte [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Para detalhes completos, consulte [ARCHITECTURE.md](docs/Architecture/ARCHITECTURE.md) (atalho: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 
 ---
 
@@ -124,7 +124,7 @@ flowchart TB
     Infra --> LLMProviders
 ```
 
-Para diagramas detalhados, consulte [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Para diagramas detalhados, consulte [ARCHITECTURE.md](docs/Architecture/ARCHITECTURE.md).
 
 ---
 
@@ -413,9 +413,12 @@ Todos os eventos exigem `justification` obrigatória e são persistidos em `auth
 
 ### Documentação Interna
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitetura detalhada do sistema
+- [ARCHITECTURE.md](docs/Architecture/ARCHITECTURE.md) - Arquitetura detalhada do sistema
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Como contribuir
+- [DEVELOPMENT.md](DEVELOPMENT.md) - Setup local, testes e cobertura
+- [SECURITY.md](SECURITY.md) - Divulgação responsável
 - [COMMUNICATION.md](docs/COMMUNICATION.md) - Padrões de comunicação entre serviços
-- [RAG.md](docs/RAG.md) - Sistema RAG (Retrieval-Augmented Generation)
+- [RAG overview](docs/RAG/index.md) — RAG (Retrieval-Augmented Generation) documentation hub
 - [UNIMPLEMENTED_COMPONENTS.md](UNIMPLEMENTED_COMPONENTS.md) - Componentes pendentes de implementação
 
 ### Arquitetura e Padrões

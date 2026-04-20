@@ -72,9 +72,7 @@ class MemoryWriteService:
             item=memory_item,
             default_target=MemoryWriteTarget.USER_MEMORY_VECTOR,
             policy_schemas=(
-                resolved_policy.definition.allowed_schemas
-                if resolved_policy.definition
-                else []
+                resolved_policy.definition.allowed_schemas if resolved_policy.definition else []
             ),
         )
         result: MemoryWriteResult = MemoryWriteResult(
@@ -84,9 +82,7 @@ class MemoryWriteService:
         allowed_schema: AllowedSchema = self._find_allowed_schema(
             schema_id=memory_item.schema_id,
             policy_schemas=(
-                resolved_policy.definition.allowed_schemas
-                if resolved_policy.definition
-                else []
+                resolved_policy.definition.allowed_schemas if resolved_policy.definition else []
             ),
         )
 
@@ -111,9 +107,7 @@ class MemoryWriteService:
                     new_version=None,
                 )
             else:
-                has_value, preference_value = self._extract_preference_value(
-                    memory_item
-                )
+                has_value, preference_value = self._extract_preference_value(memory_item)
                 if not has_value:
                     await self._emit_memory_updated_outcome(
                         tenant_id=tenant_id,
@@ -211,46 +205,40 @@ class MemoryWriteService:
             )
 
         if MemoryWriteTarget.USER_MEMORY_VECTOR in targets:
-            cap: dict = (
-                await self.rag_runtime_service.resolve_user_memory_vector_document_cap(
+            cap: dict = await self.rag_runtime_service.resolve_user_memory_vector_document_cap(
+                tenant_id=tenant_id,
+            )
+            current_count: int = (
+                await self.rag_runtime_service.count_user_memory_documents_for_rag_config(
                     tenant_id=tenant_id,
+                    user_id=user_id,
+                    rag_config_id=memory_item.rag_config_id,
                 )
             )
-            current_count: int = await self.rag_runtime_service.count_user_memory_documents_for_rag_config(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                rag_config_id=memory_item.rag_config_id,
-            )
             if current_count < cap["effective_cap"]:
-                prepared_document = (
-                    await self.rag_runtime_service.prepare_document_for_embedding(
-                        tenant_id=tenant_id,
-                        rag_config_id=memory_item.rag_config_id,
-                        document=RagDocumentCreate(
-                            source=memory_item.source.value,
-                            doc_type=RagUserMemoryDocumentType.USER_MEMORY_ITEM.value,
-                            content=json.dumps(memory_item.data, ensure_ascii=True),
-                            metadata={
-                                "scope": ContextLayerScope.USER_MEMORY.value,
-                                "user_id": user_id,
-                                "schema_id": memory_item.schema_id,
-                                "schema_version": memory_item.schema_version,
-                                "policy_version_id": str(
-                                    resolved_policy.policy_version_id
-                                )
-                                if resolved_policy.policy_version_id
-                                else None,
-                                "observed_at": (
-                                    memory_item.observed_at.isoformat()
-                                    if isinstance(memory_item.observed_at, datetime)
-                                    else None
-                                ),
-                                "expires_at": expires_at.isoformat()
-                                if expires_at
-                                else None,
-                            },
-                        ),
-                    )
+                prepared_document = await self.rag_runtime_service.prepare_document_for_embedding(
+                    tenant_id=tenant_id,
+                    rag_config_id=memory_item.rag_config_id,
+                    document=RagDocumentCreate(
+                        source=memory_item.source.value,
+                        doc_type=RagUserMemoryDocumentType.USER_MEMORY_ITEM.value,
+                        content=json.dumps(memory_item.data, ensure_ascii=True),
+                        metadata={
+                            "scope": ContextLayerScope.USER_MEMORY.value,
+                            "user_id": user_id,
+                            "schema_id": memory_item.schema_id,
+                            "schema_version": memory_item.schema_version,
+                            "policy_version_id": str(resolved_policy.policy_version_id)
+                            if resolved_policy.policy_version_id
+                            else None,
+                            "observed_at": (
+                                memory_item.observed_at.isoformat()
+                                if isinstance(memory_item.observed_at, datetime)
+                                else None
+                            ),
+                            "expires_at": expires_at.isoformat() if expires_at else None,
+                        },
+                    ),
                 )
                 result.embedded_document_id = prepared_document.id
                 result.targets_applied.append(MemoryWriteTarget.USER_MEMORY_VECTOR)
@@ -277,12 +265,10 @@ class MemoryWriteService:
                         payload=event_payload,
                     )
                 elif self.embedding_job_queue is None:
-                    document: RagDocument = (
-                        await self.rag_runtime_service.embed_document_by_id(
-                            tenant_id=tenant_id,
-                            rag_config_id=memory_item.rag_config_id,
-                            document_id=prepared_document.id,
-                        )
+                    document: RagDocument = await self.rag_runtime_service.embed_document_by_id(
+                        tenant_id=tenant_id,
+                        rag_config_id=memory_item.rag_config_id,
+                        document_id=prepared_document.id,
                     )
                     result.embedded_document_id = document.id
                     event_payload = {
@@ -309,15 +295,9 @@ class MemoryWriteService:
                             tenant_id=tenant_id,
                             rag_config_id=memory_item.rag_config_id,
                             document_id=prepared_document.id,
-                            flow_run_id=event_context.flow_run_id
-                            if event_context
-                            else None,
-                            session_id=event_context.session_id
-                            if event_context
-                            else None,
-                            correlation_id=event_context.correlation_id
-                            if event_context
-                            else None,
+                            flow_run_id=event_context.flow_run_id if event_context else None,
+                            session_id=event_context.session_id if event_context else None,
+                            correlation_id=event_context.correlation_id if event_context else None,
                             user_id=user_id,
                             policy_version_id=resolved_policy.policy_version_id,
                             schema_id=memory_item.schema_id,
@@ -358,9 +338,7 @@ class MemoryWriteService:
                 return allowed_schema
         return None
 
-    def _extract_payload_preference_key(
-        self, memory_item: UserMemoryItem
-    ) -> str | None:
+    def _extract_payload_preference_key(self, memory_item: UserMemoryItem) -> str | None:
         key = memory_item.data.get("preference_key")
         if not isinstance(key, str):
             return None
@@ -400,10 +378,7 @@ class MemoryWriteService:
         return True, memory_item.data.get("preference_value")
 
     def _source_priority_values(self) -> dict[str, int]:
-        return {
-            source.value: priority
-            for source, priority in self.SOURCE_PRIORITY_MAP.items()
-        }
+        return {source.value: priority for source, priority in self.SOURCE_PRIORITY_MAP.items()}
 
     async def _emit_memory_updated_outcome(
         self,

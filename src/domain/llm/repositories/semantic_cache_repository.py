@@ -31,9 +31,7 @@ class SemanticCacheRepository:
         similarity_threshold: float,
         now: datetime,
     ) -> SemanticAnswerCacheModel | None:
-        distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(
-            query_embedding
-        )
+        distance_expr = SemanticAnswerCacheModel.embedding.cosine_distance(query_embedding)
         stmt = (
             select(
                 SemanticAnswerCacheModel,

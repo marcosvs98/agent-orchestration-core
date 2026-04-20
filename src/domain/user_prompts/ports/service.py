@@ -11,9 +11,7 @@ class UserPromptsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def get_user_prompt(
-        self, *, tenant_id: UUID, user_prompt_id: UUID
-    ) -> UserPrompt:
+    async def get_user_prompt(self, *, tenant_id: UUID, user_prompt_id: UUID) -> UserPrompt:
         raise NotImplementedServiceException()
 
     @abstractmethod
@@ -23,7 +21,5 @@ class UserPromptsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def deactivate_user_prompt(
-        self, *, tenant_id: UUID, user_prompt_id: UUID
-    ) -> None:
+    async def deactivate_user_prompt(self, *, tenant_id: UUID, user_prompt_id: UUID) -> None:
         raise NotImplementedServiceException()

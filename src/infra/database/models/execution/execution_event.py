@@ -36,9 +36,7 @@ class ExecutionEvent(ORMBaseModel):
     )
     correlation_id = Column(PG_UUID(as_uuid=True), nullable=False)
     causation_id = Column(PG_UUID(as_uuid=True), nullable=True)
-    occurred_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     event_sequence = Column(BigInteger, nullable=False)
     schema_version = Column(Integer, nullable=False, server_default="1")
     type = Column(Text(), nullable=False)

@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (unit + integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        # --extra dev: pytest, pytest-cov, etc.; --all-groups: pylint, ruff, mypy, vulture, …
+        run: uv sync --all-extras --all-groups
+
+      - name: Ruff
+        run: uv run ruff check src
+
+      - name: Mypy (informational)
+        continue-on-error: true
+        run: uv run mypy src
+
+      - name: Pytest with coverage
+        id: pytest
+        run: uv run python -m pytest tests/unit tests/integration -m "not validation_integration"
+
+      - name: Vulture report
+        run: bash support/scripts/quality/vulture_report.sh
+
+      - name: Correlate dead code (Vulture + coverage + omit)
+        run: uv run python support/scripts/quality/correlate_dead_code.py
+
+      - name: Vulture vs baseline
+        run: bash support/scripts/quality/vulture_diff.sh
+
+      - name: Upload dead-code artifacts
+        uses: actions/upload-artifact@v4
+        if: always() && steps.pytest.outcome == 'success'
+        with:
+          name: dead-code-reports
+          path: |
+            artifacts/vulture-latest.txt
+            artifacts/dead-code-correlation.txt
+
+      - name: Upload coverage.xml
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false

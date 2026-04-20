@@ -201,9 +201,7 @@ class ExecutionService(ExecutionServicePort):
         if tools_service:
             self.tools_service = tools_service
         else:
-            authoring_events = AuthoringEventRepository(
-                repository.db, tracer=self.tracer
-            )
+            authoring_events = AuthoringEventRepository(repository.db, tracer=self.tracer)
             self.tools_service = ToolsService(
                 repository=self.tools_repository,
                 agents_repository=self.agents_repository,
@@ -468,24 +466,18 @@ class ExecutionService(ExecutionServicePort):
             flow_id = flow_run.flow_id
             flow_version_id = flow_run.flow_version_id
             if flow_id is None and flow_version_id is None:
-                raise DomainValidationException(
-                    message="flow_id_or_flow_version_id_required"
-                )
+                raise DomainValidationException(message="flow_id_or_flow_version_id_required")
 
             if flow_version_id is not None:
                 flow_version = await self.repository.get_flow_version(flow_version_id)
                 if flow_version is None:
                     raise NotFoundServiceException(message="flow_version_not_found")
                 if flow_version.status != VersionStatus.PUBLISHED:
-                    raise ResourceBlockedServiceException(
-                        message="flow_version_not_published"
-                    )
+                    raise ResourceBlockedServiceException(message="flow_version_not_published")
                 flow_id = flow_version.flow_id
 
                 if agent_handle:
-                    agent_handle.success(
-                        output={"flow_version": flow_version.to_dict()}
-                    )
+                    agent_handle.success(output={"flow_version": flow_version.to_dict()})
 
         if flow_id is None:
             raise DomainValidationException(message="flow_id_required")
@@ -496,9 +488,7 @@ class ExecutionService(ExecutionServicePort):
         if flow is None or flow.tenant_id != tenant_id:
             raise NotFoundServiceException(message="flow_not_found")
 
-        active_flow_version_id = await self.repository.get_active_flow_version_id(
-            flow_id
-        )
+        active_flow_version_id = await self.repository.get_active_flow_version_id(flow_id)
         if active_flow_version_id is None:
             raise ResourceBlockedServiceException(message="flow_not_active")
         if flow_version_id is not None and active_flow_version_id != flow_version_id:
@@ -524,9 +514,7 @@ class ExecutionService(ExecutionServicePort):
             except (ValueError, TypeError) as exc:
                 raise DomainValidationException(message="invalid_trace_id") from exc
 
-        existing_session: SessionModel = await self.repository.get_session(
-            flow_run.session_id
-        )
+        existing_session: SessionModel = await self.repository.get_session(flow_run.session_id)
         if existing_session is None:
             await self.repository.create_session(
                 session_id=flow_run.session_id,
@@ -534,8 +522,7 @@ class ExecutionService(ExecutionServicePort):
                 user_id=flow_run.user_id,
             )
         elif (
-            existing_session.tenant_id != tenant_id
-            or existing_session.user_id != flow_run.user_id
+            existing_session.tenant_id != tenant_id or existing_session.user_id != flow_run.user_id
         ):
             raise DomainConflictException(message="session_user_mismatch")
 
@@ -575,30 +562,22 @@ class ExecutionService(ExecutionServicePort):
                 origin_flow_run.status == RunStatus.WAITING_INPUT
                 or origin_flow_run.canonical_status == FlowRunStatus.WAITING
             ):
-                origin_graph_state = await self.repository.get_graph_state(
-                    origin_flow_run_id
-                )
+                origin_graph_state = await self.repository.get_graph_state(origin_flow_run_id)
                 if origin_graph_state is not None:
                     try:
                         snapshot = _GraphStateSnapshot.model_validate(
                             origin_graph_state.state or {}
                         )
                     except ValidationError as exc:
-                        raise DomainValidationException(
-                            message="invalid_graph_state"
-                        ) from exc
-                    origin_start_node_id = (
-                        snapshot.resume_to_node_id or snapshot.current_node_id
-                    )
+                        raise DomainValidationException(message="invalid_graph_state") from exc
+                    origin_start_node_id = snapshot.resume_to_node_id or snapshot.current_node_id
                     origin_initial_state = snapshot.state
                     origin_initial_memory = snapshot.memory
                 else:
                     origin_flow_run_id = None
             else:
                 origin_flow_run_id = None
-        flow_deployment = await self.repository.get_active_flow_deployment(
-            flow_id=flow_id
-        )
+        flow_deployment = await self.repository.get_active_flow_deployment(flow_id=flow_id)
         flow_snapshot = None
         if flow_deployment is not None:
             flow_snapshot = await self.repository.get_flow_snapshot_by_id(
@@ -613,9 +592,7 @@ class ExecutionService(ExecutionServicePort):
             selected_flow_version_id
         )
         if flow_snapshot is not None:
-            flow_graph_snapshot_id_value = flow_snapshot.snapshot.get(
-                "flow_graph_snapshot_id"
-            )
+            flow_graph_snapshot_id_value = flow_snapshot.snapshot.get("flow_graph_snapshot_id")
             if flow_graph_snapshot_id_value:
                 graph_snapshot = await self.repository.get_flow_graph_snapshot(
                     UUID(flow_graph_snapshot_id_value)
@@ -632,8 +609,7 @@ class ExecutionService(ExecutionServicePort):
             )
             runtime_policy_hash = self._hash_dict(flow_snapshot.runtime_policy or {})
             execution_plan_hash = str(
-                flow_snapshot.snapshot.get("graph_hash")
-                or self._hash_dict(flow_snapshot.snapshot)
+                flow_snapshot.snapshot.get("graph_hash") or self._hash_dict(flow_snapshot.snapshot)
             )
             tool_catalog_hash = self._hash_dict(flow_snapshot.tool_catalog or {})
             llm_provider_config_hash = flow_snapshot.llm_provider_config_hash
@@ -641,15 +617,11 @@ class ExecutionService(ExecutionServicePort):
             if not settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED:
                 raise ResourceBlockedServiceException(message="flow_snapshot_required")
             if graph_snapshot is None:
-                raise ResourceBlockedServiceException(
-                    message="flow_graph_snapshot_missing"
-                )
+                raise ResourceBlockedServiceException(message="flow_graph_snapshot_missing")
             runtime_policy = await self.policy_resolver.resolve(
                 tenant_id=tenant_id, flow_id=flow_id
             )
-            runtime_policy_hash = self._hash_dict(
-                runtime_policy.definition.model_dump()
-            )
+            runtime_policy_hash = self._hash_dict(runtime_policy.definition.model_dump())
             execution_plan_hash = graph_snapshot.graph_hash
             tool_catalog_hash = self._hash_dict(
                 {"graph": execution_plan_hash, "runtime_policy": runtime_policy_hash}
@@ -681,9 +653,7 @@ class ExecutionService(ExecutionServicePort):
             input_payload=flow_run.input,
             interaction_id=interaction_id,
             flow_graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
-            flow_snapshot_id=flow_snapshot.flow_snapshot_id
-            if flow_snapshot is not None
-            else None,
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id if flow_snapshot is not None else None,
             flow_deployment_id=flow_deployment.flow_deployment_id
             if flow_deployment is not None
             else None,
@@ -750,9 +720,7 @@ class ExecutionService(ExecutionServicePort):
             trace_id=trace_uuid,
             root_observation_id=None,
             flow_graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
-            flow_snapshot_id=flow_snapshot.flow_snapshot_id
-            if flow_snapshot is not None
-            else None,
+            flow_snapshot_id=flow_snapshot.flow_snapshot_id if flow_snapshot is not None else None,
             flow_deployment_id=flow_deployment.flow_deployment_id
             if flow_deployment is not None
             else None,
@@ -940,9 +908,7 @@ class ExecutionService(ExecutionServicePort):
                 UUID(str(flow_snapshot_id_value))
             )
             if flow_snapshot is not None:
-                graph_snapshot_id_value = flow_snapshot.snapshot.get(
-                    "flow_graph_snapshot_id"
-                )
+                graph_snapshot_id_value = flow_snapshot.snapshot.get("flow_graph_snapshot_id")
                 if graph_snapshot_id_value:
                     graph_snapshot = await self.repository.get_flow_graph_snapshot(
                         UUID(str(graph_snapshot_id_value))
@@ -966,10 +932,8 @@ class ExecutionService(ExecutionServicePort):
                 tenant_id=tenant_id, flow_id=flow_id
             )
         if graph_snapshot is None:
-            graph_snapshot = (
-                await self.repository.get_flow_graph_snapshot_by_flow_version(
-                    flow_version.flow_version_id
-                )
+            graph_snapshot = await self.repository.get_flow_graph_snapshot_by_flow_version(
+                flow_version.flow_version_id
             )
         if graph_snapshot is None:
             raise NotFoundServiceException(message="flow_graph_snapshot_not_found")
@@ -1044,7 +1008,7 @@ class ExecutionService(ExecutionServicePort):
             channel=channel,
             external_message_id=external_message_id,
             graph_snapshot_id=graph_snapshot.flow_graph_snapshot_id,
-            )
+        )
 
         if trace_context.root_observation_id:
             with self.tracer.observe(
@@ -1138,9 +1102,7 @@ class ExecutionService(ExecutionServicePort):
         if node is None:
             raise NotFoundServiceException(message="node_not_found")
 
-        agent_version = await self.repository.get_agent_version(
-            agent_run.agent_version_id
-        )
+        agent_version = await self.repository.get_agent_version(agent_run.agent_version_id)
         if agent_version is None:
             raise NotFoundServiceException(message="agent_version_not_found")
         if agent_version.status != VersionStatus.PUBLISHED:
@@ -1148,23 +1110,16 @@ class ExecutionService(ExecutionServicePort):
         active_agent_version_id = await self.repository.get_active_agent_version_id(
             agent_version.agent_id
         )
-        if (
-            active_agent_version_id is None
-            or active_agent_version_id != agent_run.agent_version_id
-        ):
+        if active_agent_version_id is None or active_agent_version_id != agent_run.agent_version_id:
             raise ResourceBlockedServiceException(message="agent_version_not_active")
 
         if agent_version.ai_execution_policy_version_id is None:
-            raise ResourceBlockedServiceException(
-                message="ai_execution_policy_not_active"
-            )
+            raise ResourceBlockedServiceException(message="ai_execution_policy_not_active")
         policy_version = await self.repository.get_ai_execution_policy_version(
             agent_version.ai_execution_policy_version_id
         )
         if policy_version is None:
-            raise NotFoundServiceException(
-                message="ai_execution_policy_version_not_found"
-            )
+            raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         if policy_version.status != VersionStatus.PUBLISHED:
             raise ResourceBlockedServiceException(message="ai_execution_policy_blocked")
         model_record = await self.repository.get_model(policy_version.model_id)
@@ -1181,13 +1136,12 @@ class ExecutionService(ExecutionServicePort):
                     raise RagNotAllowedException(message="rag_not_allowed_for_task")
             elif ck == RagCorpusKind.USER_MEMORY:
                 if not (
-                    bool(node.allow_user_memory_structured)
-                    or bool(node.allow_user_memory_vector)
+                    bool(node.allow_user_memory_structured) or bool(node.allow_user_memory_vector)
                 ):
                     raise RagNotAllowedException(message="rag_not_allowed_for_task")
 
-        billing_policy_version_id = (
-            await self.repository.get_active_billing_policy_version_id(tenant_id)
+        billing_policy_version_id = await self.repository.get_active_billing_policy_version_id(
+            tenant_id
         )
         if billing_policy_version_id is None:
             raise ResourceBlockedServiceException(message="billing_policy_not_active")
@@ -1202,20 +1156,14 @@ class ExecutionService(ExecutionServicePort):
             "allow_rag_tenant": bool(node.allow_rag_tenant),
             "allow_user_memory_structured": bool(node.allow_user_memory_structured),
             "allow_user_memory_vector": bool(node.allow_user_memory_vector),
-            "rag_config_id": (
-                str(node.rag_config_id) if node.rag_config_id is not None else None
-            ),
+            "rag_config_id": (str(node.rag_config_id) if node.rag_config_id is not None else None),
             "effective_rag_config_id": (
-                str(effective_rag_config_id)
-                if effective_rag_config_id is not None
-                else None
+                str(effective_rag_config_id) if effective_rag_config_id is not None else None
             ),
             "allow_session_context": bool(node.allow_session_context),
             "allow_memory_write": bool(node.allow_memory_write),
             "agent_version_id": str(agent_run.agent_version_id),
-            "ai_execution_policy_version_id": str(
-                agent_version.ai_execution_policy_version_id
-            ),
+            "ai_execution_policy_version_id": str(agent_version.ai_execution_policy_version_id),
             "model_id": str(policy_version.model_id),
         }
         runtime_snapshot_hash = self._hash_dict(runtime_snapshot)
@@ -1311,15 +1259,11 @@ class ExecutionService(ExecutionServicePort):
                 and isinstance(output_schema, type)
                 and issubclass(output_schema, BaseModel)
             ):
-                normalized_output = output_schema.model_validate(
-                    raw_output
-                ).model_dump()
+                normalized_output = output_schema.model_validate(raw_output).model_dump()
         except ValidationError as exc:
             if node_run is None:
                 raise DomainValidationException(message="node_run_not_found")
-            session_id, tenant_id = await self.repository.get_flow_context(
-                node_run.flow_run_id
-            )
+            session_id, tenant_id = await self.repository.get_flow_context(node_run.flow_run_id)
             await self.repository.append_execution_event(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -1376,9 +1320,7 @@ class ExecutionService(ExecutionServicePort):
         )
         if node_run is None:
             raise DomainValidationException(message="node_run_not_found")
-        session_id, tenant_id = await self.repository.get_flow_context(
-            node_run.flow_run_id
-        )
+        session_id, tenant_id = await self.repository.get_flow_context(node_run.flow_run_id)
         await self.repository.append_execution_event(
             tenant_id=tenant_id,
             session_id=session_id,
@@ -1434,8 +1376,8 @@ class ExecutionService(ExecutionServicePort):
         if tool_run.node_run_id is None and tool_run.agent_run_id is None:
             raise DomainValidationException(message="tool_run_missing_parent")
 
-        billing_policy_version_id = (
-            await self.repository.get_active_billing_policy_version_id(tenant_id)
+        billing_policy_version_id = await self.repository.get_active_billing_policy_version_id(
+            tenant_id
         )
         if billing_policy_version_id is None:
             raise ResourceBlockedServiceException(message="billing_policy_not_active")
@@ -1503,20 +1445,15 @@ class ExecutionService(ExecutionServicePort):
             agent_run = await self.repository.get_agent_run(tool_run.agent_run_id)
             if agent_run is None:
                 raise NotFoundServiceException(message="agent_run_not_found")
-            agent_version = await self.repository.get_agent_version(
-                agent_run.agent_version_id
-            )
+            agent_version = await self.repository.get_agent_version(agent_run.agent_version_id)
             if agent_version is None:
                 raise NotFoundServiceException(message="agent_version_not_found")
             if (
                 agent_version.supported_tool_schema_version is not None
                 and tool_config.schema_version is not None
-                and agent_version.supported_tool_schema_version
-                != tool_config.schema_version
+                and agent_version.supported_tool_schema_version != tool_config.schema_version
             ):
-                raise SchemaIncompatibleException(
-                    message="tool_config_schema_incompatible"
-                )
+                raise SchemaIncompatibleException(message="tool_config_schema_incompatible")
             if (
                 agent_version.supported_tool_config_hash_prefix
                 and tool_config.config_hash
@@ -1605,9 +1542,7 @@ class ExecutionService(ExecutionServicePort):
         for event in reversed(all_events):
             if event.type == ExecutionEventType.FlowFailed:
                 reason_str = (
-                    event.tool_run.get("reason")
-                    if isinstance(event.payload, dict)
-                    else None
+                    event.tool_run.get("reason") if isinstance(event.payload, dict) else None
                 )
                 if reason_str:
                     try:
@@ -1652,12 +1587,8 @@ class ExecutionService(ExecutionServicePort):
                 status=node_run.status,
                 canonical_status=node_run.canonical_status,
                 correlation_id=node_run.correlation_id,
-                started_at=node_run.started_at.isoformat()
-                if node_run.started_at
-                else None,
-                finished_at=node_run.finished_at.isoformat()
-                if node_run.finished_at
-                else None,
+                started_at=node_run.started_at.isoformat() if node_run.started_at else None,
+                finished_at=node_run.finished_at.isoformat() if node_run.finished_at else None,
                 input=node_run.input,
                 output=node_run.output,
                 error=node_run.error,
@@ -1690,12 +1621,8 @@ class ExecutionService(ExecutionServicePort):
                 status=agent_run.status,
                 canonical_status=agent_run.canonical_status,
                 correlation_id=agent_run.correlation_id,
-                started_at=agent_run.started_at.isoformat()
-                if agent_run.started_at
-                else None,
-                finished_at=agent_run.finished_at.isoformat()
-                if agent_run.finished_at
-                else None,
+                started_at=agent_run.started_at.isoformat() if agent_run.started_at else None,
+                finished_at=agent_run.finished_at.isoformat() if agent_run.finished_at else None,
                 input=agent_run.input,
                 output=agent_run.output,
                 error=agent_run.error,

@@ -35,12 +35,8 @@ class SemanticAnswerCache(ORMBaseModel):
     hit_count = Column(Integer, nullable=False, server_default="0")
     expires_at = Column(DateTime(timezone=True), nullable=False)
     last_hit_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint(

@@ -104,13 +104,9 @@ def _validate_profile_schema_version(profile: dict[str, object]) -> None:
     try:
         sv = int(raw)
     except (TypeError, ValueError) as exc:
-        raise DomainValidationException(
-            message="user_memory_profile_schema_invalid"
-        ) from exc
+        raise DomainValidationException(message="user_memory_profile_schema_invalid") from exc
     if sv < _PROFILE_SCHEMA_MIN or sv > _PROFILE_SCHEMA_MAX:
-        raise DomainValidationException(
-            message="user_memory_profile_schema_unsupported"
-        )
+        raise DomainValidationException(message="user_memory_profile_schema_unsupported")
 
 
 class ExecutionRepository:
@@ -135,9 +131,7 @@ class ExecutionRepository:
         if flow_run_id not in self._event_batch_buffer:
             self._event_batch_buffer[flow_run_id] = []
 
-    async def _persist_execution_events_batch(
-        self, flow_run_id: UUID, events: list[dict]
-    ) -> None:
+    async def _persist_execution_events_batch(self, flow_run_id: UUID, events: list[dict]) -> None:
         if not events:
             return
         with self.tracer.observe(
@@ -150,9 +144,7 @@ class ExecutionRepository:
                 user_id = first.get("user_id")
                 if user_id is None:
                     flow_run_result = await session.execute(
-                        select(FlowRunModel.user_id).where(
-                            FlowRunModel.flow_run_id == flow_run_id
-                        )
+                        select(FlowRunModel.user_id).where(FlowRunModel.flow_run_id == flow_run_id)
                     )
                     user_id = flow_run_result.scalar_one_or_none()
                 if user_id is None:
@@ -164,9 +156,7 @@ class ExecutionRepository:
                 )
                 result = await session.execute(
                     select(
-                        sa.func.coalesce(
-                            sa.func.max(ExecutionEventModel.event_sequence), 0
-                        )
+                        sa.func.coalesce(sa.func.max(ExecutionEventModel.event_sequence), 0)
                     ).where(ExecutionEventModel.flow_run_id == flow_run_id)
                 )
                 next_seq = int(result.scalar_one()) + 1
@@ -236,9 +226,7 @@ class ExecutionRepository:
                 "interaction_id": str(interaction_id),
                 "flow_graph_snapshot_id": str(flow_graph_snapshot_id),
                 "flow_snapshot_id": str(flow_snapshot_id) if flow_snapshot_id else None,
-                "flow_deployment_id": str(flow_deployment_id)
-                if flow_deployment_id
-                else None,
+                "flow_deployment_id": str(flow_deployment_id) if flow_deployment_id else None,
                 "execution_plan_hash": execution_plan_hash,
                 "runtime_policy_hash": runtime_policy_hash,
                 "tool_catalog_hash": tool_catalog_hash,
@@ -306,9 +294,7 @@ class ExecutionRepository:
             )
             return result.scalar_one_or_none()
 
-    async def get_flow_snapshot_by_id(
-        self, flow_snapshot_id: UUID
-    ) -> FlowSnapshotModel | None:
+    async def get_flow_snapshot_by_id(self, flow_snapshot_id: UUID) -> FlowSnapshotModel | None:
         async with self.db.get_session() as session:
             result = await session.execute(
                 select(FlowSnapshotModel).where(
@@ -328,9 +314,7 @@ class ExecutionRepository:
             )
             return result.scalar_one_or_none()
 
-    async def set_root_observation_id(
-        self, *, flow_run_id: UUID, root_observation_id: str
-    ) -> None:
+    async def set_root_observation_id(self, *, flow_run_id: UUID, root_observation_id: str) -> None:
         with self.tracer.observe(
             as_type="tool",
             name="domain.execution.repository.set_root_observation_id",
@@ -470,9 +454,7 @@ class ExecutionRepository:
 
                 return session_record
 
-    async def create_session(
-        self, *, session_id: UUID, tenant_id: UUID, user_id: str
-    ) -> None:
+    async def create_session(self, *, session_id: UUID, tenant_id: UUID, user_id: str) -> None:
         async with self.db.get_session() as session:
             user_result = await session.execute(
                 select(UserModel).where(
@@ -483,9 +465,7 @@ class ExecutionRepository:
             user_record = user_result.scalar_one_or_none()
             if user_record is None:
                 session.add(UserModel(tenant_id=tenant_id, user_id=user_id))
-            stmt_session = select(SessionModel).where(
-                SessionModel.session_id == session_id
-            )
+            stmt_session = select(SessionModel).where(SessionModel.session_id == session_id)
             query_sql_session = compile_query(stmt_session)
 
             with self.tracer.observe(
@@ -519,18 +499,13 @@ class ExecutionRepository:
                     },
                 ) as tool_handle:
                     session.add(
-                        SessionModel(
-                            session_id=session_id, tenant_id=tenant_id, user_id=user_id
-                        )
+                        SessionModel(session_id=session_id, tenant_id=tenant_id, user_id=user_id)
                     )
                     await session.commit()
                     if tool_handle:
                         tool_handle.success(output={"session_id": str(session_id)})
             else:
-                if (
-                    existing_record.tenant_id != tenant_id
-                    or existing_record.user_id != user_id
-                ):
+                if existing_record.tenant_id != tenant_id or existing_record.user_id != user_id:
                     raise DomainConflictException(message="session_user_mismatch")
                 await session.commit()
 
@@ -558,9 +533,7 @@ class ExecutionRepository:
             return flow_run.session_id, session_record.tenant_id
 
     async def get_user_preferences(self, *, tenant_id: UUID, user_id: str) -> dict:
-        profile = await self.get_user_memory_profile(
-            tenant_id=tenant_id, user_id=user_id
-        )
+        profile = await self.get_user_memory_profile(tenant_id=tenant_id, user_id=user_id)
         _validate_profile_schema_version(profile)
         return _preferences_dict_from_profile(profile)
 
@@ -569,9 +542,7 @@ class ExecutionRepository:
     ) -> tuple[dict[str, object], dict[str, object]]:
         """Return preference map and full profile after a single load and schema check."""
 
-        profile = await self.get_user_memory_profile(
-            tenant_id=tenant_id, user_id=user_id
-        )
+        profile = await self.get_user_memory_profile(tenant_id=tenant_id, user_id=user_id)
         _validate_profile_schema_version(profile)
         return _preferences_dict_from_profile(profile), profile
 
@@ -639,9 +610,7 @@ class ExecutionRepository:
                 profile["profile_schema_version"] = _PROFILE_SCHEMA_MIN
 
             prefs_raw = profile.get(_MEMORY_PREFS_KEY)
-            prefs: dict[str, object] = (
-                dict(prefs_raw) if type(prefs_raw) is dict else {}
-            )
+            prefs: dict[str, object] = dict(prefs_raw) if type(prefs_raw) is dict else {}
 
             existing_entry = prefs.get(preference_key)
             previous_source: str | None = None
@@ -856,9 +825,7 @@ class ExecutionRepository:
             async with self.db.get_session() as session:
                 if user_id is None:
                     flow_run_result = await session.execute(
-                        select(FlowRunModel.user_id).where(
-                            FlowRunModel.flow_run_id == flow_run_id
-                        )
+                        select(FlowRunModel.user_id).where(FlowRunModel.flow_run_id == flow_run_id)
                     )
                     user_id = flow_run_result.scalar_one_or_none()
                 if user_id is None:
@@ -870,9 +837,7 @@ class ExecutionRepository:
                 )
                 result = await session.execute(
                     select(
-                        sa.func.coalesce(
-                            sa.func.max(ExecutionEventModel.event_sequence), 0
-                        )
+                        sa.func.coalesce(sa.func.max(ExecutionEventModel.event_sequence), 0)
                     ).where(ExecutionEventModel.flow_run_id == flow_run_id)
                 )
                 next_seq = int(result.scalar_one()) + 1
@@ -1058,9 +1023,7 @@ class ExecutionRepository:
 
                 return flow_run
 
-    async def get_interaction_metadata_for_flow_run(
-        self, flow_run_id: UUID
-    ) -> dict[str, Any]:
+    async def get_interaction_metadata_for_flow_run(self, flow_run_id: UUID) -> dict[str, Any]:
         flow_run = await self.get_flow_run(flow_run_id)
         if flow_run is None or flow_run.interaction_id is None:
             return {}
@@ -1158,9 +1121,7 @@ class ExecutionRepository:
 
                 return tool_run
 
-    async def get_active_billing_policy_version_id(
-        self, tenant_id: UUID
-    ) -> UUID | None:
+    async def get_active_billing_policy_version_id(self, tenant_id: UUID) -> UUID | None:
         key = f"active_billing_version:{tenant_id}"
         if cached := await self.cache_adapter.get(key):
             if isinstance(cached, dict) and cached.get("billing_policy_version_id"):
@@ -1196,9 +1157,7 @@ class ExecutionRepository:
 
         if version_id is None:
             return None
-        await self.cache_adapter.set(
-            key, {"billing_policy_version_id": str(version_id)}
-        )
+        await self.cache_adapter.set(key, {"billing_policy_version_id": str(version_id)})
         return version_id
 
     async def get_billing_policy_version(
@@ -1209,8 +1168,7 @@ class ExecutionRepository:
             return BillingPolicyVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(BillingPolicyVersionModel).where(
-                BillingPolicyVersionModel.billing_policy_version_id
-                == billing_policy_version_id
+                BillingPolicyVersionModel.billing_policy_version_id == billing_policy_version_id
             )
             query_sql = compile_query(stmt)
 
@@ -1288,8 +1246,7 @@ class ExecutionRepository:
             return MemoryPolicyVersionModel.from_dict(cached)
         async with self.db.get_session() as session:
             stmt = select(MemoryPolicyVersionModel).where(
-                MemoryPolicyVersionModel.memory_policy_version_id
-                == memory_policy_version_id
+                MemoryPolicyVersionModel.memory_policy_version_id == memory_policy_version_id
             )
             query_sql = compile_query(stmt)
 
@@ -1402,9 +1359,7 @@ class ExecutionRepository:
         self, *, agent_run_id: UUID, billing_policy_version_id: UUID
     ) -> None:
         async with self.db.get_session() as session:
-            stmt_ar = select(AgentRunModel).where(
-                AgentRunModel.agent_run_id == agent_run_id
-            )
+            stmt_ar = select(AgentRunModel).where(AgentRunModel.agent_run_id == agent_run_id)
             query_sql_ar = compile_query(stmt_ar)
 
             with self.tracer.observe(
@@ -1448,9 +1403,7 @@ class ExecutionRepository:
         estimated_cost: float | None = None,
     ) -> None:
         async with self.db.get_session() as session:
-            stmt_tr = select(ToolRunModel).where(
-                ToolRunModel.tool_run_id == tool_run_id
-            )
+            stmt_tr = select(ToolRunModel).where(ToolRunModel.tool_run_id == tool_run_id)
             query_sql_tr = compile_query(stmt_tr)
 
             with self.tracer.observe(
@@ -1514,9 +1467,7 @@ class ExecutionRepository:
                     "query": query_sql,
                     "params": {
                         "flow_run_id": str(flow_run_id) if flow_run_id else None,
-                        "correlation_id": (
-                            str(correlation_id) if correlation_id else None
-                        ),
+                        "correlation_id": (str(correlation_id) if correlation_id else None),
                         "limit": limit,
                     },
                 },
@@ -1632,9 +1583,7 @@ class ExecutionRepository:
         error: dict | None,
     ) -> None:
         async with self.db.get_session() as session:
-            stmt_tr = select(ToolRunModel).where(
-                ToolRunModel.tool_run_id == tool_run_id
-            )
+            stmt_tr = select(ToolRunModel).where(ToolRunModel.tool_run_id == tool_run_id)
             query_sql_tr = compile_query(stmt_tr)
 
             with self.tracer.observe(
@@ -1788,9 +1737,7 @@ class ExecutionRepository:
                 )
             await session.commit()
             if tool_handle:
-                tool_handle.success(
-                    output={"response_artifact_id": str(response_artifact_id)}
-                )
+                tool_handle.success(output={"response_artifact_id": str(response_artifact_id)})
         return response_artifact_id
 
     async def create_response_artifact_for_flow_run(
@@ -1818,9 +1765,7 @@ class ExecutionRepository:
                 )
             await session.commit()
             if tool_handle:
-                tool_handle.success(
-                    output={"response_artifact_id": str(response_artifact_id)}
-                )
+                tool_handle.success(output={"response_artifact_id": str(response_artifact_id)})
         return response_artifact_id
 
     async def create_tool_run(
@@ -1914,9 +1859,7 @@ class ExecutionRepository:
         canonical_status: str,
     ) -> None:
         async with self.db.get_session() as session:
-            stmt_nr = select(NodeRunModel).where(
-                NodeRunModel.node_run_id == node_run_id
-            )
+            stmt_nr = select(NodeRunModel).where(NodeRunModel.node_run_id == node_run_id)
             query_sql_nr = compile_query(stmt_nr)
 
             with self.tracer.observe(
@@ -1952,18 +1895,14 @@ class ExecutionRepository:
             ) as tool_handle:
                 await session.commit()
             if tool_handle:
-                tool_handle.success(
-                    output={"node_run_id": str(node_run_id), "status": status}
-                )
+                tool_handle.success(output={"node_run_id": str(node_run_id), "status": status})
 
     async def get_graph_state(self, flow_run_id: UUID) -> GraphStateModel | None:
         key = f"graph_state:{flow_run_id}"
         if cached := await self.cache_adapter.get(key):
             return GraphStateModel.from_dict(cached)
         async with self.db.get_session() as session:
-            stmt = select(GraphStateModel).where(
-                GraphStateModel.flow_run_id == flow_run_id
-            )
+            stmt = select(GraphStateModel).where(GraphStateModel.flow_run_id == flow_run_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -1998,9 +1937,7 @@ class ExecutionRepository:
         last_node_run_id: UUID | None,
     ) -> None:
         async with self.db.get_session() as session:
-            stmt_gs = select(GraphStateModel).where(
-                GraphStateModel.flow_run_id == flow_run_id
-            )
+            stmt_gs = select(GraphStateModel).where(GraphStateModel.flow_run_id == flow_run_id)
             query_sql_gs = compile_query(stmt_gs)
 
             with self.tracer.observe(
@@ -2142,16 +2079,12 @@ class ExecutionRepository:
         await self.cache_adapter.set(key, {"flow_version_id": str(version_id)})
         return version_id
 
-    async def get_flow_graph_by_flow_version(
-        self, flow_version_id: UUID
-    ) -> FlowGraphModel | None:
+    async def get_flow_graph_by_flow_version(self, flow_version_id: UUID) -> FlowGraphModel | None:
         key = f"flow_graph:{flow_version_id}"
         if cached := await self.cache_adapter.get(key):
             return FlowGraphModel.from_dict(cached)
         async with self.db.get_session() as session:
-            stmt = select(FlowGraphModel).where(
-                FlowGraphModel.flow_version_id == flow_version_id
-            )
+            stmt = select(FlowGraphModel).where(FlowGraphModel.flow_version_id == flow_version_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -2231,9 +2164,7 @@ class ExecutionRepository:
         if cached := await self.cache_adapter.get(key):
             return ToolConfigModel.from_dict(cached)
         async with self.db.get_session() as session:
-            stmt = select(ToolConfigModel).where(
-                ToolConfigModel.tool_config_id == tool_config_id
-            )
+            stmt = select(ToolConfigModel).where(ToolConfigModel.tool_config_id == tool_config_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -2263,9 +2194,7 @@ class ExecutionRepository:
 
     async def get_agent_run(self, agent_run_id: UUID) -> AgentRunModel | None:
         async with self.db.get_session() as session:
-            stmt = select(AgentRunModel).where(
-                AgentRunModel.agent_run_id == agent_run_id
-            )
+            stmt = select(AgentRunModel).where(AgentRunModel.agent_run_id == agent_run_id)
             query_sql = compile_query(stmt)
 
             with self.tracer.observe(
@@ -2335,9 +2264,7 @@ class ExecutionRepository:
 
                 return run
 
-    async def get_agent_version(
-        self, agent_version_id: UUID
-    ) -> AgentVersionModel | None:
+    async def get_agent_version(self, agent_version_id: UUID) -> AgentVersionModel | None:
         key = f"agent_version:{agent_version_id}"
         if cached := await self.cache_adapter.get(key):
             return AgentVersionModel.from_dict(cached)
@@ -2425,9 +2352,7 @@ class ExecutionRepository:
                 input={
                     "query": query_sql,
                     "params": {
-                        "ai_execution_policy_version_id": str(
-                            ai_execution_policy_version_id
-                        ),
+                        "ai_execution_policy_version_id": str(ai_execution_policy_version_id),
                     },
                 },
                 metadata={
@@ -2591,9 +2516,7 @@ class ExecutionRepository:
         estimated_cost: float | None,
     ) -> None:
         async with self.db.get_session() as session:
-            stmt_ar = select(AgentRunModel).where(
-                AgentRunModel.agent_run_id == agent_run_id
-            )
+            stmt_ar = select(AgentRunModel).where(AgentRunModel.agent_run_id == agent_run_id)
             query_sql_ar = compile_query(stmt_ar)
 
             with self.tracer.observe(
@@ -2648,9 +2571,7 @@ class ExecutionRepository:
                     .with_for_update()
                 )
                 existing = await session.execute(
-                    select(FlowRunLockModel).where(
-                        FlowRunLockModel.flow_run_id == flow_run_id
-                    )
+                    select(FlowRunLockModel).where(FlowRunLockModel.flow_run_id == flow_run_id)
                 )
                 lock = existing.scalar_one_or_none()
                 if lock is None:

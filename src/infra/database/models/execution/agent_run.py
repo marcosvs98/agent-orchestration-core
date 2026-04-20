@@ -24,15 +24,11 @@ class AgentRun(ORMBaseModel):
     estimated_cost = Column(Numeric(18, 6), nullable=True)
     billing_policy_version_id = Column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "billing_policy_version.billing_policy_version_id", ondelete="RESTRICT"
-        ),
+        ForeignKey("billing_policy_version.billing_policy_version_id", ondelete="RESTRICT"),
         nullable=True,
     )
     status = Column(String(length=32), nullable=False, server_default="CREATED")
-    canonical_status = Column(
-        String(length=32), nullable=False, server_default="CREATED"
-    )
+    canonical_status = Column(String(length=32), nullable=False, server_default="CREATED")
     correlation_id = Column(PG_UUID(as_uuid=True), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)

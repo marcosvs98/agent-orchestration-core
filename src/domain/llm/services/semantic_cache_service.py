@@ -96,9 +96,7 @@ class SemanticCacheService:
                 ),
             )
             if retriever_handle:
-                retriever_handle.success(
-                    output={"hit": True, "similarity_score": similarity_score}
-                )
+                retriever_handle.success(output={"hit": True, "similarity_score": similarity_score})
             return result
 
     async def persist(

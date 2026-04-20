@@ -153,9 +153,7 @@ class RagRepository:
         if cached := await self.cache_adapter.get(key):
             return RagConfigModel.from_dict(cached)
         async with self.db.get_session() as session:
-            stmt = select(RagConfigModel).where(
-                RagConfigModel.rag_config_id == rag_config_id
-            )
+            stmt = select(RagConfigModel).where(RagConfigModel.rag_config_id == rag_config_id)
             query_sql = compile_query(stmt)
             if self.tracer:
                 with self.tracer.observe(
@@ -379,9 +377,7 @@ class RagRepository:
             effective_corpus_kind = corpus_kind
             if source_version_id is not None:
                 source_version = await session.execute(
-                    select(RagConfigModel).where(
-                        RagConfigModel.rag_config_id == source_version_id
-                    )
+                    select(RagConfigModel).where(RagConfigModel.rag_config_id == source_version_id)
                 )
                 source = source_version.scalar_one_or_none()
                 if source is None:
@@ -403,11 +399,7 @@ class RagRepository:
                 if effective_corpus_kind is None:
                     effective_corpus_kind = source.corpus_kind
             else:
-                if (
-                    version_major is None
-                    or version_minor is None
-                    or version_patch is None
-                ):
+                if version_major is None or version_minor is None or version_patch is None:
                     last_version = await session.execute(
                         select(RagConfigModel)
                         .where(RagConfigModel.tenant_id == tenant_id)
@@ -464,14 +456,10 @@ class RagRepository:
             await session.refresh(instance)
             return instance
 
-    async def set_rag_config_status(
-        self, *, rag_config_id: UUID, status: VersionStatus
-    ) -> None:
+    async def set_rag_config_status(self, *, rag_config_id: UUID, status: VersionStatus) -> None:
         async with self.db.get_session() as session:
             result = await session.execute(
-                select(RagConfigModel).where(
-                    RagConfigModel.rag_config_id == rag_config_id
-                )
+                select(RagConfigModel).where(RagConfigModel.rag_config_id == rag_config_id)
             )
             instance = result.scalar_one_or_none()
             if instance is None:
@@ -692,9 +680,7 @@ class RagRepository:
             value = result.scalar()
             return int(value) if value is not None else 0
 
-    async def list_chunks(
-        self, *, document_id: UUID, limit: int
-    ) -> list[RagChunkModel]:
+    async def list_chunks(self, *, document_id: UUID, limit: int) -> list[RagChunkModel]:
         async with self.db.get_session() as session:
             stmt = (
                 select(RagChunkModel)
@@ -848,13 +834,8 @@ class RagRepository:
                     q.max_chunks_per_user,
                     "rag_quota_max_chunks_per_user",
                 )
-                if (
-                    q.max_documents_per_tenant is not None
-                    or q.max_chunks_per_tenant is not None
-                ):
-                    tenant_row = await lock_counter(
-                        session, scope="TENANT", user_id=None
-                    )
+                if q.max_documents_per_tenant is not None or q.max_chunks_per_tenant is not None:
+                    tenant_row = await lock_counter(session, scope="TENANT", user_id=None)
                     _check_cap(
                         tenant_row.document_count,
                         doc_delta,
@@ -1001,9 +982,7 @@ class RagRepository:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def save_query_cache(
-        self, *, cache_entry: RagQueryCacheModel
-    ) -> RagQueryCacheModel:
+    async def save_query_cache(self, *, cache_entry: RagQueryCacheModel) -> RagQueryCacheModel:
         async with self.db.get_session() as session:
             session.add(cache_entry)
             await session.commit()
@@ -1095,8 +1074,7 @@ class RagRepository:
                     if scope_value == "TENANT_KNOWLEDGE":
                         stmt = stmt.where(
                             sa.or_(
-                                RagDocumentModel.doc_metadata["scope"].astext
-                                == scope_value,
+                                RagDocumentModel.doc_metadata["scope"].astext == scope_value,
                                 RagDocumentModel.doc_metadata["scope"].astext.is_(None),
                             )
                         )
@@ -1106,13 +1084,11 @@ class RagRepository:
                         )
                 if filters.get("user_id"):
                     stmt = stmt.where(
-                        RagDocumentModel.doc_metadata["user_id"].astext
-                        == str(filters["user_id"])
+                        RagDocumentModel.doc_metadata["user_id"].astext == str(filters["user_id"])
                     )
                 if filters.get("category"):
                     stmt = stmt.where(
-                        RagDocumentModel.doc_metadata["category"].astext
-                        == str(filters["category"])
+                        RagDocumentModel.doc_metadata["category"].astext == str(filters["category"])
                     )
                 if filters.get("tool_intent"):
                     stmt = stmt.where(
@@ -1128,18 +1104,13 @@ class RagRepository:
                     expires_after_value = filters["expires_after"]
                     if isinstance(expires_after_value, str):
                         stmt = stmt.where(
-                            RagDocumentModel.doc_metadata["expires_at"].astext.is_not(
-                                None
-                            )
+                            RagDocumentModel.doc_metadata["expires_at"].astext.is_not(None)
                         )
                         stmt = stmt.where(
-                            RagDocumentModel.doc_metadata["expires_at"].astext
-                            > expires_after_value
+                            RagDocumentModel.doc_metadata["expires_at"].astext > expires_after_value
                         )
             if user_id:
-                stmt = stmt.where(
-                    RagDocumentModel.doc_metadata["user_id"].astext == user_id
-                )
+                stmt = stmt.where(RagDocumentModel.doc_metadata["user_id"].astext == user_id)
             stmt = stmt.order_by(sa.text("distance asc")).limit(top_k)
             query_sql = compile_query(stmt)
             params: dict[str, object] = {
@@ -1162,9 +1133,7 @@ class RagRepository:
                 ) as retriever_handle:
                     result = await session.execute(stmt)
                     rows = result.all()
-                    items: list[
-                        tuple[RagChunkModel, float, datetime | None, str | None]
-                    ] = []
+                    items: list[tuple[RagChunkModel, float, datetime | None, str | None]] = []
                     for (
                         chunk,
                         distance,
@@ -1174,9 +1143,7 @@ class RagRepository:
                         score = 1.0 - float(distance)
                         if score < similarity_threshold:
                             continue
-                        items.append(
-                            (chunk, score, document_created_at, document_observed_at)
-                        )
+                        items.append((chunk, score, document_created_at, document_observed_at))
                     if retriever_handle:
                         retriever_handle.success(
                             output={
