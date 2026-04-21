@@ -75,6 +75,7 @@ Use the MkDocs sidebar **Domain documentation** for the full tree (same order as
 
 | Task | Read first | Then | Code |
 |------|------------|------|------|
+| Configure a tenant end-to-end | [Full tenant configuration](../Get-Started/full-tenant-configuration.md) | [Governance overview](../Governance/index.md), domain HTTP docs per phase (Tenants, Auth, Flows, …) | `src/domain/*` per bounded context |
 | Change graph execution | [Execution overview](../Execution/index.md), [Flow lifecycle](../Execution/flow-lifecycle.md), [Runtime vs authoring](../Architecture/runtime-vs-authoring.md) | [Graph runtime](../Execution/graph-runtime/index.md), [Runtime executor](../Execution/graph-runtime/runtime-executor.md), [Glossary: flow run](../Glossary/terms/flow-run.md) | `src/domain/execution/services/graph_runtime/` |
 | Change graph runtime / node executors | [Execution overview](../Execution/index.md) | [Graph runtime](../Execution/graph-runtime/index.md), [Node registry](../Execution/graph-runtime/node-registry.md), [Nodes overview](../Execution/graph-runtime/nodes/index.md) | `src/domain/execution/services/graph_runtime/` |
 | Flows authoring / graph compile | [Flows overview](../Flows/index.md) | [HTTP API overview](../Flows/http-api-overview.md), [Graph and compiler](../Flows/graph-and-compiler.md) | `src/domain/flows/` |

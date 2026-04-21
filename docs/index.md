@@ -27,6 +27,7 @@ Use the sidebar **Domain documentation** for the full tree (persistence, integra
 ## Setup and operations
 
 - [Installation](Get-Started/installation.md)
+- [Full tenant configuration](Get-Started/full-tenant-configuration.md) — end-to-end tenant setup and governance checklist
 - [Flow lifecycle](Execution/flow-lifecycle.md)
 - [Tracing and cost](Develop/tracing-and-cost.md)
 - [Token cost and context strategy](Develop/token-cost-and-context-strategy.md) — budgets, caches, RAG/context, consulting costs

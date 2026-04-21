@@ -21,6 +21,7 @@ nav:
   - Home: index.md
   - Get Started:
       - Installation: Get-Started/installation.md
+      - Full tenant configuration: Get-Started/full-tenant-configuration.md
   - Architecture:
       - Overview: Architecture/ARCHITECTURE.md
       - Architecture (site entry): ARCHITECTURE.md
