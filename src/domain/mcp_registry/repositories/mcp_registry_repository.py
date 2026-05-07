@@ -1,11 +1,16 @@
 import hashlib
 import re
 import secrets
+from typing import Any
 from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy import select, update
 
+from domain.mcp_registry.mcp_server_metadata import (
+    OUTBOUND_AUTHORIZATION_SECRET_REF_KEY,
+    outbound_authorization_secret_ref_from_server_metadata,
+)
 from domain.mcp_registry.schemas.mcp_registry import (
     McpBindingState,
     McpServerBuildSpec,
@@ -41,6 +46,16 @@ def _mcp_prompt_slug(title: str, user_prompt_id: UUID) -> str:
         base = "user_prompt"
     base = base[:48]
     return f"{base}_{str(user_prompt_id).replace('-', '')[:8]}"
+
+
+def _json_schema_contains_ref(value: Any) -> bool:
+    if isinstance(value, dict):
+        if "$ref" in value:
+            return True
+        return any(_json_schema_contains_ref(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_json_schema_contains_ref(v) for v in value)
+    return False
 
 
 class McpRegistryRepository:
@@ -151,6 +166,7 @@ class McpRegistryRepository:
         user_prompt_ids: list[UUID],
         flow_snapshot_id: UUID | None,
         flow_deployment_id: UUID | None,
+        server_metadata: dict[str, object] | None = None,
     ) -> tuple[McpServer, str]:
         raw_key = secrets.token_urlsafe(32)
         key_hash = self.hash_api_key(raw_key)
@@ -162,6 +178,7 @@ class McpRegistryRepository:
                 status="ACTIVE",
                 flow_snapshot_id=flow_snapshot_id,
                 flow_deployment_id=flow_deployment_id,
+                metadata_col=server_metadata,
             )
             session.add(server)
             await session.flush()
@@ -285,6 +302,9 @@ class McpRegistryRepository:
             tools = {r[0] for r in (await session.execute(t_stmt)).fetchall()}
             vss = {r[0] for r in (await session.execute(v_stmt)).fetchall()}
             ups = {r[0] for r in (await session.execute(p_stmt)).fetchall()}
+            ob_ref = outbound_authorization_secret_ref_from_server_metadata(
+                getattr(server_row, "metadata_col", None)
+            )
             return McpBindingState(
                 tenant_id=server_row.tenant_id,
                 mcp_server_id=mcp_server_id,
@@ -293,6 +313,7 @@ class McpRegistryRepository:
                 user_prompt_ids=frozenset(ups),
                 flow_snapshot_id=server_row.flow_snapshot_id,
                 flow_deployment_id=server_row.flow_deployment_id,
+                outbound_authorization_secret_ref=ob_ref,
             )
 
     async def fetch_mcp_server_build_spec(self, state: McpBindingState) -> McpServerBuildSpec:
@@ -338,11 +359,11 @@ class McpRegistryRepository:
                             "additionalProperties": True,
                         }
                     resp = cfg.get("response_schema")
-                    response_schema = (
-                        dict(resp)
-                        if isinstance(resp, dict) and resp.get("type") == "object"
-                        else None
-                    )
+                    response_schema = None
+                    if isinstance(resp, dict) and resp.get("type") == "object":
+                        cand = dict(resp)
+                        if not _json_schema_contains_ref(cand):
+                            response_schema = cand
                     tool_rows.append(
                         McpServerToolBinding(
                             tool_config_id=tcid,
@@ -377,4 +398,35 @@ class McpRegistryRepository:
             prompts=tuple(prompt_rows),
             flow_snapshot_id=state.flow_snapshot_id,
             flow_deployment_id=state.flow_deployment_id,
+            outbound_authorization_secret_ref=state.outbound_authorization_secret_ref,
         )
+
+    async def patch_mcp_server_outbound_authorization_secret_ref(
+        self,
+        *,
+        tenant_id: UUID,
+        mcp_server_id: UUID,
+        outbound_authorization_secret_ref: str | None,
+    ) -> bool:
+        async with self.db.get_session() as session:
+            stmt = select(McpServer).where(
+                McpServer.tenant_id == tenant_id,
+                McpServer.mcp_server_id == mcp_server_id,
+            )
+            result = await session.execute(stmt)
+            server = result.scalar_one_or_none()
+            if server is None:
+                return False
+            prev = server.metadata_col if isinstance(server.metadata_col, dict) else {}
+            meta = dict(prev)
+            if outbound_authorization_secret_ref is None or not str(
+                outbound_authorization_secret_ref
+            ).strip():
+                meta.pop(OUTBOUND_AUTHORIZATION_SECRET_REF_KEY, None)
+            else:
+                meta[OUTBOUND_AUTHORIZATION_SECRET_REF_KEY] = str(
+                    outbound_authorization_secret_ref
+                ).strip()
+            server.metadata_col = meta or None
+            await session.commit()
+            return True

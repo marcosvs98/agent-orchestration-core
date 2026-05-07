@@ -10,6 +10,7 @@ from domain.mcp_registry.schemas.mcp_registry import (
     McpServerCreateRequest,
     McpServerCreateResponse,
     McpServerDetail,
+    McpServerPatchOutboundAuthRequest,
     McpServerSummary,
 )
 from domain.mcp_registry.services.mcp_registry_service import McpRegistryService
@@ -24,6 +25,7 @@ class TestMcpRegistryController:
         svc.create_server = AsyncMock()
         svc.list_servers = AsyncMock()
         svc.get_server = AsyncMock()
+        svc.patch_mcp_server_outbound_auth = AsyncMock()
         return svc
 
     @pytest.fixture
@@ -169,20 +171,62 @@ class TestMcpRegistryController:
             expires_at=9999999999,
         )
         service.get_server = AsyncMock(
-            return_value=McpServerDetail(
-                mcp_server_id=server_id,
-                name="srv",
-                status="ACTIVE",
-                endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
-                flow_snapshot_id=None,
-                flow_deployment_id=None,
-                tool_config_ids=[],
-                vector_store_ids=[],
-                user_prompt_ids=[],
-            )
+            return_value=                McpServerDetail(
+                    mcp_server_id=server_id,
+                    name="srv",
+                    status="ACTIVE",
+                    endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
+                    flow_snapshot_id=None,
+                    flow_deployment_id=None,
+                    tool_config_ids=[],
+                    vector_store_ids=[],
+                    user_prompt_ids=[],
+                    outbound_authorization_fallback_configured=False,
+                )
         )
         result = await controller.get_mcp_server(mcp_server_id=server_id, auth=auth)
         assert result.mcp_server_id == server_id
         service.get_server.assert_called_once_with(
             tenant_id=tenant_id, mcp_server_id=server_id
+        )
+
+    @pytest.mark.asyncio
+    async def test_patch_outbound_auth_calls_service(
+        self, controller: McpRegistryController, service: MagicMock
+    ) -> None:
+        tenant_id = uuid4()
+        server_id = uuid4()
+        auth = AuthContext(
+            tenant_id=tenant_id,
+            principal_type="human",
+            principal_id="p1",
+            scopes={"mcp_servers:create"},
+            token_issuer="i",
+            token_audience="a",
+            expires_at=9999999999,
+        )
+        detail = McpServerDetail(
+            mcp_server_id=server_id,
+            name="srv",
+            status="ACTIVE",
+            endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
+            flow_snapshot_id=None,
+            flow_deployment_id=None,
+            tool_config_ids=[],
+            vector_store_ids=[],
+            user_prompt_ids=[],
+            outbound_authorization_fallback_configured=True,
+        )
+        service.patch_mcp_server_outbound_auth = AsyncMock(return_value=detail)
+        body = McpServerPatchOutboundAuthRequest(
+            outbound_authorization_secret_ref="env:TEST_JWT",
+        )
+        result = await controller.patch_mcp_server_outbound_authorization(
+            mcp_server_id=server_id, body=body, auth=auth
+        )
+        assert result.outbound_authorization_fallback_configured is True
+        service.patch_mcp_server_outbound_auth.assert_called_once_with(
+            tenant_id=tenant_id,
+            mcp_server_id=server_id,
+            body=body,
         )

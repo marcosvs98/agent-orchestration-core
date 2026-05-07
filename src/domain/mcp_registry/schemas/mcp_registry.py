@@ -21,6 +21,7 @@ class McpServerCreateRequest(BaseModel):
     name: str | None = None
     flow_snapshot_id: UUID | None = None
     flow_deployment_id: UUID | None = None
+    outbound_authorization_secret_ref: str | None = None
 
 
 class McpServerCreateResponse(BaseModel):
@@ -48,6 +49,11 @@ class McpServerDetail(BaseModel):
     tool_config_ids: list[UUID] = Field(default_factory=list)
     vector_store_ids: list[UUID] = Field(default_factory=list)
     user_prompt_ids: list[UUID] = Field(default_factory=list)
+    outbound_authorization_fallback_configured: bool = False
+
+
+class McpServerPatchOutboundAuthRequest(BaseModel):
+    outbound_authorization_secret_ref: str | None
 
 
 class McpBindingState(BaseModel):
@@ -60,6 +66,7 @@ class McpBindingState(BaseModel):
     user_prompt_ids: frozenset[UUID]
     flow_snapshot_id: UUID | None = None
     flow_deployment_id: UUID | None = None
+    outbound_authorization_secret_ref: str | None = None
 
 
 class McpServerBuildSpec(BaseModel):
@@ -72,3 +79,4 @@ class McpServerBuildSpec(BaseModel):
     prompts: tuple[tuple[UUID, str, str, str], ...]
     flow_snapshot_id: UUID | None = None
     flow_deployment_id: UUID | None = None
+    outbound_authorization_secret_ref: str | None = None

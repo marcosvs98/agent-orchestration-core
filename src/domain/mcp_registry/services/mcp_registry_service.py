@@ -1,6 +1,9 @@
 from uuid import UUID
 
 from adapters.observability.logging import get_logger
+from domain.mcp_registry.mcp_server_metadata import (
+    outbound_authorization_secret_ref_from_server_metadata,
+)
 from domain.mcp_registry.repositories.mcp_registry_repository import (
     McpRegistryRepository,
 )
@@ -8,6 +11,7 @@ from domain.mcp_registry.schemas.mcp_registry import (
     McpServerCreateRequest,
     McpServerCreateResponse,
     McpServerDetail,
+    McpServerPatchOutboundAuthRequest,
     McpServerSummary,
 )
 from exceptions.service_exceptions import (
@@ -16,6 +20,19 @@ from exceptions.service_exceptions import (
 )
 
 logger = get_logger(__name__)
+
+
+def _normalize_outbound_authorization_secret_ref(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    if not s.startswith("env:"):
+        raise DomainValidationException(
+            message="mcp_outbound_authorization_secret_ref_must_use_env_prefix",
+        )
+    return s
 
 
 class McpRegistryService:
@@ -60,6 +77,12 @@ class McpRegistryService:
         if not ok_deployment:
             raise DomainValidationException(message="mcp_flow_deployment_tenant_mismatch")
         name = body.name.strip() if body.name and body.name.strip() else "mcp-server"
+        ob_ref = _normalize_outbound_authorization_secret_ref(
+            body.outbound_authorization_secret_ref
+        )
+        server_metadata: dict[str, object] | None = None
+        if ob_ref:
+            server_metadata = {"outbound_authorization_secret_ref": ob_ref}
         server, raw_key = await self.repository.create_server_with_bindings(
             tenant_id=tenant_id,
             name=name,
@@ -68,6 +91,7 @@ class McpRegistryService:
             user_prompt_ids=body.user_prompt_ids,
             flow_snapshot_id=body.flow_snapshot_id,
             flow_deployment_id=body.flow_deployment_id,
+            server_metadata=server_metadata,
         )
         base = (endpoint_base or self.public_base_url).rstrip("/")
         endpoint = f"{base}/core/v1/mcp-servers/{server.mcp_server_id}/mcp"
@@ -111,6 +135,9 @@ class McpRegistryService:
             user_prompt_ids,
         ) = await self.repository.list_server_binding_ids(mcp_server_id=mcp_server_id)
         base = self.public_base_url.rstrip("/")
+        ob = outbound_authorization_secret_ref_from_server_metadata(
+            getattr(server, "metadata_col", None)
+        )
         return McpServerDetail(
             mcp_server_id=server.mcp_server_id,
             name=server.name,
@@ -121,4 +148,27 @@ class McpRegistryService:
             tool_config_ids=tool_ids,
             vector_store_ids=vector_store_ids,
             user_prompt_ids=user_prompt_ids,
+            outbound_authorization_fallback_configured=bool(ob),
         )
+
+    async def patch_mcp_server_outbound_auth(
+        self,
+        *,
+        tenant_id: UUID,
+        mcp_server_id: UUID,
+        body: McpServerPatchOutboundAuthRequest,
+    ) -> McpServerDetail:
+        ref = _normalize_outbound_authorization_secret_ref(
+            body.outbound_authorization_secret_ref
+        )
+        ok = await self.repository.patch_mcp_server_outbound_authorization_secret_ref(
+            tenant_id=tenant_id,
+            mcp_server_id=mcp_server_id,
+            outbound_authorization_secret_ref=ref,
+        )
+        if not ok:
+            raise NotFoundServiceException(message="mcp_server_not_found")
+        from adapters.mcp.tenant_mcp_gateway import clear_tenant_mcp_app_cache
+
+        clear_tenant_mcp_app_cache()
+        return await self.get_server(tenant_id=tenant_id, mcp_server_id=mcp_server_id)

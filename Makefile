@@ -23,7 +23,7 @@ pc-run:
 	@PYTHONPATH=src $(PC_PYTHON) -m pre_commit run
 
 gen-token:
-	@PYTHONPATH=src python3 resources/generate_jwt_token.py
+	@PYTHONPATH=src uv run python resources/generate_jwt_token.py
 
 run-seed:
 	@PYTHONPATH=src python3 resources/scripts/seeds/seed_main.py

@@ -25,8 +25,17 @@ def _sse_json_payloads(text: str) -> list[dict]:
     return out
 
 
+def _mcp_json_rpc_result(response: object) -> dict:
+    ct = (response.headers.get("content-type") or "").lower()
+    if "application/json" in ct:
+        return response.json()
+    payloads = _sse_json_payloads(response.text)
+    assert payloads
+    return payloads[-1]
+
+
 def _mcp_accept() -> str:
-    return "application/json, text/event-stream"
+    return "application/json"
 
 
 @pytest.fixture(autouse=True)
@@ -121,8 +130,6 @@ def test_mcp_tools_list_empty_when_no_bindings(client_with_mcp, mcp_server_id) -
         },
     )
     assert r1.status_code == 200
-    sess = r1.headers.get("mcp-session-id")
-    assert sess
     r2 = client.post(
         f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
         json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
@@ -130,14 +137,12 @@ def test_mcp_tools_list_empty_when_no_bindings(client_with_mcp, mcp_server_id) -
             "X-Api-Key": "k",
             "Accept": _mcp_accept(),
             "Content-Type": "application/json",
-            "mcp-session-id": sess,
             "MCP-Protocol-Version": "2024-11-05",
         },
     )
     assert r2.status_code == 200
-    payloads = _sse_json_payloads(r2.text)
-    assert payloads
-    tools = payloads[-1]["result"]["tools"]
+    body = _mcp_json_rpc_result(r2)
+    tools = body["result"]["tools"]
     assert tools == []
 
 
@@ -205,7 +210,6 @@ def test_mcp_named_tool_invoke(mcp_server_id, tenant_id) -> None:
                 "Content-Type": "application/json",
             },
         )
-        sess = r1.headers["mcp-session-id"]
         r_list = client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
@@ -213,11 +217,10 @@ def test_mcp_named_tool_invoke(mcp_server_id, tenant_id) -> None:
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-        listed = _sse_json_payloads(r_list.text)[-1]["result"]["tools"]
+        listed = _mcp_json_rpc_result(r_list)["result"]["tools"]
         names = [t["name"] for t in listed]
         assert names == ["createExpense"]
         props = listed[0]["inputSchema"].get("properties") or {}
@@ -239,15 +242,246 @@ def test_mcp_named_tool_invoke(mcp_server_id, tenant_id) -> None:
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-    payloads = _sse_json_payloads(r2.text)
-    assert payloads[-1]["result"]["isError"] is False
+    out = _mcp_json_rpc_result(r2)
+    assert out["result"]["isError"] is False
     mock_exec.execute_http.assert_awaited()
     call_kw = mock_exec.execute_http.await_args.kwargs
     assert call_kw["json_body"] == {}
+
+
+def test_mcp_named_tool_invoke_resolves_interaction_metadata_authorization(
+    mcp_server_id, tenant_id
+) -> None:
+    tcid = uuid4()
+    user_jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.e30"
+    spec = McpServerBuildSpec(
+        tenant_id=tenant_id,
+        mcp_server_id=mcp_server_id,
+        tools=(
+            McpServerToolBinding(
+                tool_config_id=tcid,
+                mcp_name="spendingByCategory",
+                description="Spending",
+                request_schema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": True,
+                },
+                response_schema=None,
+            ),
+        ),
+        vector_store_ids=tuple(),
+        prompts=tuple(),
+    )
+    repo = _repo_with_spec(mcp_server_id, tenant_id, spec)
+    repo.verify_api_key_and_load_bindings = AsyncMock(
+        return_value=McpBindingState(
+            tenant_id=tenant_id,
+            mcp_server_id=mcp_server_id,
+            tool_config_ids=frozenset([tcid]),
+            vector_store_ids=frozenset(),
+            user_prompt_ids=frozenset(),
+        )
+    )
+    cfg = MagicMock()
+    cfg.tenant_id = tenant_id
+    cfg.config = {
+        "url": "https://example.com/api",
+        "method": "GET",
+        "timeout_seconds": 5,
+        "headers": {
+            "Authorization": {
+                "interaction_metadata_key": "uora_end_user_authorization",
+            },
+        },
+    }
+    tools_repo = MagicMock()
+    tools_repo.get_tool_config = AsyncMock(return_value=cfg)
+    mock_exec = MagicMock()
+    mock_exec.execute_http = AsyncMock(
+        return_value={"status_code": 200, "headers": {}, "body": {"ok": True}}
+    )
+    app = create_app()
+    ctr = app.state.container
+    ctr.mcp_registry.mcp_registry_repository.override(providers.Object(repo))
+    ctr.tools.tools_repository.override(providers.Factory(lambda: tools_repo))
+    ctr.execution.tool_executor.override(providers.Object(mock_exec))
+    hdr = {"Authorization": f"Bearer {user_jwt}"}
+    with TestClient(app) as client:
+        r1 = client.post(
+            f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pytest", "version": "1"},
+                },
+                "id": 1,
+            },
+            headers={
+                "X-Api-Key": "mcp-integration-key",
+                "Accept": _mcp_accept(),
+                "Content-Type": "application/json",
+                **hdr,
+            },
+        )
+        assert r1.status_code == 200
+        r_list = client.post(
+            f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
+            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+            headers={
+                "X-Api-Key": "mcp-integration-key",
+                "Accept": _mcp_accept(),
+                "Content-Type": "application/json",
+                "MCP-Protocol-Version": "2024-11-05",
+                **hdr,
+            },
+        )
+        assert r_list.status_code == 200
+        r2 = client.post(
+            f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "spendingByCategory",
+                    "arguments": {},
+                },
+                "id": 3,
+            },
+            headers={
+                "X-Api-Key": "mcp-integration-key",
+                "Accept": _mcp_accept(),
+                "Content-Type": "application/json",
+                "MCP-Protocol-Version": "2024-11-05",
+                **hdr,
+            },
+        )
+    out = _mcp_json_rpc_result(r2)
+    assert out["result"]["isError"] is False
+    call_kw = mock_exec.execute_http.await_args.kwargs
+    assert call_kw["headers"]["Authorization"] == f"Bearer {user_jwt}"
+
+
+def test_mcp_named_tool_invoke_outbound_authorization_env_fallback(
+    mcp_server_id, tenant_id
+) -> None:
+    tcid = uuid4()
+    spec = McpServerBuildSpec(
+        tenant_id=tenant_id,
+        mcp_server_id=mcp_server_id,
+        tools=(
+            McpServerToolBinding(
+                tool_config_id=tcid,
+                mcp_name="spendingByCategory",
+                description="Spending",
+                request_schema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": True,
+                },
+                response_schema=None,
+            ),
+        ),
+        vector_store_ids=tuple(),
+        prompts=tuple(),
+        outbound_authorization_secret_ref="env:UORA_MCP_FALLBACK_JWT",
+    )
+    repo = _repo_with_spec(mcp_server_id, tenant_id, spec)
+    repo.verify_api_key_and_load_bindings = AsyncMock(
+        return_value=McpBindingState(
+            tenant_id=tenant_id,
+            mcp_server_id=mcp_server_id,
+            tool_config_ids=frozenset([tcid]),
+            vector_store_ids=frozenset(),
+            user_prompt_ids=frozenset(),
+        )
+    )
+    cfg = MagicMock()
+    cfg.tenant_id = tenant_id
+    cfg.config = {
+        "url": "https://example.com/api",
+        "method": "GET",
+        "timeout_seconds": 5,
+        "headers": {
+            "Authorization": {
+                "interaction_metadata_key": "uora_end_user_authorization",
+            },
+        },
+    }
+    tools_repo = MagicMock()
+    tools_repo.get_tool_config = AsyncMock(return_value=cfg)
+    mock_exec = MagicMock()
+    mock_exec.execute_http = AsyncMock(
+        return_value={"status_code": 200, "headers": {}, "body": {"ok": True}}
+    )
+    mock_secret = MagicMock()
+    mock_secret.resolve = AsyncMock(return_value="fallback-raw-token")
+    app = create_app()
+    ctr = app.state.container
+    ctr.mcp_registry.mcp_registry_repository.override(providers.Object(repo))
+    ctr.tools.tools_repository.override(providers.Factory(lambda: tools_repo))
+    ctr.execution.tool_executor.override(providers.Object(mock_exec))
+    ctr.adapters.secret_resolver.override(providers.Object(mock_secret))
+    with TestClient(app) as client:
+        r1 = client.post(
+            f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pytest", "version": "1"},
+                },
+                "id": 1,
+            },
+            headers={
+                "X-Api-Key": "mcp-integration-key",
+                "Accept": _mcp_accept(),
+                "Content-Type": "application/json",
+            },
+        )
+        assert r1.status_code == 200
+        r_list = client.post(
+            f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
+            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+            headers={
+                "X-Api-Key": "mcp-integration-key",
+                "Accept": _mcp_accept(),
+                "Content-Type": "application/json",
+                "MCP-Protocol-Version": "2024-11-05",
+            },
+        )
+        assert r_list.status_code == 200
+        r2 = client.post(
+            f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "spendingByCategory",
+                    "arguments": {},
+                },
+                "id": 3,
+            },
+            headers={
+                "X-Api-Key": "mcp-integration-key",
+                "Accept": _mcp_accept(),
+                "Content-Type": "application/json",
+                "MCP-Protocol-Version": "2024-11-05",
+            },
+        )
+    out = _mcp_json_rpc_result(r2)
+    assert out["result"]["isError"] is False
+    mock_secret.resolve.assert_awaited()
+    call_kw = mock_exec.execute_http.await_args.kwargs
+    assert call_kw["headers"]["Authorization"] == "Bearer fallback-raw-token"
 
 
 def test_mcp_tool_input_schema_from_binding(mcp_server_id, tenant_id) -> None:
@@ -307,7 +541,6 @@ def test_mcp_tool_input_schema_from_binding(mcp_server_id, tenant_id) -> None:
                 "Content-Type": "application/json",
             },
         )
-        sess = r1.headers["mcp-session-id"]
         r_list = client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
@@ -315,11 +548,10 @@ def test_mcp_tool_input_schema_from_binding(mcp_server_id, tenant_id) -> None:
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-    tool = _sse_json_payloads(r_list.text)[-1]["result"]["tools"][0]
+    tool = _mcp_json_rpc_result(r_list)["result"]["tools"][0]
     assert tool["inputSchema"]["properties"]["amount"]["type"] == "number"
     assert tool["inputSchema"]["properties"]["currency"]["type"] == "string"
     assert "amount" in tool["inputSchema"]["required"]
@@ -390,7 +622,6 @@ def test_mcp_search_knowledge_query_only(mcp_server_id, tenant_id) -> None:
                 "Content-Type": "application/json",
             },
         )
-        sess = r1.headers["mcp-session-id"]
         r2 = client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
@@ -408,12 +639,11 @@ def test_mcp_search_knowledge_query_only(mcp_server_id, tenant_id) -> None:
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-    payloads = _sse_json_payloads(r2.text)
-    text = payloads[-1]["result"]["content"][0]["text"]
+    out = _mcp_json_rpc_result(r2)
+    text = out["result"]["content"][0]["text"]
     data = json.loads(text)
     assert len(data) == 1
     assert data[0]["content"] == "chunk text"
@@ -475,7 +705,6 @@ def test_mcp_search_knowledge_no_published_rag_config(mcp_server_id, tenant_id) 
                 "Content-Type": "application/json",
             },
         )
-        sess = r1.headers["mcp-session-id"]
         r2 = client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
@@ -491,12 +720,11 @@ def test_mcp_search_knowledge_no_published_rag_config(mcp_server_id, tenant_id) 
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-    payloads = _sse_json_payloads(r2.text)
-    text = payloads[-1]["result"]["content"][0]["text"]
+    out = _mcp_json_rpc_result(r2)
+    text = out["result"]["content"][0]["text"]
     assert json.loads(text) == {"error": "no_published_rag_config"}
     rag_rt.get_context.assert_not_awaited()
 
@@ -559,7 +787,6 @@ def test_mcp_search_knowledge_empty_list_when_config_but_no_chunks(
                 "Content-Type": "application/json",
             },
         )
-        sess = r1.headers["mcp-session-id"]
         r2 = client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
@@ -575,12 +802,11 @@ def test_mcp_search_knowledge_empty_list_when_config_but_no_chunks(
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-    payloads = _sse_json_payloads(r2.text)
-    text = payloads[-1]["result"]["content"][0]["text"]
+    out = _mcp_json_rpc_result(r2)
+    text = out["result"]["content"][0]["text"]
     assert json.loads(text) == []
     rag_rt.get_context.assert_awaited_once()
 
@@ -626,7 +852,6 @@ def test_mcp_prompts_list(mcp_server_id, tenant_id) -> None:
                 "Content-Type": "application/json",
             },
         )
-        sess = r1.headers["mcp-session-id"]
         r2 = client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={"jsonrpc": "2.0", "method": "prompts/list", "id": 2},
@@ -634,11 +859,9 @@ def test_mcp_prompts_list(mcp_server_id, tenant_id) -> None:
                 "X-Api-Key": "k",
                 "Accept": _mcp_accept(),
                 "Content-Type": "application/json",
-                "mcp-session-id": sess,
                 "MCP-Protocol-Version": "2024-11-05",
             },
         )
-    payloads = _sse_json_payloads(r2.text)
-    plist = payloads[-1]["result"]["prompts"]
+    plist = _mcp_json_rpc_result(r2)["result"]["prompts"]
     assert len(plist) == 1
     assert plist[0]["name"] == "demo_title_abcdef01"

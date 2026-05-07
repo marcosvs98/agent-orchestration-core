@@ -69,15 +69,44 @@ class TestToolsService:
         mock_tool = SimpleNamespace(tool_id=tool_id, name="Test Tool")
         repository.get_tool_by_name = AsyncMock(return_value=None)
         repository.create_tool = AsyncMock(return_value=mock_tool)
+        cfg_id = uuid4()
         created_tool_config = SimpleNamespace(
-            tool_config_id=uuid4(),
+            tool_config_id=cfg_id,
             tool_id=tool_id,
             config={},
             version_major=1,
             version_minor=0,
             version_patch=0,
         )
+        repository.get_max_version_patch = AsyncMock(return_value=0)
         repository.create_tool_config = AsyncMock(return_value=created_tool_config)
+        draft_cfg = SimpleNamespace(
+            tool_config_id=cfg_id,
+            tenant_id=tenant_id,
+            tool_id=tool_id,
+            status="DRAFT",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        pub_cfg = SimpleNamespace(
+            tool_config_id=cfg_id,
+            tenant_id=tenant_id,
+            tool_id=tool_id,
+            status="PUBLISHED",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        repository.get_tool_config = AsyncMock(side_effect=[draft_cfg, pub_cfg])
+        repository.set_tool_config_status = AsyncMock()
+        repository.get_tool = AsyncMock(return_value=mock_tool)
         tools_service.openapi_parser.parse_openapi_spec = AsyncMock(
             return_value={
                 "title": "Test Tool",
@@ -101,13 +130,17 @@ class TestToolsService:
             principal_id=principal_id,
         )
 
-        assert result.id == tool_id
-        assert result.name == "Test Tool"
+        assert result.imported_count == 1
+        assert result.tools[0].id == tool_id
+        assert result.tools[0].name == "Test Tool"
         repository.create_tool.assert_called_once_with(
-            name="Test Tool", created_by=principal_id
+            name="health_check", created_by=principal_id
         )
-        tools_service.tool_catalog_indexer.index_document.assert_called_once()
-        authoring_events.append_event.assert_called_once()
+        cc_kwargs = repository.create_tool_config.await_args.kwargs
+        assert cc_kwargs["config"]["base_url"] == "https://api.example.com"
+        assert "Authorization" in (cc_kwargs["config"].get("headers") or {})
+        assert tools_service.tool_catalog_indexer.index_document.await_count == 2
+        assert authoring_events.append_event.await_count == 2
 
     @pytest.mark.asyncio
     async def test_import_tool_reuses_existing_tool_when_name_exists(
@@ -122,15 +155,44 @@ class TestToolsService:
 
         mock_tool = SimpleNamespace(tool_id=tool_id, name="Existing Tool")
         repository.get_tool_by_name = AsyncMock(return_value=mock_tool)
+        cfg_id = uuid4()
         created_tool_config = SimpleNamespace(
-            tool_config_id=uuid4(),
+            tool_config_id=cfg_id,
             tool_id=tool_id,
             config={},
             version_major=1,
             version_minor=0,
             version_patch=0,
         )
+        repository.get_max_version_patch = AsyncMock(return_value=0)
         repository.create_tool_config = AsyncMock(return_value=created_tool_config)
+        draft_cfg = SimpleNamespace(
+            tool_config_id=cfg_id,
+            tenant_id=tenant_id,
+            tool_id=tool_id,
+            status="DRAFT",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        pub_cfg = SimpleNamespace(
+            tool_config_id=cfg_id,
+            tenant_id=tenant_id,
+            tool_id=tool_id,
+            status="PUBLISHED",
+            config={},
+            version_major=1,
+            version_minor=0,
+            version_patch=0,
+            config_hash=None,
+            schema_version=1,
+        )
+        repository.get_tool_config = AsyncMock(side_effect=[draft_cfg, pub_cfg])
+        repository.set_tool_config_status = AsyncMock()
+        repository.get_tool = AsyncMock(return_value=mock_tool)
         tools_service.openapi_parser.parse_openapi_spec = AsyncMock(
             return_value={
                 "title": "Existing Tool",
@@ -154,11 +216,12 @@ class TestToolsService:
             principal_id=principal_id,
         )
 
-        assert result.id == tool_id
-        assert result.name == "Existing Tool"
+        assert result.imported_count == 1
+        assert result.tools[0].id == tool_id
+        assert result.tools[0].name == "Existing Tool"
         repository.create_tool.assert_not_called()
-        tools_service.tool_catalog_indexer.index_document.assert_called_once()
-        authoring_events.append_event.assert_called_once()
+        assert tools_service.tool_catalog_indexer.index_document.await_count == 2
+        assert authoring_events.append_event.await_count == 2
 
     @pytest.mark.asyncio
     async def test_list_tools_returns_empty_list_when_no_results(

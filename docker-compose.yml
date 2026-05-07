@@ -70,22 +70,6 @@ services:
     #  - ./src:/app/src
     #  - ./resources:/app/resources
 
-  langfuse-proxy:
-    image: python:3.12-slim
-    container_name: router-langfuse-proxy-dev
-    restart: unless-stopped
-    working_dir: /app
-    command: sh -c "pip install fastapi uvicorn httpx opentelemetry-proto protobuf && python3 /app/resources/langfuse_proxy.py"
-    environment:
-      LANGFUSE_PROXY_PORT: 3000
-      LANGFUSE_TARGET_URL: https://us.cloud.langfuse.com
-    ports:
-      - "3000:3000"
-    networks:
-      - network-dev
-    volumes:
-      - ./resources:/app/resources
-
   # Mock HTTP API legado (createExpense em :3001). Não faz parte do fluxo Uora.
   # Só sobe com: docker compose --profile legacy-mock up -d
   mock-api:

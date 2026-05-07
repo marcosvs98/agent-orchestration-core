@@ -40,10 +40,13 @@ sequenceDiagram
     Repo-->>MW: McpServerBuildSpec
     MW->>App: get cached FastMCP app for spec
     MW->>MW: _MCP_CONTAINER.set(container)
+    MW->>MW: _MCP_INBOUND_INTERACTION_METADATA.set(inbound)
     App-->>MC: MCP protocol response
-    MW->>MW: reset context var
+    MW->>MW: reset context vars
   end
 ```
+
+When **`X-Api-Key`** is present and **`Authorization: Bearer …`** is a **different** string than the API key value, the middleware records **`uora_end_user_authorization`** (full `Authorization` header value) for HTTP tools whose `tool_config` maps **`Authorization`** via **`interaction_metadata_key`** (same contract as **`ToolOrchestrator._resolve_headers`**). FastMCP may run tool handlers outside that ASGI `ContextVar` visibility; **`_mcp_interaction_metadata_for_http_tools`** therefore also reads the inbound **`Authorization`** from **`get_http_request()`** when the context var has no end-user token yet.
 
 ### Application container context
 
@@ -64,7 +67,7 @@ On **`run(arguments)`**:
 1. **Validate** `arguments` with **jsonschema** against `parameters` → on failure, return `arguments_validation_failed`.
 2. Resolve container; load **`tool_config`** by `exec_tool_config_id`; enforce **`tenant_id`** matches `exec_tenant_id`.
 3. Resolve HTTP **`url`** via `effective_tool_http_url(config)`, **method** (default `POST`), **`timeout_seconds`** (default `10`).
-4. Resolve **headers**: plain strings, or **`secret_ref`** objects via **`SecretResolverPort`** (with tracing).
+4. Resolve **headers**: plain strings, **`secret_ref`** via **`SecretResolverPort`**, or **`interaction_metadata_key`** resolved from **`_mcp_interaction_metadata_for_http_tools()`** (middleware context var plus **`get_http_request()`** fallback).
 5. Call **`tool_executor.execute_http`** with JSON body = MCP arguments (dict).
 6. Validate **`HttpToolResult`**; if `response_schema` is set and body is a dict, **jsonschema**-validate body; otherwise return a structured dump of the HTTP result.
 
@@ -91,6 +94,7 @@ So: **MCP clients see named tools**; the adapter **maps** each name to a persist
 | Wrong tenant / missing config | `tool_config_not_found` |
 | No URL in config | `tool_config_missing_url` |
 | Bad header shape | `invalid_tool_headers_config` |
+| Missing interaction metadata for a header | `interaction_metadata_header_missing` |
 | HTTP/validation failure | `tool_response_validation_failed` or exception type name |
 | Body vs schema | `response_body_schema_mismatch` |
 
@@ -122,6 +126,8 @@ For each bound user prompt, **`mcp.prompt(name=slug, ...)`** registers a templat
 - **`_ensure_mcp_asgi_lifespan`** — holds the FastMCP app’s lifespan context in a background task so the app stays initialized under load.
 
 Use **`clear_tenant_mcp_app_cache()`** / **`shutdown_tenant_mcp_lifespans()`** in tests or controlled shutdown (see module docstrings and call sites).
+
+OpenAPI **import-tools** (`ToolsService.import_tool`) sets **`config.base_url`** with **`resolve_tool_import_base_url`** (OpenAPI `servers`, else origin of the fetch URL, else **`UORA_APP_PLATFORM_HTTP_BASE`**, else **`http://host.docker.internal:8088`**) and merges default **`Authorization` → `uora_end_user_authorization`** headers for outbound app-platform calls. See **`src/domain/tools/services/tool_import_http_base.py`**.
 
 ## Related
 

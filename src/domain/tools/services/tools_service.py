@@ -22,6 +22,10 @@ from domain.tools.schemas.tools import (
 from domain.tools.schemas.tool_config_types import ToolConfigConfig
 from domain.tools.services.openapi_parser import OpenAPIParser
 from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
+from domain.tools.services.tool_import_http_base import (
+    DEFAULT_UORA_IMPORT_TOOL_HEADERS,
+    resolve_tool_import_base_url,
+)
 from domain.governance.schemas.authoring_events import AuthoringEventType, ChangeType
 from exceptions.service_exceptions import (
     DomainValidationException,
@@ -64,10 +68,10 @@ class ToolsService(ToolsServicePort):
         operations = self.openapi_parser.extract_operations(parsed_spec)
         if not operations:
             raise DomainValidationException(message="openapi_spec_without_operations")
-        raw_base = ""
-        if parsed_spec.get("servers"):
-            raw_base = str(parsed_spec.get("servers", [{}])[0].get("url", "") or "")
-        base_url = str(raw_base).strip().rstrip("/")
+        base_url = resolve_tool_import_base_url(
+            openapi_servers=parsed_spec.get("servers"),
+            openapi_fetch_url=tool_import_request.openapi_url,
+        )
         imported_tools: list[Tool] = []
         for op in operations:
             operation_id = op["operation_id"]
@@ -99,6 +103,7 @@ class ToolsService(ToolsServicePort):
                 summary=op.get("summary"),
                 description=op.get("description"),
                 examples=op.get("examples"),
+                headers=dict(DEFAULT_UORA_IMPORT_TOOL_HEADERS),
             )
 
             created_tool_config = await self.repository.create_tool_config(

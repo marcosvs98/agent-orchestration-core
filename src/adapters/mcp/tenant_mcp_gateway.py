@@ -22,6 +22,14 @@ from domain.tools.services.tool_orchestrator import effective_tool_http_url
 logger = get_logger(__name__)
 
 _MCP_CONTAINER: ContextVar[object | None] = ContextVar("mcp_container", default=None)
+_MCP_INBOUND_INTERACTION_METADATA: ContextVar[dict[str, str] | None] = ContextVar(
+    "mcp_inbound_interaction_metadata",
+    default=None,
+)
+_MCP_OUTBOUND_AUTH_SECRET_REF: ContextVar[str | None] = ContextVar(
+    "mcp_outbound_auth_secret_ref",
+    default=None,
+)
 
 _MCP_PATH_RE = re.compile(
     r"^/core/v1/mcp-servers/([0-9a-fA-F-]{36})/mcp(.*)$",
@@ -39,6 +47,28 @@ def _header(scope: dict, name: str) -> str | None:
         if k.lower() == want:
             return v.decode("latin-1")
     return None
+
+
+def _mcp_interaction_metadata_for_http_tools() -> dict[str, str]:
+    out: dict[str, str] = {}
+    inbound = _MCP_INBOUND_INTERACTION_METADATA.get()
+    if isinstance(inbound, dict):
+        out.update({str(k): str(v) for k, v in inbound.items() if v is not None})
+    if out.get("uora_end_user_authorization"):
+        return out
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        req = get_http_request()
+        auth_in = req.headers.get("authorization") or ""
+        if auth_in.lower().startswith("bearer "):
+            bearer_body = auth_in[7:].strip()
+            xk = (req.headers.get("x-api-key") or "").strip()
+            if bearer_body and bearer_body != xk:
+                out["uora_end_user_authorization"] = auth_in.strip()
+    except RuntimeError:
+        pass
+    return out
 
 
 def _spec_cache_key(spec: McpServerBuildSpec) -> tuple:
@@ -64,6 +94,7 @@ def _spec_cache_key(spec: McpServerBuildSpec) -> tuple:
         ph,
         spec.flow_snapshot_id,
         spec.flow_deployment_id,
+        spec.outbound_authorization_secret_ref or "",
     )
 
 
@@ -114,6 +145,24 @@ class _McpHttpProxyTool(Tool):
         secret_resolver = ctr.adapters.secret_resolver()
         tracer = ctr.adapters.tracer()
         headers: dict[str, str] = {}
+        meta = dict(_mcp_interaction_metadata_for_http_tools())
+        ob_ref = _MCP_OUTBOUND_AUTH_SECRET_REF.get()
+        cur_auth = (meta.get("uora_end_user_authorization") or "").strip()
+        if ob_ref and not cur_auth:
+            with tracer.observe(
+                as_type="tool",
+                name="adapters.mcp.resolve_mcp_outbound_auth_fallback",
+                input={"secret_ref": str(ob_ref)},
+            ):
+                try:
+                    resolved = await secret_resolver.resolve(secret_ref=str(ob_ref))
+                except Exception:
+                    resolved = ""
+            if resolved and str(resolved).strip():
+                v = str(resolved).strip()
+                if not v.lower().startswith("bearer "):
+                    v = f"Bearer {v}"
+                meta["uora_end_user_authorization"] = v
         for key, value in (config.get("headers") or {}).items():
             if isinstance(value, dict) and "secret_ref" in value:
                 with tracer.observe(
@@ -124,6 +173,23 @@ class _McpHttpProxyTool(Tool):
                     headers[str(key)] = await secret_resolver.resolve(
                         secret_ref=str(value["secret_ref"])
                     )
+            elif isinstance(value, dict) and "interaction_metadata_key" in value:
+                mk = str(value["interaction_metadata_key"])
+                raw = meta.get(mk)
+                if raw is None or (isinstance(raw, str) and not raw.strip()):
+                    return ToolResult(
+                        content=json.dumps(
+                            {
+                                "error": "interaction_metadata_header_missing",
+                                "detail": {"header": str(key), "metadata_key": mk},
+                            }
+                        ),
+                        structured_content={
+                            "error": "interaction_metadata_header_missing",
+                            "detail": {"header": str(key), "metadata_key": mk},
+                        },
+                    )
+                headers[str(key)] = str(raw).strip()
             elif isinstance(value, str):
                 headers[str(key)] = value
             else:
@@ -276,7 +342,7 @@ def _build_http_app_from_spec(spec: McpServerBuildSpec) -> object:
         _user_prompt.__name__ = re.sub(r"\W+", "_", slug)[:80] or "user_prompt"
         mcp.prompt(name=slug, description=title or slug)(_user_prompt)
 
-    return mcp.http_app(path="/mcp")
+    return mcp.http_app(path="/mcp", stateless_http=True, json_response=True)
 
 
 def _get_mcp_http_app_for_spec(spec: McpServerBuildSpec) -> object:
@@ -377,8 +443,18 @@ class TenantMcpAsgiMiddleware:
         new_scope = dict(scope)
         new_scope["path"] = inner_path
         new_scope["raw_path"] = inner_path.encode("utf-8")
+        inbound: dict[str, str] = {}
+        auth_in = _header(scope, "authorization") or ""
+        if auth_in.lower().startswith("bearer "):
+            bearer_body = auth_in[7:].strip()
+            if bearer_body and bearer_body != api_key:
+                inbound["uora_end_user_authorization"] = auth_in.strip()
+        tok_o = _MCP_OUTBOUND_AUTH_SECRET_REF.set(spec.outbound_authorization_secret_ref)
+        tok_m = _MCP_INBOUND_INTERACTION_METADATA.set(inbound)
         tok_c = _MCP_CONTAINER.set(self.container)
         try:
             await mcp_http(new_scope, receive, send)
         finally:
             _MCP_CONTAINER.reset(tok_c)
+            _MCP_INBOUND_INTERACTION_METADATA.reset(tok_m)
+            _MCP_OUTBOUND_AUTH_SECRET_REF.reset(tok_o)

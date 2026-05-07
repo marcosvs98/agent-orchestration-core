@@ -7,6 +7,7 @@ from domain.mcp_registry.schemas.mcp_registry import (
     McpServerCreateRequest,
     McpServerCreateResponse,
     McpServerDetail,
+    McpServerPatchOutboundAuthRequest,
     McpServerSummary,
 )
 from domain.mcp_registry.services.mcp_registry_service import McpRegistryService
@@ -41,6 +42,13 @@ class McpRegistryController:
             "/mcp-servers/{mcp_server_id}",
             self.get_mcp_server,
             methods=["GET"],
+            response_model=McpServerDetail,
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/mcp-servers/{mcp_server_id}/outbound-authorization",
+            self.patch_mcp_server_outbound_authorization,
+            methods=["PATCH"],
             response_model=McpServerDetail,
             status_code=status.HTTP_200_OK,
         )
@@ -88,4 +96,20 @@ class McpRegistryController:
         return await self.service.get_server(
             tenant_id=auth.tenant_id,
             mcp_server_id=mcp_server_id,
+        )
+
+    async def patch_mcp_server_outbound_authorization(
+        self,
+        mcp_server_id: UUID,
+        body: McpServerPatchOutboundAuthRequest,
+        auth: AuthContext = Depends(get_auth_context),
+    ) -> McpServerDetail:
+        if Scope.McpServersCreate.value not in auth.scopes:
+            raise AuthorizationDeniedException(message="insufficient_scope")
+        if auth.tenant_id is None:
+            raise AuthorizationDeniedException(message="tenant_id_required")
+        return await self.service.patch_mcp_server_outbound_auth(
+            tenant_id=auth.tenant_id,
+            mcp_server_id=mcp_server_id,
+            body=body,
         )

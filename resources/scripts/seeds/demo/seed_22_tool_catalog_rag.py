@@ -124,7 +124,11 @@ class _SeedTracer:
 
 async def seed_tool_catalog_rag() -> None:
     if not OPENAI_API_KEY:
-        raise RuntimeError("`OPENAI_API_KEY` is required for tool catalog RAG seed")
+        print(
+            "Skipping tool catalog RAG seed: OPENAI_API_KEY is not set",
+            file=sys.stderr,
+        )
+        return
 
     cache_adapter = RedisAdapter()
     database_connection = DatabaseConnection(engine=engine, sessionmaker=async_session)

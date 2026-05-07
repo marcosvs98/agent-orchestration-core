@@ -248,7 +248,11 @@ async def seed_rag() -> None:
             await session.commit()
 
     if not OPENAI_API_KEY:
-        raise RuntimeError("`OPENAI_API_KEY` is required for RAG seed ingestion")
+        print(
+            "Skipping RAG document ingestion: OPENAI_API_KEY is not set",
+            file=sys.stderr,
+        )
+        return
 
     cache_adapter = RedisAdapter()
     database_connection = DatabaseConnection(engine=engine, sessionmaker=async_session)
