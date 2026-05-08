@@ -2,6 +2,7 @@ from enum import StrEnum
 
 
 class Scope(StrEnum):
+    ConversationTurnCreate = "conversation:turn:create"
     ExecutionFlowRunCreate = "execution:flow_run:create"
     ExecutionFlowRunGet = "execution:flow_run:get"
     ExecutionFlowRunResume = "execution:flow_run:resume"

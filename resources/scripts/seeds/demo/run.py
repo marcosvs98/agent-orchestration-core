@@ -45,6 +45,7 @@ from seeds.demo.seed_23_rag_policy import seed_rag_policy
 from seeds.demo.seed_24_user_prompt import seed_user_prompt
 from seeds.demo.seed_25_mcp_server import seed_mcp_server
 from seeds.demo.seed_26_flow_snapshot_deployment import seed_flow_snapshot_deployment
+from seeds.demo.seed_27_tenant_mcp_credential import seed_tenant_mcp_credential
 
 
 async def main() -> None:
@@ -81,6 +82,7 @@ async def main() -> None:
             ("RAG Policy", seed_rag_policy),
             ("Flow Snapshot Deployment", seed_flow_snapshot_deployment),
             ("MCP server", seed_mcp_server),
+            ("Tenant MCP credential", seed_tenant_mcp_credential),
         ]
 
         try:

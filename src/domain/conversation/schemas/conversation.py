@@ -11,12 +11,7 @@ from domain.user_input.schemas import MediaRefUserInputPart, TextUserInputPart
 
 class SSEEventType(StrEnum):
     CONNECTED = "connected"
-    FLOW_STARTED = "flow_started"
-    NODE_STARTED = "node_started"
-    NODE_COMPLETED = "node_completed"
-    EDGE_EVALUATED = "edge_evaluated"
-    FLOW_COMPLETED = "flow_completed"
-    FLOW_FAILED = "flow_failed"
+    TOOL_PROGRESS = "tool_progress"
     DONE = "done"
     ERROR = "error"
     PING = "ping"
@@ -24,8 +19,7 @@ class SSEEventType(StrEnum):
 
 
 class ConversationRequest(BaseModel):
-    flow_id: UUID | None = None
-    flow_version_id: UUID | None = None
+    agent_id: UUID
     session_id: UUID | None = None
     user_id: str
     user_input: str | None = None

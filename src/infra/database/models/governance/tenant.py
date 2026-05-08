@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Index, String, Text, text
+from sqlalchemy import Boolean, Column, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -18,6 +18,11 @@ class Tenant(ORMBaseModel):
     contact_name = Column(String(length=255), nullable=True)
     contact_phone = Column(String(length=50), nullable=True)
     settings = Column(JSONB, nullable=True)
+    default_flow_version_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("flow_version.flow_version_id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         Index(

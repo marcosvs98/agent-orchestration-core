@@ -126,6 +126,10 @@ from domain.conversation.controllers.conversation_controller import (
 from domain.conversation.controllers.conversation_read_controller import (
     ConversationReadController,
 )
+from domain.conversation.repositories.tenant_mcp_credential_repository import (
+    TenantMcpCredentialRepository,
+)
+from domain.conversation.services.mcp_config_loader import McpConfigLoader
 from domain.conversation.repositories.conversation_read_repository import (
     ConversationReadRepository,
 )
@@ -704,6 +708,7 @@ class ConversationContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     execution = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
+    agents = providers.DependenciesContainer()
     user_prompts = providers.DependenciesContainer()
 
     conversation_read_repository = providers.Factory(
@@ -720,9 +725,17 @@ class ConversationContainer(containers.DeclarativeContainer):
         service=conversation_read_service,
     )
 
+    tenants_repository = providers.Factory(
+        TenantsRepository,
+        database_connection=core.database_connection,
+    )
+
     conversation_service = providers.Factory(
         ConversationService,
-        execution_service=execution.execution_service,
+        openai_provider=adapters.openai_provider,
+        idempotency=execution.idempotency_service,
+        execution_repository=execution.execution_repository,
+        agents_repository=agents.agents_repository,
         user_prompts_repository=user_prompts.user_prompts_repository,
     )
     conversation_boundary = providers.Factory(
@@ -731,9 +744,19 @@ class ConversationContainer(containers.DeclarativeContainer):
         access_policy_service=execution.access_policy_service,
         rate_limit_service=execution.rate_limit_service,
     )
+    tenant_mcp_credential_repository = providers.Factory(
+        TenantMcpCredentialRepository,
+        database_connection=core.database_connection,
+    )
+    mcp_config_loader = providers.Factory(
+        McpConfigLoader,
+        credential_repository=tenant_mcp_credential_repository,
+        public_base_url=providers.Object((settings.PUBLIC_BASE_URL or "").rstrip("/")),
+    )
     conversation_controller = providers.Factory(
         ConversationController,
         boundary=conversation_boundary,
+        mcp_config_loader=mcp_config_loader,
     )
 
 
@@ -868,6 +891,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         core=core,
         execution=execution,
         adapters=adapters,
+        agents=agents,
         user_prompts=user_prompts,
     )
     governance = providers.Container(GovernanceContainer, core=core, adapters=adapters)

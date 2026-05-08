@@ -121,6 +121,11 @@ def get_logger(
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next) -> Response:
+        safe_headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() in {"x-request-id", "x-correlation-id", "idempotency-key", "x-trace-id"}
+        }
         log_attributes: dict = {
             "request.method": request.method,
             "request.url": str(request.url),
@@ -128,7 +133,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             "request.query_params": dict(request.query_params),
             "request.user_agent": request.headers.get("User-Agent"),
             "request.referer": request.headers.get("Referer"),
-            "request.headers": dict(request.headers),
+            "request.headers": safe_headers,
         }
         with bound_contextvars(**log_attributes):
             response = await call_next(request)

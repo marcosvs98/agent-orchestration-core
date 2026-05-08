@@ -63,6 +63,10 @@ echo "PostgreSQL is ready"
 echo "Running migrations (idempotent)..."
 alembic upgrade head
 
+echo "Running demo seed (idempotent)..."
+PYTHONPATH=/app/src:/app/resources/scripts python3 /app/resources/scripts/seeds/demo/run.py \
+  && echo "Demo seed completed" \
+  || echo "Warning: demo seed encountered issues (non-fatal)" >&2
 
 if [[ $ENVIRONMENT = 'development' ]] ; then
   gunicorn "app:create_app()" \

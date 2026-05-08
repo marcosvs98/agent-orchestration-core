@@ -7,7 +7,7 @@
 | POST | `/core/v1/conversations` | **`EventSourceResponse`** (SSE) |
 
 Controller: `src/domain/conversation/controllers/conversation_controller.py`  
-Router: `prefix="/core/v1"`, `dependencies=[get_auth_context]`.
+Router: `prefix="/core/v1"`, `dependencies=[get_auth_context_or_api_key]`.
 
 ### Headers
 
@@ -17,7 +17,7 @@ Router: `prefix="/core/v1"`, `dependencies=[get_auth_context]`.
 
 ### Request body
 
-Beyond legacy `user_input`, the JSON body may include **`input_parts`** (text and `media_ref` segments). **`ExecutionService`** composes them into a single canonical **`user_input`** before the graph runs; see [User input and media](user-input-and-media.md).
+The conversation contract uses `agent_id` as selector and keeps `user_input` / `input_parts` for user text and multimodal input.
 
 ### Boundary behaviour
 
@@ -27,6 +27,23 @@ Beyond legacy `user_input`, the JSON body may include **`input_parts`** (text an
 2. **`AccessPolicyService.authorize`** with the same action string and `auth.scopes`.
 3. Delegates to **`ConversationService.execute_turn`**.
 
+### Runtime path
+
+The endpoint runs in direct low-friction mode:
+
+- `ConversationService` creates minimal interaction audit.
+- `agent_id` is resolved to active version for system prompt.
+- `OpenAIProviderAdapter.infer_conversation_stream` performs `responses.create(stream=True)`.
+- OpenAI events are mapped to internal SSE events.
+
+### SSE event contract
+
+- `connected`
+- `content_delta`
+- `tool_progress`
+- `done`
+- `error`
+
 ## Sequence
 
 ```mermaid
@@ -35,10 +52,12 @@ sequenceDiagram
   participant CC as ConversationController
   participant CB as ConversationBoundary
   participant CS as ConversationService
+  participant OAI as OpenAIProviderAdapter
   Client->>CC: POST + Idempotency-Key
   CC->>CB: send_message
   CB->>CB: rate_limit + access_policy
   CB->>CS: execute_turn
+  CS->>OAI: infer_conversation_stream
   CS-->>Client: SSE events
 ```
 

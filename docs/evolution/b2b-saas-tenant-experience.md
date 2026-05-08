@@ -164,6 +164,8 @@ Se precisar, acrescenta-se `Authorization: Bearer <jwt>` **além** da chave (con
 
 O modelo de produto expõe o mesmo endpoint como **ferramenta MCP remota**; a OpenAI lista e invoca tools conforme a documentação de [MCP Tools](https://platform.openai.com/docs/guides/tools-remote-mcp).
 
+No caminho de conversação HTTP do AOC (`POST /core/v1/conversations`), a execução de resposta usa o mesmo padrão da Responses API em stream, com mapeamento interno de eventos SSE.
+
 ```python
 import os
 from openai import OpenAI

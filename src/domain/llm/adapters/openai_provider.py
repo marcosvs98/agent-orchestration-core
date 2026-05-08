@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, NewType, TYPE_CHECKING
 from openai import AsyncOpenAI
 
 from adapters.cache.redis_adapter import RedisAdapter
+from adapters.mcp.conversation_mcp_context import get_conversation_mcp_config
 from domain.llm.ports.llm_provider import LLMProviderPort
 from exceptions.service_exceptions import DomainValidationException
 from domain.llm.schemas.llm import LLMRequest, LLMResult
@@ -137,6 +138,22 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 else:
                     payload["conversation"] = conversation_id
 
+        if request.stream and on_delta is not None:
+            mcp_cfg = get_conversation_mcp_config()
+            if mcp_cfg is not None:
+                payload["tools"] = [
+                    {
+                        "type": "mcp",
+                        "server_label": "tenant-mcp",
+                        "server_url": mcp_cfg.mcp_server_url,
+                        "require_approval": "never",
+                        "headers": {
+                            "x-api-key": mcp_cfg.mcp_access_key,
+                            "authorization": f"Bearer {mcp_cfg.outbound_api_key}",
+                        },
+                    }
+                ]
+
         response: Response | None = None
         output_text: Optional[str] = None
         accumulated_text = ""
@@ -187,12 +204,22 @@ class OpenAIProviderAdapter(LLMProviderPort):
         output_json: Dict[str, Any] | None = None
         if response.output:
             for block in response.output:
-                for item in block.content or []:
-                    if item.type == "output_json":
-                        if isinstance(item.json, dict):
-                            output_json = item.json
-                    if item.type == "output_text":
-                        output_text = item.text
+                block_payload = (
+                    block.model_dump(mode="json")
+                    if hasattr(block, "model_dump")
+                    else {}
+                )
+                content_items = block_payload.get("content", [])
+                if not isinstance(content_items, list):
+                    continue
+                for item in content_items:
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = item.get("type")
+                    if item_type == "output_json" and isinstance(item.get("json"), dict):
+                        output_json = item["json"]
+                    if item_type == "output_text" and isinstance(item.get("text"), str):
+                        output_text = item["text"]
         if output_text is None and accumulated_text:
             output_text = accumulated_text
 
@@ -224,6 +251,173 @@ class OpenAIProviderAdapter(LLMProviderPort):
             cost_usd=None,
             latency_ms=latency_ms,
             model_alias=request.model_alias,
+            raw_output=response.model_dump(),
+        )
+
+    async def infer_conversation_stream(
+        self,
+        *,
+        model: str,
+        instructions: str,
+        user_input: str,
+        temperature: float = 0.2,
+        user_id: str | None = None,
+        conversation_key: str | None = None,
+        mcp_tools: list[dict[str, Any]] | None = None,
+        store: bool = False,
+        on_openai_event: Callable[[Any], Awaitable[None]] | None = None,
+    ) -> LLMResult:
+        payload: Dict[str, Any] = {
+            "model": model,
+            "instructions": instructions,
+            "input": user_input,
+            "temperature": temperature,
+            "store": store,
+        }
+        if user_id:
+            payload["user"] = user_id
+        if conversation_key:
+            conversation_id = await self._get_or_create_conversation_id(conversation_key)
+            previous_response_id = await self._get_previous_response_id(conversation_key)
+            if previous_response_id:
+                payload["previous_response_id"] = previous_response_id
+            else:
+                payload["conversation"] = conversation_id
+        if mcp_tools:
+            payload["tools"] = mcp_tools
+
+        response: Response | None = None
+        accumulated_text = ""
+        start = time.perf_counter()
+        try:
+            try:
+                stream = await self.openai_client.responses.create(
+                    **payload,
+                    stream=True,
+                    service_tier="auto",
+                )
+                async for event in stream:
+                    if on_openai_event is not None:
+                        await on_openai_event(event)
+                    event_payload = (
+                        event.model_dump(mode="json")
+                        if hasattr(event, "model_dump")
+                        else {}
+                    )
+                    event_type = event_payload.get("type")
+                    if event_type == "response.output_text.delta":
+                        delta = event_payload.get("delta", "") or ""
+                        if delta:
+                            accumulated_text += str(delta)
+                    elif event_type == "response.completed":
+                        response_data = event_payload.get("response")
+                        if isinstance(response_data, dict):
+                            response = event.response
+            except Exception as exc:
+                err_text = str(exc)
+                if "424" not in err_text and "Failed Dependency" not in err_text:
+                    raise
+                stream = await self.openai_client.responses.create(
+                    **payload,
+                    stream=True,
+                    service_tier="auto",
+                )
+                async for event in stream:
+                    if on_openai_event is not None:
+                        await on_openai_event(event)
+                    event_payload = (
+                        event.model_dump(mode="json")
+                        if hasattr(event, "model_dump")
+                        else {}
+                    )
+                    event_type = event_payload.get("type")
+                    if event_type == "response.output_text.delta":
+                        delta = event_payload.get("delta", "") or ""
+                        if delta:
+                            accumulated_text += str(delta)
+                    elif event_type == "response.completed":
+                        response_data = event_payload.get("response")
+                        if isinstance(response_data, dict):
+                            response = event.response
+        except Exception as exc:
+            raise DomainValidationException(
+                "llm_provider_error",
+                input_data=payload,
+                errors=[str(exc)],
+            ) from exc
+
+        latency_ms = (time.perf_counter() - start) * 1000
+        if response is None:
+            return LLMResult(
+                output={"content": accumulated_text},
+                token_usage={
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "total_tokens": 0,
+                },
+                cost_usd=None,
+                latency_ms=latency_ms,
+                model_alias=model,
+                raw_output={},
+            )
+
+        if conversation_key and response.id:
+            await self._set_previous_response_id(
+                conversation_key,
+                ConversationResponseID(response.id),
+            )
+
+        output_text: Optional[str] = None
+        output_json: Dict[str, Any] | None = None
+        if response.output:
+            for block in response.output:
+                block_payload = (
+                    block.model_dump(mode="json")
+                    if hasattr(block, "model_dump")
+                    else {}
+                )
+                content_items = block_payload.get("content", [])
+                if not isinstance(content_items, list):
+                    continue
+                for item in content_items:
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = item.get("type")
+                    if item_type == "output_json" and isinstance(item.get("json"), dict):
+                        output_json = item["json"]
+                    if item_type == "output_text" and isinstance(item.get("text"), str):
+                        output_text = item["text"]
+        if output_text is None and accumulated_text:
+            output_text = accumulated_text
+        if output_json is None and output_text:
+            try:
+                parsed_output = json.loads(output_text)
+                if isinstance(parsed_output, dict):
+                    output_json = parsed_output
+            except json.JSONDecodeError:
+                output_json = None
+
+        usage: ResponseUsage | None = response.usage
+        input_tokens = usage.input_tokens if usage else 0
+        output_tokens = usage.output_tokens if usage else 0
+        total_tokens = usage.total_tokens if usage else 0
+        cached_tokens = 0
+        if usage and usage.input_tokens_details:
+            cached_tokens = usage.input_tokens_details.cached_tokens or 0
+        token_usage = {
+            "input_tokens": input_tokens or 0,
+            "output_tokens": output_tokens or 0,
+            "cached_input_tokens": cached_tokens,
+            "total_tokens": total_tokens or 0,
+        }
+
+        return LLMResult(
+            output=output_json if output_json is not None else {"content": output_text},
+            token_usage=token_usage,
+            cost_usd=None,
+            latency_ms=latency_ms,
+            model_alias=model,
             raw_output=response.model_dump(),
         )
 
@@ -261,9 +455,19 @@ class OpenAIProviderAdapter(LLMProviderPort):
         output_text = ""
         if response.output:
             for block in response.output:
-                for item in block.content or []:
-                    if item.type == "output_text":
-                        output_text = item.text
+                block_payload = (
+                    block.model_dump(mode="json")
+                    if hasattr(block, "model_dump")
+                    else {}
+                )
+                content_items = block_payload.get("content", [])
+                if not isinstance(content_items, list):
+                    continue
+                for item in content_items:
+                    if isinstance(item, dict) and item.get("type") == "output_text":
+                        text = item.get("text")
+                        if isinstance(text, str):
+                            output_text = text
 
         usage = response.usage
         input_tokens = usage.input_tokens if usage else 0

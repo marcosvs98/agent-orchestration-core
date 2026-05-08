@@ -1,4 +1,5 @@
 import hashlib
+import secrets
 import time
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from domain.auth.repositories.inbound_service_key_repository import (
     InboundServiceKeyRepository,
 )
 from domain.auth.schemas.auth import TenantTokenRequest
+from domain.governance.schemas.scopes import Scope
 from exceptions.service_exceptions import (
     AuthenticationFailedException,
     AuthorizationDeniedException,
@@ -17,6 +19,7 @@ from exceptions.service_exceptions import (
 from infra.database import DatabaseConnection
 from infra.database.dependencies import get_database_connection
 from settings import (
+    ADMIN_API_KEY,
     JWT_ALGORITHM,
     JWT_AUDIENCE,
     JWT_ISSUER,
@@ -183,3 +186,43 @@ async def get_tenant_token_m2m_auth(
             expires_at=now + 3600,
         )
     return _jwt_auth_context_from_bearer(credentials)
+
+
+async def get_auth_context_or_api_key(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(security),
+    db: DatabaseConnection = Depends(get_database_connection),
+) -> AuthContext:
+    inbound_key = (request.headers.get(INBOUND_SERVICE_KEY_HEADER) or "").strip()
+    if inbound_key:
+        digest = hashlib.sha256(inbound_key.encode("utf-8")).hexdigest()
+        async with db.get_session() as session:
+            row = await InboundServiceKeyRepository.find_active_by_key_hash(session, digest)
+        if row is None:
+            raise AuthenticationFailedException(message="invalid_inbound_service_key")
+        return AuthContext(
+            tenant_id=row.tenant_id,
+            principal_type="machine",
+            principal_id=str(row.inbound_service_key_id),
+            scopes={
+                str(Scope.ConversationTurnCreate),
+                str(Scope.ExecutionFlowRunCreate),
+            },
+            token_issuer=str(JWT_ISSUER),
+            token_audience=str(JWT_AUDIENCE),
+            expires_at=int(time.time()) + 3600,
+        )
+    return _jwt_auth_context_from_bearer(credentials)
+
+
+async def get_admin_auth(
+    request: Request,
+) -> None:
+    if not ADMIN_API_KEY:
+        raise AuthenticationFailedException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            message="admin_endpoint_not_configured",
+        )
+    provided = (request.headers.get("X-Admin-Key") or "").strip()
+    if not provided or not secrets.compare_digest(provided, ADMIN_API_KEY):
+        raise AuthenticationFailedException(message="invalid_admin_key")

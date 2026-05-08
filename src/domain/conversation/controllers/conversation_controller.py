@@ -7,20 +7,34 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
+from adapters.mcp.conversation_mcp_context import (
+    _CONVERSATION_MCP_CONFIG,
+    set_conversation_mcp_config,
+)
 from domain.conversation.schemas.conversation import ConversationRequest
+from domain.conversation.services.mcp_config_loader import McpConfigLoader
 from domain.execution.schemas.execution import Channel
 from exceptions.service_exceptions import RouterValidationException
 from services.conversation_boundary import ConversationBoundary
-from utils.auth import AuthContext, get_auth_context
+from utils.auth import AuthContext, get_auth_context_or_api_key
+
+SAFE_CONVERSATION_HEADERS = {
+    "x-request-id",
+    "x-correlation-id",
+    "idempotency-key",
+    "x-trace-id",
+    "x-external-message-id",
+}
 
 
 class ConversationController:
-    def __init__(self, boundary: ConversationBoundary) -> None:
+    def __init__(self, boundary: ConversationBoundary, mcp_config_loader: McpConfigLoader) -> None:
         self.boundary = boundary
+        self.mcp_config_loader = mcp_config_loader
         self.router = APIRouter(
             prefix="/core/v1",
             tags=["conversations"],
-            dependencies=[Depends(get_auth_context)],
+            dependencies=[Depends(get_auth_context_or_api_key)],
         )
         self._bind_routes()
 
@@ -37,7 +51,7 @@ class ConversationController:
         self,
         request: Request,
         payload: ConversationRequest,
-        auth: AuthContext = Depends(get_auth_context),
+        auth: AuthContext = Depends(get_auth_context_or_api_key),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
         last_event_id_header: str | None = Header(default=None, alias="Last-Event-ID"),
     ) -> AsyncGenerator[ServerSentEvent, None]:
@@ -61,19 +75,28 @@ class ConversationController:
         else:
             trace_uuid = uuid4()
 
-        stream = await self.boundary.send_message(
-            auth=auth,
-            request=payload,
-            channel=Channel.HTTP,
-            headers=dict(request.headers),
-            external_message_id=request.headers.get("X-External-Message-Id"),
-            request_id=request.headers.get("X-Request-Id") or idempotency_key,
-            trace_id=str(trace_uuid),
-            last_event_id=parsed_last_event_id,
+        mcp_config = await self.mcp_config_loader.load_for_tenant(
+            tenant_id=auth.tenant_id
         )
+        tok = set_conversation_mcp_config(mcp_config)
         try:
+            stream = await self.boundary.send_message(
+                auth=auth,
+                request=payload,
+                channel=Channel.HTTP,
+                headers={
+                    k: v
+                    for k, v in request.headers.items()
+                    if k.lower() in SAFE_CONVERSATION_HEADERS
+                },
+                external_message_id=request.headers.get("X-External-Message-Id"),
+                request_id=request.headers.get("X-Request-Id") or idempotency_key,
+                trace_id=str(trace_uuid),
+                last_event_id=parsed_last_event_id,
+            )
             async for event in stream:
                 yield event
-
         except asyncio.CancelledError:
             pass
+        finally:
+            _CONVERSATION_MCP_CONFIG.reset(tok)

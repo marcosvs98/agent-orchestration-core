@@ -14,7 +14,7 @@ from exceptions.service_exceptions import (
     AuthorizationDeniedException,
     RouterValidationException,
 )
-from utils.auth import AuthContext, get_auth_context, get_tenant_token_m2m_auth
+from utils.auth import AuthContext, get_admin_auth, get_auth_context, get_tenant_token_m2m_auth
 from domain.governance.schemas.scopes import Scope
 
 
@@ -44,6 +44,14 @@ class AuthController:
             methods=["POST"],
             status_code=status.HTTP_204_NO_CONTENT,
             dependencies=[Depends(get_auth_context)],
+        )
+        self.router.add_api_route(
+            "/admin/api-keys",
+            self.create_admin_api_key,
+            methods=["POST"],
+            response_model=InboundServiceKeyCreateResponse,
+            status_code=status.HTTP_201_CREATED,
+            dependencies=[Depends(get_admin_auth)],
         )
 
     async def issue_tenant_token(
@@ -91,4 +99,27 @@ class AuthController:
             inbound_service_key_id=inbound_service_key_id,
             tenant_id=body.tenant_id,
             auth=auth,
+        )
+
+    async def create_admin_api_key(
+        self,
+        body: InboundServiceKeyCreateRequest,
+    ) -> InboundServiceKeyCreateResponse:
+        admin_auth = AuthContext(
+            tenant_id=None,
+            principal_type="machine",
+            principal_id="admin",
+            scopes={"tenants:create"},
+            token_issuer="admin",
+            token_audience="admin",
+            expires_at=0,
+        )
+        kid, tid, secret = await self.service.create_inbound_service_key(
+            tenant_id=body.tenant_id,
+            auth=admin_auth,
+        )
+        return InboundServiceKeyCreateResponse(
+            inbound_service_key_id=kid,
+            tenant_id=tid,
+            secret=secret,
         )

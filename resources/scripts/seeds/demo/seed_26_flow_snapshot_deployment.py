@@ -20,6 +20,8 @@ from infra.database.models.flow.flow_snapshot import FlowSnapshot
 from infra.database.models.flow.snapshot_binding import SnapshotBinding
 from infra.database.models.flow.snapshot_effective_policy import SnapshotEffectivePolicy
 
+from infra.database.models.governance.tenant import Tenant
+
 from seeds.demo.ids import (
     FLOW_DEPLOYMENT_DEFAULT_ID,
     FLOW_DEMO_ID,
@@ -27,6 +29,7 @@ from seeds.demo.ids import (
     FLOW_SNAPSHOT_V1_ID,
     FLOW_VERSION_V1_ID,
     RAG_CONFIG_DEMO_ID,
+    TENANT_DEMO_ID,
 )
 
 
@@ -153,4 +156,13 @@ async def seed_flow_snapshot_deployment() -> None:
             deployment.status = "ACTIVE"
             deployment.deployed_by = "system"
             session.add(deployment)
+
+        tenant_result = await session.execute(
+            select(Tenant).where(Tenant.tenant_id == TENANT_DEMO_ID)
+        )
+        tenant = tenant_result.scalar_one_or_none()
+        if tenant is not None and tenant.default_flow_version_id != FLOW_VERSION_V1_ID:
+            tenant.default_flow_version_id = FLOW_VERSION_V1_ID
+            session.add(tenant)
+
         await session.commit()

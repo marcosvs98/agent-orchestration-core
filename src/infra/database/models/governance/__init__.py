@@ -45,3 +45,6 @@ from infra.database.models.governance.rag_policy import RagPolicy as RagPolicy
 from infra.database.models.governance.rag_policy_version import (
     RagPolicyVersion as RagPolicyVersion,
 )
+from infra.database.models.governance.tenant_mcp_credential import (
+    TenantMcpCredential as TenantMcpCredential,
+)

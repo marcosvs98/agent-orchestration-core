@@ -25,55 +25,41 @@ class StreamBridge(ExecutionEventHook):
 
     async def on_flow_start(self, **kwargs: Any) -> None:
         await self._push(
-            SSEEventType.FLOW_STARTED,
+            SSEEventType.TOOL_PROGRESS,
             {
-                "tenant_id": str(kwargs.get("tenant_id")),
-                "session_id": str(kwargs.get("session_id")),
-                "flow_run_id": str(kwargs.get("flow_run_id")),
-                "correlation_id": str(kwargs.get("correlation_id")),
+                "phase": "flow_started",
                 "payload": kwargs.get("payload") or {},
             },
         )
 
     async def on_node_start(self, **kwargs: Any) -> None:
         await self._push(
-            SSEEventType.NODE_STARTED,
+            SSEEventType.TOOL_PROGRESS,
             {
-                "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
+                "phase": "node_started",
                 "payload": kwargs.get("payload") or {},
             },
         )
 
     async def on_node_complete(self, **kwargs: Any) -> None:
         await self._push(
-            SSEEventType.NODE_COMPLETED,
+            SSEEventType.TOOL_PROGRESS,
             {
-                "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
+                "phase": "node_completed",
                 "payload": kwargs.get("payload") or {},
             },
         )
 
     async def on_edge_evaluated(self, **kwargs: Any) -> None:
         await self._push(
-            SSEEventType.EDGE_EVALUATED,
+            SSEEventType.TOOL_PROGRESS,
             {
-                "flow_run_id": str(kwargs.get("flow_run_id")),
-                "node_id": str(kwargs.get("node_id")) if kwargs.get("node_id") else None,
-                "edge_id": kwargs.get("edge_id"),
+                "phase": "edge_evaluated",
                 "payload": kwargs.get("payload") or {},
             },
         )
 
     async def on_flow_complete(self, **kwargs: Any) -> None:
-        await self._push(
-            SSEEventType.FLOW_COMPLETED,
-            {
-                "flow_run_id": str(kwargs.get("flow_run_id")),
-                "payload": kwargs.get("payload") or {},
-            },
-        )
         await self._push(
             SSEEventType.DONE,
             {
@@ -83,13 +69,6 @@ class StreamBridge(ExecutionEventHook):
         await self._done()
 
     async def on_flow_failed(self, **kwargs: Any) -> None:
-        await self._push(
-            SSEEventType.FLOW_FAILED,
-            {
-                "flow_run_id": str(kwargs.get("flow_run_id")),
-                "payload": kwargs.get("payload") or {},
-            },
-        )
         await self._push(
             SSEEventType.ERROR,
             {

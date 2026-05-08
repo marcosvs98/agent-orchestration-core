@@ -959,6 +959,64 @@ class ExecutionRepository:
                         }
                     )
 
+    async def update_interaction_result(
+        self,
+        *,
+        interaction_id: UUID,
+        output: dict,
+        status: str,
+        error: dict | None,
+    ) -> None:
+        async with self.db.get_session() as session:
+            stmt_int = select(InteractionModel).where(
+                InteractionModel.interaction_id == interaction_id
+            )
+            query_sql_int = compile_query(stmt_int)
+            with self.tracer.observe(
+                as_type="retriever",
+                name="domain.execution.repository.get_interaction_for_update",
+                input={
+                    "query": query_sql_int,
+                    "params": {"interaction_id": str(interaction_id)},
+                },
+                metadata={"retriever_name": "get_interaction_for_update"},
+            ) as retriever_handle:
+                result = await session.execute(stmt_int)
+                instance = result.scalar_one_or_none()
+                if retriever_handle:
+                    retriever_handle.success(
+                        output={
+                            "result_count": 1 if instance else 0,
+                            "found": instance is not None,
+                        }
+                    )
+            if instance is None:
+                raise NotFoundServiceException(message="interaction_not_found")
+            metadata = dict(instance.interaction_metadata or {})
+            metadata["status"] = status
+            if error is not None:
+                metadata["error"] = error
+            else:
+                metadata.pop("error", None)
+            instance.interaction_metadata = metadata
+            instance.output = output
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.execution.repository.update_interaction_result",
+                input={
+                    "interaction_id": str(interaction_id),
+                    "status": status,
+                },
+            ) as tool_handle:
+                await session.commit()
+                if tool_handle:
+                    tool_handle.success(
+                        output={
+                            "interaction_id": str(interaction_id),
+                            "status": status,
+                        }
+                    )
+
     async def set_current_interaction_result_for_flow_run(
         self,
         *,

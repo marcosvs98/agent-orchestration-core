@@ -48,6 +48,7 @@ MAX_USER_MEMORY_DOCUMENTS: int = config(
 )
 
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="", cast=str)
+OPENAI_CONVERSATION_MODEL: str = config("OPENAI_CONVERSATION_MODEL", default="gpt-4.1", cast=str)
 OPENAI_MODERATION_MODEL: str = config(
     "OPENAI_MODERATION_MODEL", default="omni-moderation-latest", cast=str
 )
@@ -101,6 +102,7 @@ JWT_LEEWAY_SECONDS: int = config("JWT_LEEWAY_SECONDS", default=0, cast=int)
 JWT_TENANT_TOKEN_EXPIRES_SECONDS: int = config(
     "JWT_TENANT_TOKEN_EXPIRES_SECONDS", default=3600, cast=int
 )
+ADMIN_API_KEY: str = config("ADMIN_API_KEY", default="", cast=str)
 PUBLIC_BASE_URL: str = config("PUBLIC_BASE_URL", default="", cast=str)
 IDEMPOTENCY_TTL_SECONDS: int = config("IDEMPOTENCY_TTL_SECONDS", default=3600, cast=int)
 RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED: bool = config(

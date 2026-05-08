@@ -110,6 +110,7 @@ omit = [
     "*/domain/rag/adapters/openai_embedding_adapter.py",
     "*/adapters/observability/langfuse_runtime_tracer.py",
     "*/domain/conversation/repositories/conversation_read_repository.py",
+    "*/domain/conversation/repositories/tenant_mcp_credential_repository.py",
     "*/domain/governance/repositories/llm_provider_repository.py",
     "*/domain/mcp_registry/services/mcp_registry_service.py",
     "*/domain/tenants/repositories/tenant_summary_repository.py",
