@@ -24,13 +24,15 @@ from infra.database.models.mcp_registry.mcp_server_vector_store import (
     McpServerVectorStore,
 )
 
+from domain.common.schemas.versioning import VersionStatus
+from infra.database.models.tool.tool_config import ToolConfig
+
 from seeds.demo.ids import (
     FLOW_DEPLOYMENT_DEFAULT_ID,
     FLOW_SNAPSHOT_V1_ID,
     MCP_SEED_DEMO_API_KEY,
     MCP_SERVER_DEMO_ID,
     TENANT_DEMO_ID,
-    TOOL_CONFIG_DEMO_ID,
     USER_PROMPT_DEMO_ID,
     VECTOR_STORE_DEMO_ID,
 )
@@ -91,12 +93,19 @@ async def seed_mcp_server() -> None:
             )
             .values(revoked_at=func.now())
         )
-        session.add(
-            McpServerTool(
-                mcp_server_id=MCP_SERVER_DEMO_ID,
-                tool_config_id=TOOL_CONFIG_DEMO_ID,
+        tool_configs = await session.execute(
+            select(ToolConfig.tool_config_id).where(
+                ToolConfig.tenant_id == TENANT_DEMO_ID,
+                ToolConfig.status == VersionStatus.PUBLISHED.value,
             )
         )
+        for (tool_config_id,) in tool_configs.all():
+            session.add(
+                McpServerTool(
+                    mcp_server_id=MCP_SERVER_DEMO_ID,
+                    tool_config_id=tool_config_id,
+                )
+            )
         session.add(
             McpServerVectorStore(
                 mcp_server_id=MCP_SERVER_DEMO_ID,

@@ -15,6 +15,7 @@ from domain.conversation.schemas.conversation import (
     ConversationRequest,
     SSEEventType,
 )
+from domain.conversation.services.conversation_mcp_tools import build_conversation_mcp_tools
 from domain.conversation.services.sse_writer import SSEWriter
 from domain.execution.adapters.idempotency_service import IdempotencyService
 from domain.execution.repositories.execution_repository import ExecutionRepository
@@ -153,18 +154,10 @@ class ConversationService(ConversationServicePort):
             mcp_cfg = get_conversation_mcp_config()
             mcp_tools: list[dict[str, str | dict[str, str]]] | None = None
             if mcp_cfg is not None:
-                mcp_tools = [
-                    {
-                        "type": "mcp",
-                        "server_label": "tenant-mcp",
-                        "server_url": mcp_cfg.mcp_server_url,
-                        "require_approval": "never",
-                        "headers": {
-                            "x-api-key": mcp_cfg.mcp_access_key,
-                            "authorization": f"Bearer {mcp_cfg.outbound_api_key}",
-                        },
-                    }
-                ]
+                mcp_tools = build_conversation_mcp_tools(
+                    mcp_cfg,
+                    request.metadata,
+                )
 
             async def _on_openai_event(event: object) -> None:
                 nonlocal final_text

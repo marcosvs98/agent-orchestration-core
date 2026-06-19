@@ -278,9 +278,14 @@ class OpenAIProviderAdapter(LLMProviderPort):
             payload["user"] = user_id
         if conversation_key:
             conversation_id = await self._get_or_create_conversation_id(conversation_key)
-            previous_response_id = await self._get_previous_response_id(conversation_key)
-            if previous_response_id:
-                payload["previous_response_id"] = previous_response_id
+            # store=False (default) does not persist responses; previous_response_id
+            # fails on follow-up turns. Use OpenAI conversation for multi-turn instead.
+            if store:
+                previous_response_id = await self._get_previous_response_id(conversation_key)
+                if previous_response_id:
+                    payload["previous_response_id"] = previous_response_id
+                else:
+                    payload["conversation"] = conversation_id
             else:
                 payload["conversation"] = conversation_id
         if mcp_tools:
