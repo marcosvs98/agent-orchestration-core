@@ -259,3 +259,42 @@ class TestOpenAIProviderMcpTools:
         )
         assert events == ["response.output_text.delta", "response.completed"]
         assert payloads[0]["tools"][0]["server_url"] == _MCP_CONFIG.mcp_server_url
+
+    @pytest.mark.asyncio
+    async def test_infer_conversation_stream_uses_message_history_input(self):
+        payloads: list[dict] = []
+
+        async def _fake_create(**kwargs):
+            payloads.append(dict(kwargs))
+            if kwargs.get("stream"):
+                async def _events():
+                    completed = MagicMock()
+                    completed.type = "response.completed"
+                    completed.response = _fake_response()
+                    yield completed
+                return _events()
+            return _fake_response()
+
+        cache = MagicMock()
+        cache.get = AsyncMock(return_value=None)
+        cache.set = AsyncMock()
+        openai_client = MagicMock()
+        openai_client.responses.create = AsyncMock(side_effect=_fake_create)
+        adapter = OpenAIProviderAdapter(cache_adapter=cache, openai_client=openai_client)
+
+        await adapter.infer_conversation_stream(
+            model="gpt-4.1",
+            instructions="i",
+            user_input="Preciso de detalhes da fatura",
+            message_history=[
+                {"role": "user", "content": "Cartão e fatura"},
+                {"role": "assistant", "content": "Escolha o cartão VISA INFINITE"},
+            ],
+        )
+
+        assert payloads[0]["input"] == [
+            {"role": "user", "content": "Cartão e fatura"},
+            {"role": "assistant", "content": "Escolha o cartão VISA INFINITE"},
+            {"role": "user", "content": "Preciso de detalhes da fatura"},
+        ]
+        assert "conversation" not in payloads[0]

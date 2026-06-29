@@ -214,6 +214,88 @@ async def test_execute_turn_passes_user_jwt_in_mcp_headers(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_execute_turn_passes_message_history_to_openai() -> None:
+    tenant_id = uuid4()
+    agent_id = uuid4()
+    session_id = uuid4()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_infer_conversation_stream(**kwargs):
+        captured.update(kwargs)
+        on_openai_event = kwargs["on_openai_event"]
+        await on_openai_event(
+            SimpleNamespace(type="response.output_text.delta", delta="Fatura")
+        )
+        return SimpleNamespace(output={"content": "Fatura"})
+
+    openai_provider = AsyncMock()
+    openai_provider.infer_conversation_stream = AsyncMock(
+        side_effect=_fake_infer_conversation_stream
+    )
+    execution_repository = AsyncMock()
+    execution_repository.create_interaction = AsyncMock(return_value=uuid4())
+    execution_repository.update_interaction_result = AsyncMock()
+    idempotency = AsyncMock()
+    idempotency.build_key = lambda **_: "idem-key"
+    idempotency.get = AsyncMock(return_value=None)
+    idempotency.try_acquire = AsyncMock(return_value=True)
+    idempotency.set_result = AsyncMock()
+    agents_repository = AsyncMock()
+    agents_repository.get_agent = AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
+    agents_repository.get_active_agent_version_id = AsyncMock(return_value=uuid4())
+    agents_repository.get_agent_version = AsyncMock(
+        return_value=SimpleNamespace(system_prompt="System prompt")
+    )
+    user_prompts_repository = AsyncMock()
+
+    service = ConversationService(
+        openai_provider=openai_provider,
+        idempotency=idempotency,
+        execution_repository=execution_repository,
+        agents_repository=agents_repository,
+        user_prompts_repository=user_prompts_repository,
+    )
+    request = ConversationRequest(
+        agent_id=agent_id,
+        session_id=session_id,
+        user_id="user-1",
+        user_input="Preciso de detalhes da fatura",
+        metadata={
+            "message_history": [
+                {"role": "user", "content": "Cartão e fatura"},
+                {"role": "assistant", "content": "Escolha o cartão VISA INFINITE"},
+                {"role": "user", "content": "VISA INFINITE (final485d)"},
+                {
+                    "role": "assistant",
+                    "content": "Limite total de R$40.000,00",
+                },
+            ]
+        },
+    )
+
+    stream = await service.execute_turn(
+        tenant_id=tenant_id,
+        request=request,
+        channel=Channel.HTTP,
+        headers={},
+        external_message_id=None,
+        request_id="req-history",
+        trace_id="trace-history",
+        last_event_id=None,
+    )
+    async for _chunk in stream:
+        pass
+
+    assert captured["message_history"] == [
+        {"role": "user", "content": "Cartão e fatura"},
+        {"role": "assistant", "content": "Escolha o cartão VISA INFINITE"},
+        {"role": "user", "content": "VISA INFINITE (final485d)"},
+        {"role": "assistant", "content": "Limite total de R$40.000,00"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_execute_turn_uses_cached_idempotent_result() -> None:
     tenant_id = uuid4()
     idempotency = AsyncMock()

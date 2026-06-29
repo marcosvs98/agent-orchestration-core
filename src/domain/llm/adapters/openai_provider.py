@@ -263,6 +263,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
         temperature: float = 0.2,
         user_id: str | None = None,
         conversation_key: str | None = None,
+        message_history: list[dict[str, str]] | None = None,
         mcp_tools: list[dict[str, Any]] | None = None,
         store: bool = False,
         on_openai_event: Callable[[Any], Awaitable[None]] | None = None,
@@ -270,24 +271,30 @@ class OpenAIProviderAdapter(LLMProviderPort):
         payload: Dict[str, Any] = {
             "model": model,
             "instructions": instructions,
-            "input": user_input,
             "temperature": temperature,
             "store": store,
         }
         if user_id:
             payload["user"] = user_id
-        if conversation_key:
-            conversation_id = await self._get_or_create_conversation_id(conversation_key)
-            # store=False (default) does not persist responses; previous_response_id
-            # fails on follow-up turns. Use OpenAI conversation for multi-turn instead.
-            if store:
-                previous_response_id = await self._get_previous_response_id(conversation_key)
-                if previous_response_id:
-                    payload["previous_response_id"] = previous_response_id
+        if message_history:
+            payload["input"] = [
+                *message_history,
+                {"role": "user", "content": user_input},
+            ]
+        else:
+            payload["input"] = user_input
+            if conversation_key:
+                conversation_id = await self._get_or_create_conversation_id(conversation_key)
+                # store=False (default) does not persist responses; previous_response_id
+                # fails on follow-up turns. Use OpenAI conversation for multi-turn instead.
+                if store:
+                    previous_response_id = await self._get_previous_response_id(conversation_key)
+                    if previous_response_id:
+                        payload["previous_response_id"] = previous_response_id
+                    else:
+                        payload["conversation"] = conversation_id
                 else:
                     payload["conversation"] = conversation_id
-            else:
-                payload["conversation"] = conversation_id
         if mcp_tools:
             payload["tools"] = mcp_tools
 
@@ -367,7 +374,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 raw_output={},
             )
 
-        if conversation_key and response.id:
+        if conversation_key and response.id and not message_history:
             await self._set_previous_response_id(
                 conversation_key,
                 ConversationResponseID(response.id),

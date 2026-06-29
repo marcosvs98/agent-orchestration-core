@@ -17,6 +17,7 @@ from domain.conversation.schemas.conversation import (
 )
 from domain.conversation.services.conversation_mcp_tools import build_conversation_mcp_tools
 from domain.conversation.services.sse_writer import SSEWriter
+from domain.conversation.utils.message_history import parse_message_history
 from domain.execution.adapters.idempotency_service import IdempotencyService
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.execution import Channel
@@ -158,6 +159,7 @@ class ConversationService(ConversationServicePort):
                     mcp_cfg,
                     request.metadata,
                 )
+            message_history = parse_message_history(request.metadata)
 
             async def _on_openai_event(event: object) -> None:
                 nonlocal final_text
@@ -215,6 +217,7 @@ class ConversationService(ConversationServicePort):
                 temperature=0.2,
                 user_id=request.user_id,
                 conversation_key=str(session_id),
+                message_history=message_history or None,
                 mcp_tools=mcp_tools,
                 store=False,
                 on_openai_event=_on_openai_event,
