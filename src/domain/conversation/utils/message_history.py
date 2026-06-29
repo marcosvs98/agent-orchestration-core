@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 
 def parse_message_history(metadata: dict[str, object] | None) -> list[dict[str, str]]:
     if not metadata:
