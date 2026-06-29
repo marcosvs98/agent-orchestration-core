@@ -89,7 +89,8 @@ data/
 .cursor/
 AGENTS.md
 
-
-models/
+# Local ML weight artifacts (not SQLAlchemy ORM under src/infra/database/models/)
+/models/
+/data/models/
 .cursorignore
 .cursorindexingignore
