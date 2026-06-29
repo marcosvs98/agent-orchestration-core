@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, Integer, String, text
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
