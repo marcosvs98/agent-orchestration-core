@@ -9,11 +9,16 @@ from adapters.observability import langfuse_runtime_tracer as tracer_module
 from exceptions.service_exceptions import DomainValidationException
 
 
+def _enable_tracing(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
+    monkeypatch.setattr(module, "TRACING_ENABLED", True)
+
+
 def test_tracer_blocks_when_missing_config(monkeypatch):
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", None)
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", None)
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", None)
     importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
     with pytest.raises(DomainValidationException):
         tracer_module.LangfuseRuntimeTracer()
 
@@ -24,6 +29,7 @@ def test_tracer_creates_trace_context(mock_get_client, monkeypatch):
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
     importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
 
     mock_client = MagicMock()
     mock_client.create_trace_id = MagicMock(return_value=str(uuid4()))
@@ -70,6 +76,7 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
     importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -146,6 +153,7 @@ def test_tracer_guardrail_span(mock_get_client, monkeypatch):
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
     importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -176,6 +184,7 @@ def test_tracer_tool_span(mock_get_client, monkeypatch):
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
     importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -206,6 +215,7 @@ def test_tracer_deterministic_trace_id(mock_get_client, monkeypatch):
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
     importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
 
     mock_client = MagicMock()
     deterministic_id = "deterministic_trace_123"

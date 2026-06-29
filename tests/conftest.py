@@ -9,8 +9,12 @@ package resolve to ``tests/unit/pkg/domain``, which shadows ``src/domain`` and b
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Disable Langfuse before application settings import (TRACING_ENABLED defaults to true).
+os.environ.setdefault("TRACING_ENABLED", "false")
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = str(_ROOT / "src")

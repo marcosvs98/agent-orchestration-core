@@ -13,6 +13,8 @@ jobs:
   test:
     name: Test (unit + integration)
     runs-on: ubuntu-latest
+    env:
+      TRACING_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 
