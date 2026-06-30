@@ -74,6 +74,7 @@ artifacts/dead-code-correlation.txt
 
 # Docker
 .dockerignore
+docker-volumes/
 
 # Redis
 dump.rdb
