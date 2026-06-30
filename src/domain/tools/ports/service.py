@@ -4,7 +4,7 @@ from exceptions.service_exceptions import NotImplementedServiceException
 
 class ToolsServicePort(ABC):
     @abstractmethod
-    async def import_tool(self, tool_import_request):
+    async def import_tool(self, _tool_import_request):
         raise NotImplementedServiceException()
 
     @abstractmethod
@@ -12,9 +12,9 @@ class ToolsServicePort(ABC):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def create_tool_config(self, tool_config_create):
+    async def create_tool_config(self, _tool_config_create):
         raise NotImplementedServiceException()
 
     @abstractmethod
-    async def create_agent_version_tool_binding(self, agent_version_tool_binding_create):
+    async def create_agent_version_tool_binding(self, _agent_version_tool_binding_create):
         raise NotImplementedServiceException()
