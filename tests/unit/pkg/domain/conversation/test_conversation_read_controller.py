@@ -82,3 +82,39 @@ async def test_list_interactions_calls_service_with_session(
         limit=10,
         offset=2,
     )
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_delegates_to_service(
+    controller: ConversationReadController, auth: AuthContext
+) -> None:
+    await controller.list_sessions(user_id="u1", limit=20, offset=1, auth=auth)
+    controller.service.list_sessions.assert_called_once_with(
+        tenant_id=auth.tenant_id,
+        user_id="u1",
+        limit=20,
+        offset=1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_end_users_delegates_to_service(
+    controller: ConversationReadController, auth: AuthContext
+) -> None:
+    await controller.list_end_users(limit=15, offset=3, auth=auth)
+    controller.service.list_end_users.assert_called_once_with(
+        tenant_id=auth.tenant_id,
+        limit=15,
+        offset=3,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_end_user_delegates_to_service(
+    controller: ConversationReadController, auth: AuthContext
+) -> None:
+    await controller.get_end_user(user_id="ext-9", auth=auth)
+    controller.service.get_end_user_detail.assert_called_once_with(
+        tenant_id=auth.tenant_id,
+        user_id="ext-9",
+    )

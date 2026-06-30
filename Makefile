@@ -5,7 +5,17 @@ PC_PYTHON ?= $(CURDIR)/.venv/bin/python
 # migrate / seed-demo usam uv run para usar o Alembic e deps do projeto (ver README §4.1–4.2).
 # Postgres do compose usa bind mount em ./docker-volumes/postgres; docker compose down -v não apaga esse diretório.
 
-.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo seed-demo2 test-flow-demo test-trace-hierarchy serve-conversation-test
+.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo seed-demo2 test-flow-demo test-trace-hierarchy serve-conversation-test ci ci-mypy
+
+# Mirror GitHub Actions CI (see .github/workflows/ci.yml).
+ci:
+	@TRACING_ENABLED=false uv sync --all-extras --all-groups
+	@TRACING_ENABLED=false uv run ruff check src
+	@TRACING_ENABLED=false uv run python -m pytest tests/unit tests/integration -m "not validation_integration"
+
+# Optional: mypy is informational in CI (continue-on-error) but useful locally.
+ci-mypy:
+	@TRACING_ENABLED=false uv run mypy src
 
 validate-setup:
 	resources/scripts/validation_setup.sh

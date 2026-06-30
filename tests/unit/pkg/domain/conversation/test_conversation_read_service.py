@@ -151,6 +151,76 @@ async def test_list_interactions_maps_user_input_and_system_output() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_interactions_ignores_malformed_payload_and_coerces_output() -> None:
+    tenant_id = uuid4()
+    sid = uuid4()
+    ts = datetime.now(timezone.utc)
+    row = InteractionReadRecord(
+        interaction_id=uuid4(),
+        session_id=sid,
+        flow_run_id=None,
+        result_node_run_id=None,
+        channel="http",
+        received_at=ts,
+        external_message_id=None,
+        request_id=None,
+        trace_id=None,
+        payload={"input": "not-a-dict"},
+        output={"system_output": 42},
+        headers=None,
+    )
+    read_repo = AsyncMock()
+    read_repo.list_interactions_by_session = AsyncMock(return_value=([row], False))
+    service = ConversationReadService(
+        read_repository=read_repo, execution_repository=AsyncMock()
+    )
+    out = await service.list_interactions(
+        tenant_id=tenant_id,
+        session_id=sid,
+        user_id=None,
+        limit=10,
+        offset=0,
+    )
+    assert out.items[0].user_input is None
+    assert out.items[0].system_output == "42"
+
+
+@pytest.mark.asyncio
+async def test_list_interactions_treats_null_system_output_as_missing() -> None:
+    tenant_id = uuid4()
+    sid = uuid4()
+    ts = datetime.now(timezone.utc)
+    row = InteractionReadRecord(
+        interaction_id=uuid4(),
+        session_id=sid,
+        flow_run_id=None,
+        result_node_run_id=None,
+        channel="http",
+        received_at=ts,
+        external_message_id=None,
+        request_id=None,
+        trace_id=None,
+        payload={"input": {"user_input": "hello"}},
+        output={"system_output": None},
+        headers=None,
+    )
+    read_repo = AsyncMock()
+    read_repo.list_interactions_by_session = AsyncMock(return_value=([row], False))
+    service = ConversationReadService(
+        read_repository=read_repo, execution_repository=AsyncMock()
+    )
+    out = await service.list_interactions(
+        tenant_id=tenant_id,
+        session_id=sid,
+        user_id=None,
+        limit=10,
+        offset=0,
+    )
+    assert out.items[0].user_input == "hello"
+    assert out.items[0].system_output is None
+
+
+@pytest.mark.asyncio
 async def test_list_sessions_and_end_users() -> None:
     tenant_id = uuid4()
     read_repo = AsyncMock()

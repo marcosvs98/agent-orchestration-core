@@ -7,6 +7,9 @@ import pytest
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
+from domain.governance.repositories.execution_limit_policy_repository import (
+    ExecutionLimitPolicyRepository,
+)
 from domain.tenants.repositories.tenants_repository import TenantsRepository
 from domain.tenants.schemas.tenants import TenantCreate
 from domain.tenants.services.tenants_service import TenantsService
@@ -145,6 +148,109 @@ class TestTenantsService:
         assert result.settings is None
         repository.create_tenant.assert_called_once()
         authoring_events.append_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_existing_tenant_ensures_default_execution_limit_policy(
+        self, repository, authoring_events
+    ):
+        external_id = uuid4()
+        tenant_id = uuid4()
+        tenant_create = TenantCreate(name="Test Tenant", external_id=external_id)
+        existing_tenant = SimpleNamespace(
+            tenant_id=tenant_id,
+            external_id=external_id,
+            name="Existing Tenant",
+            description=None,
+            timezone="America/Sao_Paulo",
+            is_active=True,
+            currency="BRL",
+            language="pt_BR",
+            contact_name=None,
+            contact_phone=None,
+            settings=None,
+            to_dict=lambda: {
+                "tenant_id": tenant_id,
+                "external_id": external_id,
+                "name": "Existing Tenant",
+                "description": None,
+                "timezone": "America/Sao_Paulo",
+                "is_active": True,
+                "currency": "BRL",
+                "language": "pt_BR",
+                "contact_name": None,
+                "contact_phone": None,
+                "settings": None,
+            },
+        )
+        repository.get_tenant_by_external_id = AsyncMock(return_value=existing_tenant)
+        limit_repo = MagicMock(spec=ExecutionLimitPolicyRepository)
+        limit_repo.ensure_default_published_policy_for_tenant = AsyncMock()
+        service = TenantsService(
+            repository=repository,
+            authoring_events=authoring_events,
+            execution_limit_policy_repository=limit_repo,
+        )
+
+        result, created = await service.create(
+            tenant_create=tenant_create, principal_id="admin-123"
+        )
+
+        assert created is False
+        assert result.id == tenant_id
+        limit_repo.ensure_default_published_policy_for_tenant.assert_awaited_once_with(
+            tenant_id
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_new_tenant_ensures_default_execution_limit_policy(
+        self, repository, authoring_events
+    ):
+        tenant_id = uuid4()
+        tenant_create = TenantCreate(name="New Tenant")
+        mock_tenant = SimpleNamespace(
+            tenant_id=tenant_id,
+            external_id=None,
+            name="New Tenant",
+            description=None,
+            timezone="America/Sao_Paulo",
+            is_active=True,
+            currency="BRL",
+            language="pt_BR",
+            contact_name=None,
+            contact_phone=None,
+            settings=None,
+            to_dict=lambda: {
+                "tenant_id": tenant_id,
+                "external_id": None,
+                "name": "New Tenant",
+                "description": None,
+                "timezone": "America/Sao_Paulo",
+                "is_active": True,
+                "currency": "BRL",
+                "language": "pt_BR",
+                "contact_name": None,
+                "contact_phone": None,
+                "settings": None,
+            },
+        )
+        repository.create_tenant = AsyncMock(return_value=mock_tenant)
+        limit_repo = MagicMock(spec=ExecutionLimitPolicyRepository)
+        limit_repo.ensure_default_published_policy_for_tenant = AsyncMock()
+        service = TenantsService(
+            repository=repository,
+            authoring_events=authoring_events,
+            execution_limit_policy_repository=limit_repo,
+        )
+
+        result, created = await service.create(
+            tenant_create=tenant_create, principal_id="admin-123"
+        )
+
+        assert created is True
+        assert result.id == tenant_id
+        limit_repo.ensure_default_published_policy_for_tenant.assert_awaited_once_with(
+            tenant_id
+        )
 
     @pytest.mark.asyncio
     async def test_create_returns_existing_tenant_when_external_id_matches(

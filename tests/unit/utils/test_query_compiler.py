@@ -30,3 +30,15 @@ def test_compile_query_fallback_str_when_no_compile_attr(
 ) -> None:
     monkeypatch.setattr(qc, "TRACING_ENABLED", True)
     assert qc.compile_query(42) == "42"
+
+
+def test_compile_query_compiles_sqlalchemy_statement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy import column, select
+
+    monkeypatch.setattr(qc, "TRACING_ENABLED", True)
+    stmt = select(column("id")).limit(1)
+    result = qc.compile_query(stmt)
+    assert result is not None
+    assert "id" in result.lower()
