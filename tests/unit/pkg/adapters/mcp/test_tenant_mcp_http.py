@@ -865,3 +865,73 @@ def test_mcp_prompts_list(mcp_server_id, tenant_id) -> None:
     plist = _mcp_json_rpc_result(r2)["result"]["prompts"]
     assert len(plist) == 1
     assert plist[0]["name"] == "demo_title_abcdef01"
+
+
+@pytest.mark.asyncio
+async def test_mcp_http_proxy_tool_logs_transport_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    from adapters.mcp import tenant_mcp_gateway as gateway_mod
+    from adapters.mcp.tenant_mcp_gateway import _McpHttpProxyTool
+
+    tenant_id = uuid4()
+    tool_config_id = uuid4()
+    captured: list[dict] = []
+
+    class _FakeLogger:
+        def warning(self, event: str, **kwargs) -> None:
+            captured.append({"event": event, **kwargs})
+
+    monkeypatch.setattr(gateway_mod, "logger", _FakeLogger())
+
+    cfg_model = MagicMock()
+    cfg_model.tenant_id = tenant_id
+    cfg_model.config = {
+        "url": "http://host.docker.internal:8088/core/v1/foo?token=secret",
+        "method": "GET",
+        "operation_id": "getFoo",
+        "timeout_seconds": 5,
+    }
+
+    tools_repo = MagicMock()
+    tools_repo.get_tool_config = AsyncMock(return_value=cfg_model)
+
+    mock_exec = MagicMock()
+    mock_exec.execute_http = AsyncMock(
+        side_effect=httpx.ConnectError(
+            "[Errno -2] Name or service not known",
+            request=httpx.Request("GET", cfg_model.config["url"]),
+        )
+    )
+
+    ctr = MagicMock()
+    ctr.tools.tools_repository.return_value = tools_repo
+    ctr.execution.tool_executor.return_value = mock_exec
+    ctr.adapters.secret_resolver.return_value = MagicMock()
+    ctr.adapters.tracer.return_value = MagicMock()
+
+    tok = gateway_mod._MCP_CONTAINER.set(ctr)
+    try:
+        tool = _McpHttpProxyTool(
+            name="getFoo",
+            description=None,
+            parameters={"type": "object", "properties": {}, "additionalProperties": True},
+            output_schema=None,
+            exec_tool_config_id=tool_config_id,
+            exec_tenant_id=tenant_id,
+        )
+        result = await tool.run({})
+    finally:
+        gateway_mod._MCP_CONTAINER.reset(tok)
+
+    assert result.structured_content == {"error": "ConnectError"}
+    assert captured
+    log_entry = captured[0]
+    assert log_entry["event"] == "mcp_invoke_tool_failed"
+    assert log_entry["tool_config_id"] == str(tool_config_id)
+    assert log_entry["operation_id"] == "getFoo"
+    assert log_entry["method"] == "GET"
+    assert log_entry["url_host"] == "host.docker.internal"
+    assert log_entry["url_path"] == "/core/v1/foo"
+    assert log_entry["error_type"] == "ConnectError"
+    assert "Name or service not known" in log_entry["error_message"]

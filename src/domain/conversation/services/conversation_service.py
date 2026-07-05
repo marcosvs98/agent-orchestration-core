@@ -8,6 +8,7 @@ from fastapi.sse import ServerSentEvent
 
 import settings
 from adapters.mcp.conversation_mcp_context import get_conversation_mcp_config
+from adapters.observability.logging import get_logger
 from domain.agents.repositories.agents_repository import AgentsRepository
 from domain.conversation.ports.service import ConversationServicePort
 from domain.conversation.schemas.conversation import (
@@ -26,6 +27,8 @@ from domain.user_prompts.repositories.user_prompts_repository import (
     UserPromptsRepository,
 )
 from exceptions.service_exceptions import DomainValidationException
+
+logger = get_logger(__name__)
 
 
 class ConversationService(ConversationServicePort):
@@ -108,6 +111,9 @@ class ConversationService(ConversationServicePort):
             endpoint="/core/v1/conversations",
             idempotency_key=idempotency_key,
         )
+        model = ""
+        mcp_tools: list[dict[str, str | dict[str, str]]] | None = None
+        message_history: list[dict[str, str]] | None = None
         try:
             cached = await self.idempotency.get(idem_store_key)
             if isinstance(cached, dict) and cached.get("status") == "DONE":
@@ -153,7 +159,7 @@ class ConversationService(ConversationServicePort):
                 request=request,
             )
             mcp_cfg = get_conversation_mcp_config()
-            mcp_tools: list[dict[str, str | dict[str, str]]] | None = None
+            mcp_tools = None
             if mcp_cfg is not None:
                 mcp_tools = build_conversation_mcp_tools(
                     mcp_cfg,
@@ -255,26 +261,63 @@ class ConversationService(ConversationServicePort):
             )
             await queue.put(None)
         except Exception as exc:
+            if isinstance(exc, DomainValidationException):
+                error_code = exc.message or "domain_validation_error"
+                provider_errors = [str(item) for item in exc.errors()]
+            else:
+                error_code = type(exc).__name__
+                provider_errors = [str(exc)]
+            payload_preview: dict[str, object] = {
+                "has_mcp_tools": bool(mcp_tools),
+                "has_message_history": bool(message_history),
+            }
+            if model:
+                payload_preview["model"] = model
+            structured_error = {
+                "message": error_code,
+                "code": error_code,
+                "details": {
+                    "type": type(exc).__name__,
+                    "provider_errors": provider_errors,
+                    "payload_preview": payload_preview,
+                },
+            }
+            logger.exception(
+                "conversation_direct_llm_turn_failed",
+                trace_id=trace_id,
+                correlation_id=str(correlation_id),
+                session_id=str(session_id),
+                interaction_id=str(interaction_id) if interaction_id is not None else None,
+                tenant_id=str(tenant_id),
+                agent_id=str(request.agent_id),
+                error_code=error_code,
+                error_type=type(exc).__name__,
+                provider_errors=provider_errors,
+            )
             await self.idempotency.set_result(
                 idem_store_key,
-                {"status": "FAILED", "error": {"message": str(exc)}},
+                {"status": "FAILED", "error": structured_error},
             )
             if interaction_id is not None:
                 await self.execution_repository.update_interaction_result(
                     interaction_id=interaction_id,
                     output={},
                     status="FAILED",
-                    error={"message": str(exc)},
+                    error=structured_error,
                 )
+            error_payload: dict[str, str | None] = {
+                "code": "conversation_turn_failed",
+                "message": "conversation_turn_failed",
+                "error_code": error_code,
+                "correlation_id": str(correlation_id),
+                "trace_id": trace_id,
+            }
+            if interaction_id is not None:
+                error_payload["debug_id"] = str(interaction_id)
             await queue.put(
                 ConversationEvent(
                     event_type=SSEEventType.ERROR,
-                    payload={
-                        "code": "conversation_turn_failed",
-                        "message": "conversation_turn_failed",
-                        "correlation_id": str(correlation_id),
-                        "trace_id": trace_id,
-                    },
+                    payload=error_payload,
                 )
             )
             await queue.put(None)

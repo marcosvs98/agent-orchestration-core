@@ -7,6 +7,7 @@ from openai import AsyncOpenAI
 
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.mcp.conversation_mcp_context import get_conversation_mcp_config
+from adapters.observability.logging import get_logger
 from domain.llm.ports.llm_provider import LLMProviderPort
 from exceptions.service_exceptions import DomainValidationException
 from domain.llm.schemas.llm import LLMRequest, LLMResult
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
 
 ConversationId = NewType("ConversationId", str)
 ConversationResponseID = NewType("ConversationResponseID", str)
+
+logger = get_logger(__name__)
 
 
 class OpenAIProviderAdapter(LLMProviderPort):
@@ -180,6 +183,14 @@ class OpenAIProviderAdapter(LLMProviderPort):
                     service_tier="auto",
                 )
         except Exception as exc:
+            logger.exception(
+                "openai_infer_failed",
+                model=payload.get("model"),
+                has_mcp_tools=bool(payload.get("tools")),
+                has_message_history=isinstance(payload.get("input"), list),
+                error_type=type(exc).__name__,
+                provider_error=str(exc),
+            )
             raise DomainValidationException(
                 "llm_provider_error",
                 input_data=payload,
@@ -352,6 +363,14 @@ class OpenAIProviderAdapter(LLMProviderPort):
                         if isinstance(response_data, dict):
                             response = event.response
         except Exception as exc:
+            logger.exception(
+                "openai_infer_conversation_stream_failed",
+                model=payload.get("model"),
+                has_mcp_tools=bool(payload.get("tools")),
+                has_message_history=isinstance(payload.get("input"), list),
+                error_type=type(exc).__name__,
+                provider_error=str(exc),
+            )
             raise DomainValidationException(
                 "llm_provider_error",
                 input_data=payload,
