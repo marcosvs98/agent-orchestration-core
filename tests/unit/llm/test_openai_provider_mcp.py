@@ -14,6 +14,7 @@ from adapters.mcp.conversation_mcp_context import (
 from domain.conversation.schemas.mcp_config import TenantMcpConfig
 from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
 from domain.llm.schemas.llm import LLMRequest
+from exceptions.service_exceptions import DomainValidationException
 
 _MCP_SERVER_ID = UUID("00000000-0000-0000-0000-000000001500")
 _MCP_CONFIG = TenantMcpConfig(
@@ -298,3 +299,25 @@ class TestOpenAIProviderMcpTools:
             {"role": "user", "content": "Preciso de detalhes da fatura"},
         ]
         assert "conversation" not in payloads[0]
+
+    @pytest.mark.asyncio
+    async def test_infer_conversation_stream_wraps_provider_error_with_details(self):
+        cache = MagicMock()
+        cache.get = AsyncMock(return_value=None)
+        cache.set = AsyncMock()
+        openai_client = MagicMock()
+        openai_client.responses.create = AsyncMock(
+            side_effect=RuntimeError("Error code: 424 - Failed Dependency")
+        )
+        openai_client.conversations.create = AsyncMock(return_value=MagicMock(id="conv-1"))
+        adapter = OpenAIProviderAdapter(cache_adapter=cache, openai_client=openai_client)
+
+        with pytest.raises(DomainValidationException) as raised:
+            await adapter.infer_conversation_stream(
+                model="gpt-4.1",
+                instructions="i",
+                user_input="u",
+            )
+
+        assert raised.value.message == "llm_provider_error"
+        assert raised.value.errors() == ["Error code: 424 - Failed Dependency"]

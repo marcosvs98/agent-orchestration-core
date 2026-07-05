@@ -9,6 +9,7 @@ import pytest
 from domain.conversation.schemas.conversation import ConversationRequest
 from domain.conversation.services.conversation_service import ConversationService
 from domain.execution.schemas.execution import Channel
+from exceptions.service_exceptions import DomainValidationException
 
 
 @pytest.mark.asyncio
@@ -342,3 +343,157 @@ async def test_execute_turn_uses_cached_idempotent_result() -> None:
     async for chunk in stream:
         events.append(chunk.event)
     assert events == ["connected", "done"]
+
+
+@pytest.mark.asyncio
+async def test_execute_turn_persists_structured_error_and_sse_debug_id() -> None:
+    tenant_id = uuid4()
+    agent_id = uuid4()
+    interaction_id = uuid4()
+
+    openai_provider = AsyncMock()
+    openai_provider.infer_conversation_stream = AsyncMock(
+        side_effect=DomainValidationException(
+            "llm_provider_error",
+            errors=["Error code: 424 - Failed Dependency"],
+        )
+    )
+    execution_repository = AsyncMock()
+    execution_repository.create_interaction = AsyncMock(return_value=interaction_id)
+    execution_repository.update_interaction_result = AsyncMock()
+    idempotency = AsyncMock()
+    idempotency.build_key = lambda **_: "idem-key"
+    idempotency.get = AsyncMock(return_value=None)
+    idempotency.try_acquire = AsyncMock(return_value=True)
+    idempotency.set_result = AsyncMock()
+    agents_repository = AsyncMock()
+    agents_repository.get_agent = AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
+    agents_repository.get_active_agent_version_id = AsyncMock(return_value=uuid4())
+    agents_repository.get_agent_version = AsyncMock(
+        return_value=SimpleNamespace(system_prompt="System prompt")
+    )
+    user_prompts_repository = AsyncMock()
+
+    service = ConversationService(
+        openai_provider=openai_provider,
+        idempotency=idempotency,
+        execution_repository=execution_repository,
+        agents_repository=agents_repository,
+        user_prompts_repository=user_prompts_repository,
+    )
+    request = ConversationRequest(
+        agent_id=agent_id,
+        session_id=uuid4(),
+        user_id="user-1",
+        user_input="Mostre meus gastos",
+    )
+
+    stream = await service.execute_turn(
+        tenant_id=tenant_id,
+        request=request,
+        channel=Channel.HTTP,
+        headers={},
+        external_message_id=None,
+        request_id="req-err",
+        trace_id="trace-err",
+        last_event_id=None,
+    )
+
+    events: list[tuple[str | None, object]] = []
+    async for chunk in stream:
+        events.append((chunk.event, chunk.data))
+
+    error_events = [data for event, data in events if event == "error"]
+    assert error_events
+    error_payload = error_events[0]
+    assert error_payload["code"] == "conversation_turn_failed"
+    assert error_payload["message"] == "conversation_turn_failed"
+    assert error_payload["error_code"] == "llm_provider_error"
+    assert error_payload["debug_id"] == str(interaction_id)
+    assert error_payload["trace_id"] == "trace-err"
+
+    update_call = execution_repository.update_interaction_result.await_args.kwargs
+    assert update_call["status"] == "FAILED"
+    structured_error = update_call["error"]
+    assert structured_error["code"] == "llm_provider_error"
+    assert structured_error["details"]["provider_errors"] == [
+        "Error code: 424 - Failed Dependency"
+    ]
+    assert "payload_preview" in structured_error["details"]
+
+
+@pytest.mark.asyncio
+async def test_execute_turn_persists_structured_error_and_sse_debug_id() -> None:
+    tenant_id = uuid4()
+    agent_id = uuid4()
+    interaction_id = uuid4()
+
+    openai_provider = AsyncMock()
+    openai_provider.infer_conversation_stream = AsyncMock(
+        side_effect=DomainValidationException(
+            "llm_provider_error",
+            errors=["Error code: 424 - Failed Dependency"],
+        )
+    )
+    execution_repository = AsyncMock()
+    execution_repository.create_interaction = AsyncMock(return_value=interaction_id)
+    execution_repository.update_interaction_result = AsyncMock()
+    idempotency = AsyncMock()
+    idempotency.build_key = lambda **_: "idem-key"
+    idempotency.get = AsyncMock(return_value=None)
+    idempotency.try_acquire = AsyncMock(return_value=True)
+    idempotency.set_result = AsyncMock()
+    agents_repository = AsyncMock()
+    agents_repository.get_agent = AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
+    agents_repository.get_active_agent_version_id = AsyncMock(return_value=uuid4())
+    agents_repository.get_agent_version = AsyncMock(
+        return_value=SimpleNamespace(system_prompt="System prompt")
+    )
+    user_prompts_repository = AsyncMock()
+
+    service = ConversationService(
+        openai_provider=openai_provider,
+        idempotency=idempotency,
+        execution_repository=execution_repository,
+        agents_repository=agents_repository,
+        user_prompts_repository=user_prompts_repository,
+    )
+    request = ConversationRequest(
+        agent_id=agent_id,
+        session_id=uuid4(),
+        user_id="user-1",
+        user_input="Mostre meus gastos",
+    )
+
+    stream = await service.execute_turn(
+        tenant_id=tenant_id,
+        request=request,
+        channel=Channel.HTTP,
+        headers={},
+        external_message_id=None,
+        request_id="req-err",
+        trace_id="trace-err",
+        last_event_id=None,
+    )
+
+    events: list[tuple[str | None, object]] = []
+    async for chunk in stream:
+        events.append((chunk.event, chunk.data))
+
+    error_events = [data for event, data in events if event == "error"]
+    assert error_events
+    error_payload = error_events[0]
+    assert error_payload["code"] == "conversation_turn_failed"
+    assert error_payload["message"] == "conversation_turn_failed"
+    assert error_payload["error_code"] == "llm_provider_error"
+    assert error_payload["debug_id"] == str(interaction_id)
+    assert error_payload["trace_id"] == "trace-err"
+
+    update_call = execution_repository.update_interaction_result.await_args.kwargs
+    assert update_call["status"] == "FAILED"
+    structured_error = update_call["error"]
+    assert structured_error["code"] == "llm_provider_error"
+    assert structured_error["details"]["provider_errors"] == [
+        "Error code: 424 - Failed Dependency"
+    ]
+    assert "payload_preview" in structured_error["details"]

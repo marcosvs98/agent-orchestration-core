@@ -5,6 +5,7 @@ import re
 from collections import OrderedDict
 from contextvars import ContextVar
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import jsonschema
@@ -219,11 +220,18 @@ class _McpHttpProxyTool(Tool):
                 },
             )
         except Exception as exc:
+            parsed = urlparse(str(url))
             logger.warning(
                 "mcp_invoke_tool_failed",
                 tool_config_id=str(tcid),
                 tenant_id=str(tenant_id),
+                operation_id=str(config.get("operation_id") or ""),
+                method=method,
+                url_host=parsed.hostname,
+                url_path=parsed.path or None,
                 error_type=type(exc).__name__,
+                error_message=str(exc),
+                status_code=getattr(getattr(exc, "response", None), "status_code", None),
             )
             return ToolResult(
                 content=json.dumps({"error": type(exc).__name__}),
