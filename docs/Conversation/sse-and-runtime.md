@@ -6,7 +6,7 @@
 |--------|------|----------|
 | POST | `/core/v1/conversations` | **`EventSourceResponse`** (SSE) |
 
-Controller: `src/domain/conversation/controllers/conversation_controller.py`  
+Controller: `src/domain/conversation/controllers/conversation_controller.py`
 Router: `prefix="/core/v1"`, `dependencies=[get_auth_context_or_api_key]`.
 
 ### Headers
@@ -14,6 +14,8 @@ Router: `prefix="/core/v1"`, `dependencies=[get_auth_context_or_api_key]`.
 - **`Idempotency-Key`** — **required**; missing → `RouterValidationException` (`missing_idempotency_key`).
 - **`Last-Event-ID`** — optional; must parse to non-negative int or validation error.
 - **`X-Trace-Id`** — optional UUID for tracing (see controller).
+- **`Authorization`** — tenant or end-user bearer depending on principal type.
+- **`X-End-User-Authorization`** — optional; when the caller is a **machine** principal (BFF / service token on `Authorization`), carries the end-user bearer for MCP tool calls. Must not be sent in request `metadata`.
 
 ### Request body
 
@@ -25,7 +27,11 @@ The conversation contract uses `agent_id` as selector and keeps `user_input` / `
 
 1. **`RateLimitService.enforce`** with `action=Scope.ExecutionFlowRunCreate`.
 2. **`AccessPolicyService.authorize`** with the same action string and `auth.scopes`.
-3. Delegates to **`ConversationService.execute_turn`**.
+3. Resolves trusted end-user bearer: **`Authorization`** for human principals; **`X-End-User-Authorization`** for machine principals (BFF path).
+4. Binds sessions to **`ConversationRequest.user_id`** (end-user), not the machine `principal_id`.
+5. Delegates to **`ConversationService.execute_turn`**.
+
+Request `metadata` must not include `uora_end_user_authorization` or other forbidden authority keys — use inbound headers instead.
 
 ### Runtime path
 

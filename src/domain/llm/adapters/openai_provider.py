@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import time
 from collections.abc import Awaitable, Callable
@@ -11,6 +13,7 @@ from adapters.observability.logging import get_logger
 from domain.llm.ports.llm_provider import LLMProviderPort
 from exceptions.service_exceptions import DomainValidationException
 from domain.llm.schemas.llm import LLMRequest, LLMResult
+from domain.llm.schemas.openai_streaming import OpenAIStreamingRequest
 
 if TYPE_CHECKING:
     from openai.types.responses import Response
@@ -160,8 +163,8 @@ class OpenAIProviderAdapter(LLMProviderPort):
         response: Response | None = None
         output_text: Optional[str] = None
         accumulated_text = ""
+        start = time.perf_counter()
         try:
-            start = time.perf_counter()
             if request.stream and on_delta is not None:
                 stream = await self.openai_client.responses.create(
                     **payload,
@@ -169,40 +172,63 @@ class OpenAIProviderAdapter(LLMProviderPort):
                     service_tier="auto",
                 )
                 async for event in stream:
-                    event_type = getattr(event, "type", "")
+                    event_payload = event.model_dump(mode="json")
+                    event_type = event_payload.get("type")
                     if event_type == "response.output_text.delta":
-                        delta = getattr(event, "delta", "") or ""
+                        delta = event_payload.get("delta", "") or ""
                         if delta:
                             accumulated_text += delta
                             await on_delta(delta)
                     elif event_type == "response.completed":
-                        response = event.response
+                        response_data = event_payload.get("response")
+                        if isinstance(response_data, dict):
+                            response = event.response
             else:
                 response = await self.openai_client.responses.create(
                     **payload,
                     service_tier="auto",
                 )
         except Exception as exc:
+            provider_error = self._sanitize_provider_error(exc)
             logger.exception(
                 "openai_infer_failed",
                 model=payload.get("model"),
                 has_mcp_tools=bool(payload.get("tools")),
                 has_message_history=isinstance(payload.get("input"), list),
                 error_type=type(exc).__name__,
-                provider_error=str(exc),
+                provider_error=provider_error,
             )
             raise DomainValidationException(
                 "llm_provider_error",
-                input_data=payload,
-                errors=[str(exc)],
-            )
-        else:
-            latency_ms = (time.perf_counter() - start) * 1000
+                input_data={
+                    **payload,
+                    "tools": [
+                        {key: value for key, value in tool.items() if key != "headers"}
+                        if isinstance(tool, dict)
+                        else tool
+                        for tool in payload.get("tools", [])
+                    ]
+                    if isinstance(payload.get("tools"), list)
+                    else payload.get("tools"),
+                },
+                errors=[provider_error],
+            ) from exc
+        latency_ms = (time.perf_counter() - start) * 1000
 
         if response is None:
             raise DomainValidationException(
                 "llm_provider_error",
-                input_data=payload,
+                input_data={
+                    **payload,
+                    "tools": [
+                        {key: value for key, value in tool.items() if key != "headers"}
+                        if isinstance(tool, dict)
+                        else tool
+                        for tool in payload.get("tools", [])
+                    ]
+                    if isinstance(payload.get("tools"), list)
+                    else payload.get("tools"),
+                },
                 errors=["stream_completed_without_response"],
             )
 
@@ -215,11 +241,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
         output_json: Dict[str, Any] | None = None
         if response.output:
             for block in response.output:
-                block_payload = (
-                    block.model_dump(mode="json")
-                    if hasattr(block, "model_dump")
-                    else {}
-                )
+                block_payload = block.model_dump(mode="json")
                 content_items = block_payload.get("content", [])
                 if not isinstance(content_items, list):
                     continue
@@ -265,54 +287,35 @@ class OpenAIProviderAdapter(LLMProviderPort):
             raw_output=response.model_dump(),
         )
 
-    async def infer_conversation_stream(
+    async def _compile_streaming_payload(
         self,
-        *,
-        model: str,
-        instructions: str,
-        user_input: str,
-        temperature: float = 0.2,
-        user_id: str | None = None,
-        conversation_key: str | None = None,
-        message_history: list[dict[str, str]] | None = None,
-        mcp_tools: list[dict[str, Any]] | None = None,
-        store: bool = False,
-        on_openai_event: Callable[[Any], Awaitable[None]] | None = None,
-    ) -> LLMResult:
-        payload: Dict[str, Any] = {
-            "model": model,
-            "instructions": instructions,
-            "temperature": temperature,
-            "store": store,
+        request: OpenAIStreamingRequest,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": request.model_alias,
+            "input": [message.model_dump(mode="json") for message in request.input_messages],
+            "temperature": request.temperature,
+            "store": False,
         }
-        if user_id:
-            payload["user"] = user_id
-        if message_history:
-            payload["input"] = [
-                *message_history,
-                {"role": "user", "content": user_input},
-            ]
-        else:
-            payload["input"] = user_input
-            if conversation_key:
-                conversation_id = await self._get_or_create_conversation_id(conversation_key)
-                # store=False (default) does not persist responses; previous_response_id
-                # fails on follow-up turns. Use OpenAI conversation for multi-turn instead.
-                if store:
-                    previous_response_id = await self._get_previous_response_id(conversation_key)
-                    if previous_response_id:
-                        payload["previous_response_id"] = previous_response_id
-                    else:
-                        payload["conversation"] = conversation_id
-                else:
-                    payload["conversation"] = conversation_id
-        if mcp_tools:
-            payload["tools"] = mcp_tools
+        if request.principal_id:
+            payload["user"] = request.principal_id
+        if request.tools:
+            payload["tools"] = request.tools
+        if request.history_mode == "provider_conversation" and request.conversation_key:
+            conversation_id = await self._get_or_create_conversation_id(request.conversation_key)
+            payload["conversation"] = conversation_id
+        return payload
 
+    async def _consume_response_stream(
+        self,
+        payload: dict[str, Any],
+        on_openai_event: Callable[[dict[str, Any]], Awaitable[None]] | None,
+        allow_retry: bool,
+    ) -> tuple[Response | None, str]:
         response: Response | None = None
         accumulated_text = ""
-        start = time.perf_counter()
-        try:
+        attempts = 2 if allow_retry else 1
+        for attempt in range(attempts):
             try:
                 stream = await self.openai_client.responses.create(
                     **payload,
@@ -320,13 +323,9 @@ class OpenAIProviderAdapter(LLMProviderPort):
                     service_tier="auto",
                 )
                 async for event in stream:
+                    event_payload = event.model_dump(mode="json")
                     if on_openai_event is not None:
-                        await on_openai_event(event)
-                    event_payload = (
-                        event.model_dump(mode="json")
-                        if hasattr(event, "model_dump")
-                        else {}
-                    )
+                        await on_openai_event(event_payload)
                     event_type = event_payload.get("type")
                     if event_type == "response.output_text.delta":
                         delta = event_payload.get("delta", "") or ""
@@ -336,48 +335,20 @@ class OpenAIProviderAdapter(LLMProviderPort):
                         response_data = event_payload.get("response")
                         if isinstance(response_data, dict):
                             response = event.response
+                return response, accumulated_text
             except Exception as exc:
-                err_text = str(exc)
-                if "424" not in err_text and "Failed Dependency" not in err_text:
+                is_retryable = "424" in str(exc) or "Failed Dependency" in str(exc)
+                if not allow_retry or attempt == attempts - 1 or not is_retryable:
                     raise
-                stream = await self.openai_client.responses.create(
-                    **payload,
-                    stream=True,
-                    service_tier="auto",
-                )
-                async for event in stream:
-                    if on_openai_event is not None:
-                        await on_openai_event(event)
-                    event_payload = (
-                        event.model_dump(mode="json")
-                        if hasattr(event, "model_dump")
-                        else {}
-                    )
-                    event_type = event_payload.get("type")
-                    if event_type == "response.output_text.delta":
-                        delta = event_payload.get("delta", "") or ""
-                        if delta:
-                            accumulated_text += str(delta)
-                    elif event_type == "response.completed":
-                        response_data = event_payload.get("response")
-                        if isinstance(response_data, dict):
-                            response = event.response
-        except Exception as exc:
-            logger.exception(
-                "openai_infer_conversation_stream_failed",
-                model=payload.get("model"),
-                has_mcp_tools=bool(payload.get("tools")),
-                has_message_history=isinstance(payload.get("input"), list),
-                error_type=type(exc).__name__,
-                provider_error=str(exc),
-            )
-            raise DomainValidationException(
-                "llm_provider_error",
-                input_data=payload,
-                errors=[str(exc)],
-            ) from exc
+        return response, accumulated_text
 
-        latency_ms = (time.perf_counter() - start) * 1000
+    def _build_stream_result(
+        self,
+        model_alias: str,
+        response: Response | None,
+        accumulated_text: str,
+        latency_ms: float,
+    ) -> LLMResult:
         if response is None:
             return LLMResult(
                 output={"content": accumulated_text},
@@ -389,25 +360,15 @@ class OpenAIProviderAdapter(LLMProviderPort):
                 },
                 cost_usd=None,
                 latency_ms=latency_ms,
-                model_alias=model,
+                model_alias=model_alias,
                 raw_output={},
-            )
-
-        if conversation_key and response.id and not message_history:
-            await self._set_previous_response_id(
-                conversation_key,
-                ConversationResponseID(response.id),
             )
 
         output_text: Optional[str] = None
         output_json: Dict[str, Any] | None = None
         if response.output:
             for block in response.output:
-                block_payload = (
-                    block.model_dump(mode="json")
-                    if hasattr(block, "model_dump")
-                    else {}
-                )
+                block_payload = block.model_dump(mode="json")
                 content_items = block_payload.get("content", [])
                 if not isinstance(content_items, list):
                     continue
@@ -419,6 +380,7 @@ class OpenAIProviderAdapter(LLMProviderPort):
                         output_json = item["json"]
                     if item_type == "output_text" and isinstance(item.get("text"), str):
                         output_text = item["text"]
+
         if output_text is None and accumulated_text:
             output_text = accumulated_text
         if output_json is None and output_text:
@@ -448,8 +410,134 @@ class OpenAIProviderAdapter(LLMProviderPort):
             token_usage=token_usage,
             cost_usd=None,
             latency_ms=latency_ms,
-            model_alias=model,
+            model_alias=model_alias,
             raw_output=response.model_dump(),
+        )
+
+    def _sanitize_provider_error(self, exc: Exception) -> str:
+        error_text = str(exc)
+        if "424" in error_text or "Failed Dependency" in error_text:
+            return "provider_failed_dependency"
+        return type(exc).__name__
+
+    async def infer_streaming_request(
+        self,
+        request: OpenAIStreamingRequest,
+        on_openai_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> LLMResult:
+        payload = await self._compile_streaming_payload(request)
+        allow_retry = not bool(request.tools)
+        start = time.perf_counter()
+        try:
+            response, accumulated_text = await self._consume_response_stream(
+                payload=payload,
+                on_openai_event=on_openai_event,
+                allow_retry=allow_retry,
+            )
+        except Exception as exc:
+            provider_error = self._sanitize_provider_error(exc)
+            logger.exception(
+                "openai_infer_conversation_stream_failed",
+                model=payload.get("model"),
+                has_mcp_tools=bool(payload.get("tools")),
+                has_message_history=isinstance(payload.get("input"), list),
+                error_type=type(exc).__name__,
+                provider_error=provider_error,
+            )
+            raise DomainValidationException(
+                "llm_provider_error",
+                input_data={
+                    **payload,
+                    "tools": [
+                        {key: value for key, value in tool.items() if key != "headers"}
+                        if isinstance(tool, dict)
+                        else tool
+                        for tool in payload.get("tools", [])
+                    ]
+                    if isinstance(payload.get("tools"), list)
+                    else payload.get("tools"),
+                },
+                errors=[provider_error],
+            ) from exc
+
+        if response is None:
+            raise DomainValidationException(
+                "llm_provider_error",
+                input_data={
+                    **payload,
+                    "tools": [
+                        {key: value for key, value in tool.items() if key != "headers"}
+                        if isinstance(tool, dict)
+                        else tool
+                        for tool in payload.get("tools", [])
+                    ]
+                    if isinstance(payload.get("tools"), list)
+                    else payload.get("tools"),
+                },
+                errors=["stream_completed_without_response"],
+            )
+
+        latency_ms = (time.perf_counter() - start) * 1000
+        if (
+            request.history_mode == "provider_conversation"
+            and request.conversation_key
+            and response is not None
+            and response.id
+        ):
+            await self._set_previous_response_id(
+                request.conversation_key,
+                ConversationResponseID(response.id),
+            )
+        return self._build_stream_result(
+            model_alias=request.model_alias,
+            response=response,
+            accumulated_text=accumulated_text,
+            latency_ms=latency_ms,
+        )
+
+    async def infer_conversation_stream(
+        self,
+        *,
+        model: str,
+        instructions: str,
+        user_input: str,
+        temperature: float = 0.2,
+        user_id: str | None = None,
+        conversation_key: str | None = None,
+        message_history: list[dict[str, str]] | None = None,
+        mcp_tools: list[dict[str, Any]] | None = None,
+        store: bool = False,
+        on_openai_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> LLMResult:
+        del store
+        input_messages: list[dict[str, str]] = []
+        normalized_instructions = instructions.strip()
+        if normalized_instructions:
+            input_messages.append({"role": "system", "content": normalized_instructions})
+        if message_history:
+            for item in message_history:
+                role = item.get("role", "")
+                content = item.get("content", "")
+                if role in {"user", "assistant"} and content:
+                    input_messages.append({"role": role, "content": content})
+        input_messages.append({"role": "user", "content": user_input})
+        history_mode = (
+            "provider_conversation"
+            if not message_history and conversation_key is not None
+            else "manual"
+        )
+        streaming_request = OpenAIStreamingRequest(
+            model_alias=model,
+            input_messages=input_messages,
+            principal_id=user_id,
+            conversation_key=conversation_key if history_mode == "provider_conversation" else None,
+            history_mode=history_mode,
+            tools=mcp_tools or [],
+            temperature=temperature,
+        )
+        return await self.infer_streaming_request(
+            request=streaming_request,
+            on_openai_event=on_openai_event,
         )
 
     async def classify(
@@ -481,16 +569,12 @@ class OpenAIProviderAdapter(LLMProviderPort):
             raise DomainValidationException(
                 "llm_classification_failed",
                 detail=str(exc),
-            )
+            ) from exc
 
         output_text = ""
         if response.output:
             for block in response.output:
-                block_payload = (
-                    block.model_dump(mode="json")
-                    if hasattr(block, "model_dump")
-                    else {}
-                )
+                block_payload = block.model_dump(mode="json")
                 content_items = block_payload.get("content", [])
                 if not isinstance(content_items, list):
                     continue

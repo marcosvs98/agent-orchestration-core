@@ -156,8 +156,8 @@ Valores que o **dashboard do tenant** passaria a expor após criar um servidor M
 
 `https://mcp.acme-aoc.example.com/core/v1/mcp-servers/a1b2c3d4-e5f6-7890-abcd-ef1234567890/mcp`
 
-Integradores substituem host, UUID e chave pelos próprios.  
-Se o caso **não** precisar de dados por utilizador final, basta `X-Api-Key`.  
+Integradores substituem host, UUID e chave pelos próprios.
+Se o caso **não** precisar de dados por utilizador final, basta `X-Api-Key`.
 Se precisar, acrescenta-se `Authorization: Bearer <jwt>` **além** da chave (contrato atual no [gateway](../MCP/gateway-and-runtime.md)).
 
 ### 8.1 OpenAI — Responses API (Python, MCP remoto)

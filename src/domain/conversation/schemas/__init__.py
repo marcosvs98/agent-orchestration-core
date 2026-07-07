@@ -3,5 +3,12 @@ from domain.conversation.schemas.conversation import (
     ConversationRequest,
     SSEEventType,
 )
+from domain.conversation.schemas.turn_spec import ConversationPromptPart, ConversationTurnSpec
 
-__all__ = ["ConversationRequest", "ConversationEvent", "SSEEventType"]
+__all__ = [
+    "ConversationRequest",
+    "ConversationEvent",
+    "SSEEventType",
+    "ConversationPromptPart",
+    "ConversationTurnSpec",
+]

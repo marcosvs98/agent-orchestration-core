@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from typing import Iterator, Protocol, Dict, Any
+from typing import Protocol, Dict, Any
 from uuid import UUID
 
-from domain.execution.schemas.trace import TraceContext
+from domain.execution.schemas.trace import ConversationTraceContext, TraceContext
 
 
 class ObservationHandle(Protocol):
@@ -51,15 +51,37 @@ class RuntimeTracerPort(Protocol):
     ) -> TraceContext: ...
 
     def flow(
-        self, *, trace: TraceContext, input: Dict[str, Any], name: str | None = None
-    ) -> Iterator[ObservationHandle]: ...
+        self, *, trace: TraceContext, name: str | None = None, **kwargs: Any
+    ) -> AbstractContextManager[ObservationHandle]: ...
+
+    def start_conversation_trace(
+        self,
+        *,
+        tenant_id: UUID,
+        session_id: UUID | None,
+        user_id: str | None,
+        correlation_id: UUID | None = None,
+        trace_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        channel: str | None = None,
+        external_message_id: str | None = None,
+        external_request_id: str | None = None,
+        interaction_id: UUID | None = None,
+    ) -> ConversationTraceContext: ...
+
+    def conversation(
+        self,
+        *,
+        trace: ConversationTraceContext,
+        name: str | None = None,
+        **kwargs: Any,
+    ) -> AbstractContextManager[ObservationHandle]: ...
 
     def observe(
         self,
         *,
         as_type: str,
         name: str,
-        input: Dict[str, Any],
         metadata: Dict[str, Any] | None = None,
         trace_context: Dict[str, str] | None = None,
         **kwargs: Any,

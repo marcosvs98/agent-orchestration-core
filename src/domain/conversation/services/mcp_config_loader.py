@@ -19,9 +19,7 @@ class McpConfigLoader:
         row = await self._repo.find_active_for_tenant(tenant_id=tenant_id)
         if row is None:
             return None
-        mcp_server_url = (
-            f"{self._public_base_url}/core/v1/mcp-servers/{row.mcp_server_id}/mcp"
-        )
+        mcp_server_url = f"{self._public_base_url}/core/v1/mcp-servers/{row.mcp_server_id}/mcp"
         return TenantMcpConfig(
             mcp_server_id=row.mcp_server_id,
             mcp_server_url=mcp_server_url,

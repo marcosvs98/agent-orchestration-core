@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Dict, Iterator
-from uuid import UUID
+from contextlib import AbstractContextManager
+from typing import Any, Dict, Iterator, cast
+from uuid import UUID, uuid4
 
 import structlog
 from adapters.observability.logging import get_logger
-from domain.execution.schemas.trace import TraceContext
+from domain.execution.schemas.trace import ConversationTraceContext, TraceContext
 from exceptions.service_exceptions import DomainValidationException
 from langfuse import Langfuse, propagate_attributes
 from settings import (
@@ -20,6 +21,32 @@ from settings import (
 )
 
 logger = get_logger()
+
+
+def _propagate_trace_attributes(**kwargs: Any) -> AbstractContextManager[None]:
+    return cast(AbstractContextManager[None], propagate_attributes(**kwargs))
+
+
+def _langfuse_observation(langfuse: Langfuse, **kwargs: Any) -> AbstractContextManager[Any]:
+    return cast(AbstractContextManager[Any], langfuse.start_as_current_observation(**kwargs))
+
+
+class _LangfuseObservationContext(AbstractContextManager[Any]):
+    def __init__(self, langfuse: Langfuse, **kwargs: Any) -> None:
+        self._context = _langfuse_observation(langfuse, **kwargs)
+
+    def __enter__(self) -> Any:
+        return self._context.__enter__()
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool | None:
+        return self._context.__exit__(exc_type, exc_val, exc_tb)
+
+
+def _observation_input(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    raw_input = kwargs.get("input")
+    if isinstance(raw_input, dict):
+        return raw_input
+    return {}
 
 
 LANGFUSE_METADATA_MAX_LEN = 200
@@ -199,10 +226,64 @@ class LangfuseRuntimeTracer:
                 root_observation_id=None,
             )
 
+    def start_conversation_trace(
+        self,
+        *,
+        tenant_id: UUID,
+        session_id: UUID | None,
+        user_id: str | None,
+        correlation_id: UUID | None = None,
+        trace_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        channel: str | None = None,
+        external_message_id: str | None = None,
+        external_request_id: str | None = None,
+        interaction_id: UUID | None = None,
+    ) -> ConversationTraceContext:
+        try:
+            if trace_id is not None:
+                trace_id_val = trace_id
+            elif self._enabled and self.langfuse and external_request_id:
+                deterministic_trace_id = self.langfuse.create_trace_id(seed=external_request_id)
+                trace_id_val = UUID(deterministic_trace_id)
+            else:
+                trace_id_val = uuid4()
+
+            return ConversationTraceContext(
+                trace_id=trace_id_val,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=user_id,
+                correlation_id=correlation_id,
+                agent_id=agent_id,
+                channel=channel,
+                external_message_id=external_message_id,
+                interaction_id=interaction_id,
+                root_observation_id=None,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to start conversation trace",
+                tenant_id=str(tenant_id),
+            )
+            return ConversationTraceContext(
+                trace_id=trace_id or uuid4(),
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=user_id,
+                correlation_id=correlation_id,
+                agent_id=agent_id,
+                channel=channel,
+                external_message_id=external_message_id,
+                interaction_id=interaction_id,
+                root_observation_id=None,
+            )
+
     @contextlib.contextmanager
     def flow(
-        self, *, trace: TraceContext, input: Dict[str, Any], name: str | None = None
+        self, *, trace: TraceContext, name: str | None = None, **kwargs: Any
     ) -> Iterator[ObservationHandle]:
+        input_payload = _observation_input(kwargs)
         span_name = name or trace.flow_name or "flow.run"
         propagate_metadata: Dict[str, Any] = {
             "tenant_id": str(trace.tenant_id),
@@ -241,27 +322,30 @@ class LangfuseRuntimeTracer:
             yield handle
             return
         try:
-            with self.langfuse.start_as_current_observation(
+            flow_observation = _LangfuseObservationContext(
+                self.langfuse,
                 as_type="span",
                 name=f"flow:{span_name}",
                 trace_context={"trace_id": trace.trace_id.hex},
-                input=input,
+                input=input_payload,
                 metadata=_langfuse_safe_metadata(
                     _merge_metadata({"flow_name": trace.flow_name} if trace.flow_name else None)
                 ),
-            ) as flow_span:
+            )
+            with flow_observation as flow_span:
                 handle = ObservationHandle(flow_span)
                 root_observation_id = getattr(flow_span, "id", None) or getattr(
                     flow_span, "observation_id", None
                 )
                 if root_observation_id and not trace.root_observation_id:
                     trace.root_observation_id = root_observation_id
-                with propagate_attributes(
+                propagate_ctx: AbstractContextManager[None] = _propagate_trace_attributes(
                     user_id=trace.user_id,
                     session_id=str(trace.session_id) if trace.session_id else None,
                     metadata=_langfuse_safe_metadata(_get_contextvars_metadata()),
                     version=str(trace.flow_version_id) if trace.flow_version_id else None,
-                ):
+                )
+                with propagate_ctx:
                     yield handle
         except Exception as e:
             if flow_span is not None:
@@ -274,26 +358,103 @@ class LangfuseRuntimeTracer:
             raise
 
     @contextlib.contextmanager
+    def conversation(
+        self,
+        *,
+        trace: ConversationTraceContext,
+        name: str | None = None,
+        **kwargs: Any,
+    ) -> Iterator[ObservationHandle]:
+        input_payload = _observation_input(kwargs)
+        span_name = name or "conversation.turn"
+        trace_metadata: Dict[str, Any] = {
+            "tenant_id": str(trace.tenant_id),
+            "trace_id": str(trace.trace_id),
+        }
+        if trace.user_id:
+            trace_metadata["user_id"] = trace.user_id
+        if trace.session_id:
+            trace_metadata["session_id"] = str(trace.session_id)
+        if trace.correlation_id:
+            trace_metadata["correlation_id"] = str(trace.correlation_id)
+        if trace.agent_id:
+            trace_metadata["agent_id"] = str(trace.agent_id)
+        if trace.channel:
+            trace_metadata["channel"] = trace.channel
+        if trace.external_message_id:
+            trace_metadata["external_message_id"] = trace.external_message_id
+        if trace.interaction_id:
+            trace_metadata["interaction_id"] = str(trace.interaction_id)
+        if self.environment:
+            trace_metadata["env"] = self.environment
+        if self.runtime_version:
+            trace_metadata["runtime_version"] = self.runtime_version
+
+        conversation_span = None
+        handle = ObservationHandle(None)
+        if not self._enabled or not self.langfuse:
+            yield handle
+            return
+        try:
+            conversation_observation = _LangfuseObservationContext(
+                self.langfuse,
+                as_type="span",
+                name=span_name,
+                trace_context={"trace_id": trace.trace_id.hex},
+                input=input_payload,
+                metadata=_langfuse_safe_metadata(_merge_metadata(trace_metadata)),
+            )
+            with conversation_observation as conversation_span:
+                handle = ObservationHandle(conversation_span)
+                root_observation_id = None
+                try:
+                    root_observation_id = conversation_span.id
+                except AttributeError:
+                    try:
+                        root_observation_id = conversation_span.observation_id
+                    except AttributeError:
+                        root_observation_id = None
+                if root_observation_id and not trace.root_observation_id:
+                    trace.root_observation_id = root_observation_id
+                conversation_propagate_ctx: AbstractContextManager[None] = (
+                    _propagate_trace_attributes(
+                        user_id=trace.user_id,
+                        session_id=str(trace.session_id) if trace.session_id else None,
+                        metadata=_langfuse_safe_metadata(_get_contextvars_metadata()),
+                    )
+                )
+                with conversation_propagate_ctx:
+                    yield handle
+        except Exception as e:
+            if conversation_span is not None:
+                handle.error(error_type=type(e).__name__, error_message=str(e))
+            logger.exception(
+                "Failed to start conversation span in Langfuse",
+                error_type=type(e).__name__,
+                trace_id=str(trace.trace_id),
+            )
+            raise
+
+    @contextlib.contextmanager
     def observe(
         self,
         *,
         as_type: str,
         name: str,
-        input: Dict[str, Any],
         metadata: Dict[str, Any] | None = None,
         trace_context: Dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Iterator[ObservationHandle]:
+        input_payload = _observation_input(kwargs)
         handle = ObservationHandle(None)
         if not self._enabled or not self.langfuse:
             yield handle
             return
         try:
             if as_type == "event" and TRACING_LEVEL == "TRACE":
-                yield handle
                 self.langfuse.create_event(
                     name=name,
-                    input=input,
+                    input=input_payload,
                     metadata=_langfuse_safe_metadata(_merge_metadata(metadata)),
                 )
                 yield handle
@@ -301,13 +462,15 @@ class LangfuseRuntimeTracer:
             obs_kwargs: Dict[str, Any] = dict(kwargs)
             if trace_context is not None:
                 obs_kwargs["trace_context"] = trace_context
-            with self.langfuse.start_as_current_observation(
+            observation_ctx = _LangfuseObservationContext(
+                self.langfuse,
                 as_type=as_type,
                 name=name,
-                input=input,
+                input=input_payload,
                 metadata=_langfuse_safe_metadata(_merge_metadata(metadata)),
                 **obs_kwargs,
-            ) as observation:
+            )
+            with observation_ctx as observation:
                 handle = ObservationHandle(observation)
                 yield handle
         except Exception as e:

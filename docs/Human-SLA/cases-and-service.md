@@ -98,7 +98,7 @@ Important:
 
 `HumanSLAController` — `src/domain/human_sla/controllers/human_sla_controller.py`
 
-**Prefix:** `/core/v1/sla-cases`  
+**Prefix:** `/core/v1/sla-cases`
 **Auth:** `get_auth_context` — tenant-scoped (`auth.tenant_id`).
 
 | Method | Path | Action |

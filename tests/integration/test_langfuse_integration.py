@@ -15,7 +15,9 @@ def tracer_off() -> LangfuseRuntimeTracer:
         yield LangfuseRuntimeTracer()
 
 
-def test_langfuse_runtime_tracer_flush_shutdown_noop_when_disabled(tracer_off: LangfuseRuntimeTracer) -> None:
+def test_langfuse_runtime_tracer_flush_shutdown_noop_when_disabled(
+    tracer_off: LangfuseRuntimeTracer,
+) -> None:
     tracer_off.flush()
     tracer_off.shutdown()
 

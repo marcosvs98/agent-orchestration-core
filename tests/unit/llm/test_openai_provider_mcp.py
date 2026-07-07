@@ -33,7 +33,7 @@ def _make_request(*, stream: bool = False) -> LLMRequest:
     )
 
 
-def _fake_response():
+def _fake_response() -> MagicMock:
     resp = MagicMock()
     resp.id = "resp-001"
     resp.output = []
@@ -43,7 +43,7 @@ def _fake_response():
 
 
 def _make_adapter(captured_payloads: list[dict[str, Any]]) -> OpenAIProviderAdapter:
-    async def _fake_create(**kwargs):
+    async def _fake_create(**kwargs: Any) -> Any:
         captured_payloads.append(dict(kwargs))
         return _fake_response()
 
@@ -60,17 +60,17 @@ def _make_adapter(captured_payloads: list[dict[str, Any]]) -> OpenAIProviderAdap
 
 class TestOpenAIProviderMcpTools:
     @pytest.mark.asyncio
-    async def test_no_tools_when_contextvar_not_set_and_not_streaming(self):
+    async def test_no_tools_when_contextvar_not_set_and_not_streaming(self) -> None:
         payloads: list[dict] = []
         adapter = _make_adapter(payloads)
         await adapter.infer(_make_request(stream=False))
         assert "tools" not in payloads[0]
 
     @pytest.mark.asyncio
-    async def test_no_tools_when_contextvar_not_set_streaming(self):
+    async def test_no_tools_when_contextvar_not_set_streaming(self) -> None:
         payloads: list[dict] = []
 
-        async def _fake_create_stream(**kwargs):
+        async def _fake_create_stream(**kwargs: Any) -> Any:
             payloads.append(dict(kwargs))
 
             async def _empty() -> AsyncGenerator:
@@ -98,15 +98,15 @@ class TestOpenAIProviderMcpTools:
         assert "tools" not in payloads[0]
 
     @pytest.mark.asyncio
-    async def test_tools_injected_when_contextvar_set_and_streaming(self):
+    async def test_tools_injected_when_contextvar_set_and_streaming(self) -> None:
         payloads: list[dict] = []
 
-        async def _fake_create_stream(**kwargs):
+        async def _fake_create_stream(**kwargs: Any) -> Any:
             payloads.append(dict(kwargs))
 
-            async def _events():
+            async def _events() -> AsyncGenerator[Any, None]:
                 resp = MagicMock()
-                resp.type = "response.completed"
+                resp.model_dump.return_value = {"type": "response.completed", "response": {}}
                 resp.response = _fake_response()
                 yield resp
 
@@ -135,15 +135,15 @@ class TestOpenAIProviderMcpTools:
         assert tools[0]["server_url"] == _MCP_CONFIG.mcp_server_url
 
     @pytest.mark.asyncio
-    async def test_authorization_header_format(self):
+    async def test_authorization_header_format(self) -> None:
         payloads: list[dict] = []
 
-        async def _fake_create_stream(**kwargs):
+        async def _fake_create_stream(**kwargs: Any) -> Any:
             payloads.append(dict(kwargs))
 
-            async def _events():
+            async def _events() -> AsyncGenerator[Any, None]:
                 resp = MagicMock()
-                resp.type = "response.completed"
+                resp.model_dump.return_value = {"type": "response.completed", "response": {}}
                 resp.response = _fake_response()
                 yield resp
 
@@ -170,15 +170,15 @@ class TestOpenAIProviderMcpTools:
         assert headers["authorization"] == "Bearer outbound-key-456"
 
     @pytest.mark.asyncio
-    async def test_require_approval_never(self):
+    async def test_require_approval_never(self) -> None:
         payloads: list[dict] = []
 
-        async def _fake_create_stream(**kwargs):
+        async def _fake_create_stream(**kwargs: Any) -> Any:
             payloads.append(dict(kwargs))
 
-            async def _events():
+            async def _events() -> AsyncGenerator[Any, None]:
                 resp = MagicMock()
-                resp.type = "response.completed"
+                resp.model_dump.return_value = {"type": "response.completed", "response": {}}
                 resp.response = _fake_response()
                 yield resp
 
@@ -202,7 +202,7 @@ class TestOpenAIProviderMcpTools:
         assert payloads[0]["tools"][0]["require_approval"] == "never"
 
     @pytest.mark.asyncio
-    async def test_no_tools_when_stream_false_even_with_contextvar_set(self):
+    async def test_no_tools_when_stream_false_even_with_contextvar_set(self) -> None:
         payloads: list[dict] = []
         adapter = _make_adapter(payloads)
 
@@ -215,18 +215,28 @@ class TestOpenAIProviderMcpTools:
         assert "tools" not in payloads[0]
 
     @pytest.mark.asyncio
-    async def test_infer_conversation_stream_forwards_events_and_tools(self):
+    async def test_infer_conversation_stream_forwards_events_and_tools(self) -> None:
         payloads: list[dict] = []
 
-        async def _fake_create(**kwargs):
+        async def _fake_create(**kwargs: Any) -> Any:
             payloads.append(dict(kwargs))
             if kwargs.get("stream"):
-                async def _events():
-                    yield MagicMock(type="response.output_text.delta", delta="oi")
+
+                async def _events() -> AsyncGenerator[Any, None]:
+                    delta = MagicMock()
+                    delta.model_dump.return_value = {
+                        "type": "response.output_text.delta",
+                        "delta": "oi",
+                    }
+                    yield delta
                     completed = MagicMock()
-                    completed.type = "response.completed"
+                    completed.model_dump.return_value = {
+                        "type": "response.completed",
+                        "response": {},
+                    }
                     completed.response = _fake_response()
                     yield completed
+
                 return _events()
             return _fake_response()
 
@@ -239,8 +249,8 @@ class TestOpenAIProviderMcpTools:
         adapter = OpenAIProviderAdapter(cache_adapter=cache, openai_client=openai_client)
         events: list[str] = []
 
-        async def _on_event(evt):
-            events.append(getattr(evt, "type", ""))
+        async def _on_event(evt: dict[str, Any]) -> None:
+            events.append(str(evt.get("type", "")))
 
         tools = [
             {
@@ -255,6 +265,7 @@ class TestOpenAIProviderMcpTools:
             model="gpt-4.1",
             instructions="i",
             user_input="u",
+            conversation_key="tenant:session",
             mcp_tools=tools,
             on_openai_event=_on_event,
         )
@@ -262,17 +273,22 @@ class TestOpenAIProviderMcpTools:
         assert payloads[0]["tools"][0]["server_url"] == _MCP_CONFIG.mcp_server_url
 
     @pytest.mark.asyncio
-    async def test_infer_conversation_stream_uses_message_history_input(self):
+    async def test_infer_conversation_stream_uses_message_history_input(self) -> None:
         payloads: list[dict] = []
 
-        async def _fake_create(**kwargs):
+        async def _fake_create(**kwargs: Any) -> Any:
             payloads.append(dict(kwargs))
             if kwargs.get("stream"):
-                async def _events():
+
+                async def _events() -> AsyncGenerator[Any, None]:
                     completed = MagicMock()
-                    completed.type = "response.completed"
+                    completed.model_dump.return_value = {
+                        "type": "response.completed",
+                        "response": {},
+                    }
                     completed.response = _fake_response()
                     yield completed
+
                 return _events()
             return _fake_response()
 
@@ -294,6 +310,7 @@ class TestOpenAIProviderMcpTools:
         )
 
         assert payloads[0]["input"] == [
+            {"role": "system", "content": "i"},
             {"role": "user", "content": "Cartão e fatura"},
             {"role": "assistant", "content": "Escolha o cartão VISA INFINITE"},
             {"role": "user", "content": "Preciso de detalhes da fatura"},
@@ -301,7 +318,7 @@ class TestOpenAIProviderMcpTools:
         assert "conversation" not in payloads[0]
 
     @pytest.mark.asyncio
-    async def test_infer_conversation_stream_wraps_provider_error_with_details(self):
+    async def test_infer_conversation_stream_wraps_provider_error_with_details(self) -> None:
         cache = MagicMock()
         cache.get = AsyncMock(return_value=None)
         cache.set = AsyncMock()
@@ -320,4 +337,4 @@ class TestOpenAIProviderMcpTools:
             )
 
         assert raised.value.message == "llm_provider_error"
-        assert raised.value.errors() == ["Error code: 424 - Failed Dependency"]
+        assert raised.value.errors() == ["provider_failed_dependency"]
