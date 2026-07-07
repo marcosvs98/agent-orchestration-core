@@ -1,5 +1,6 @@
 import importlib
 import contextlib
+from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -13,7 +14,7 @@ def _enable_tracing(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
     monkeypatch.setattr(module, "TRACING_ENABLED", True)
 
 
-def test_tracer_blocks_when_missing_config(monkeypatch):
+def test_tracer_blocks_when_missing_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", None)
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", None)
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", None)
@@ -24,7 +25,9 @@ def test_tracer_blocks_when_missing_config(monkeypatch):
 
 
 @patch("langfuse.get_client")
-def test_tracer_creates_trace_context(mock_get_client, monkeypatch):
+def test_tracer_creates_trace_context(
+    mock_get_client: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", "pk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
@@ -56,9 +59,9 @@ def test_tracer_creates_trace_context(mock_get_client, monkeypatch):
     mock_client.start_as_current_observation = MagicMock(return_value=mock_span)
     mock_span.id = "obs_123"
 
-    captured = {}
+    captured: dict[str, Any] = {}
 
-    def fake_propagate_attributes(**kwargs):
+    def fake_propagate_attributes(**kwargs: Any) -> contextlib.AbstractContextManager[None]:
         captured.update(kwargs)
         return contextlib.nullcontext()
 
@@ -71,7 +74,9 @@ def test_tracer_creates_trace_context(mock_get_client, monkeypatch):
 
 
 @patch("langfuse.get_client")
-def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
+def test_tracer_hierarchy_flow_node_llm(
+    mock_get_client: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", "pk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
@@ -96,7 +101,7 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
     mock_generation.__exit__ = MagicMock(return_value=False)
     mock_generation.update = MagicMock()
 
-    def mock_start_observation(**kwargs):
+    def mock_start_observation(**kwargs: Any) -> MagicMock:
         if kwargs.get("as_type") == "span" and kwargs.get("name") == "flow.run":
             return mock_flow_span
         elif kwargs.get("as_type") == "span" and kwargs.get("name") == "node-execution":
@@ -135,7 +140,11 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
             ) as handle:
                 handle.success(
                     output={"status": "ok"},
-                    usage_details={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+                    usage_details={
+                        "prompt_tokens": 10,
+                        "completion_tokens": 20,
+                        "total_tokens": 30,
+                    },
                     cost_details={"total_cost": 0.002},
                 )
 
@@ -148,7 +157,7 @@ def test_tracer_hierarchy_flow_node_llm(mock_get_client, monkeypatch):
 
 
 @patch("langfuse.get_client")
-def test_tracer_guardrail_span(mock_get_client, monkeypatch):
+def test_tracer_guardrail_span(mock_get_client: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", "pk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
@@ -179,7 +188,7 @@ def test_tracer_guardrail_span(mock_get_client, monkeypatch):
 
 
 @patch("langfuse.get_client")
-def test_tracer_tool_span(mock_get_client, monkeypatch):
+def test_tracer_tool_span(mock_get_client: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", "pk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
@@ -210,7 +219,64 @@ def test_tracer_tool_span(mock_get_client, monkeypatch):
 
 
 @patch("langfuse.get_client")
-def test_tracer_deterministic_trace_id(mock_get_client, monkeypatch):
+def test_tracer_conversation_trace_propagates_user_and_session(
+    mock_get_client: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")
+    importlib.reload(tracer_module)
+    _enable_tracing(monkeypatch, tracer_module)
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    tracer = tracer_module.LangfuseRuntimeTracer(environment="test", runtime_version="0.0.0")
+    tenant_id = uuid4()
+    session_id = uuid4()
+    trace_id = uuid4()
+    ctx = tracer.start_conversation_trace(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        user_id="user-42",
+        correlation_id=uuid4(),
+        trace_id=trace_id,
+        agent_id=uuid4(),
+        channel="http",
+    )
+    assert ctx.trace_id == trace_id
+    assert ctx.user_id == "user-42"
+    assert ctx.session_id == session_id
+
+    mock_span = MagicMock()
+    mock_span.__enter__ = MagicMock(return_value=mock_span)
+    mock_span.__exit__ = MagicMock(return_value=False)
+    mock_client.start_as_current_observation = MagicMock(return_value=mock_span)
+    mock_span.id = "obs_conv_123"
+
+    captured: dict[str, Any] = {}
+
+    def fake_propagate_attributes(**kwargs: Any) -> contextlib.AbstractContextManager[None]:
+        captured.update(kwargs)
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr(tracer_module, "propagate_attributes", fake_propagate_attributes)
+
+    with tracer.conversation(
+        trace=ctx,
+        input={"agent_id": str(ctx.agent_id)},
+        name="domain.conversation.sse.turn",
+    ):
+        assert ctx.root_observation_id is not None
+
+    assert captured["user_id"] == "user-42"
+    assert captured["session_id"] == str(session_id)
+
+
+@patch("langfuse.get_client")
+def test_tracer_deterministic_trace_id(
+    mock_get_client: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(tracer_module, "LANGFUSE_PUBLIC_KEY", "pk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(tracer_module, "LANGFUSE_HOST", "https://langfuse.local")

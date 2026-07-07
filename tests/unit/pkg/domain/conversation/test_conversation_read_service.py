@@ -16,9 +16,7 @@ async def test_get_end_user_detail_raises_when_user_missing() -> None:
     read_repo = AsyncMock()
     read_repo.get_end_user_id = AsyncMock(return_value=None)
     exec_repo = AsyncMock()
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=exec_repo
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=exec_repo)
     tenant_id = uuid4()
     with pytest.raises(NotFoundServiceException):
         await service.get_end_user_detail(tenant_id=tenant_id, user_id="u1")
@@ -34,9 +32,7 @@ async def test_get_end_user_detail_merges_preferences_and_profile() -> None:
     exec_repo.get_user_memory_preferences_and_profile = AsyncMock(
         return_value=({"k": "v"}, {"bio": "x"})
     )
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=exec_repo
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=exec_repo)
     result = await service.get_end_user_detail(tenant_id=tenant_id, user_id="ext-1")
     assert result.end_user_id == end_user_id
     assert result.user_id == "ext-1"
@@ -66,9 +62,7 @@ async def test_list_interactions_by_session_delegates() -> None:
     )
     read_repo = AsyncMock()
     read_repo.list_interactions_by_session = AsyncMock(return_value=([row], False))
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=AsyncMock()
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=AsyncMock())
     out = await service.list_interactions(
         tenant_id=tenant_id,
         session_id=sid,
@@ -89,9 +83,7 @@ async def test_list_interactions_by_user_delegates() -> None:
     tenant_id = uuid4()
     read_repo = AsyncMock()
     read_repo.list_interactions_by_user = AsyncMock(return_value=([], True))
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=AsyncMock()
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=AsyncMock())
     out = await service.list_interactions(
         tenant_id=tenant_id,
         session_id=None,
@@ -134,9 +126,7 @@ async def test_list_interactions_maps_user_input_and_system_output() -> None:
     )
     read_repo = AsyncMock()
     read_repo.list_interactions_by_session = AsyncMock(return_value=([row], False))
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=AsyncMock()
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=AsyncMock())
     out = await service.list_interactions(
         tenant_id=tenant_id,
         session_id=sid,
@@ -171,9 +161,7 @@ async def test_list_interactions_ignores_malformed_payload_and_coerces_output() 
     )
     read_repo = AsyncMock()
     read_repo.list_interactions_by_session = AsyncMock(return_value=([row], False))
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=AsyncMock()
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=AsyncMock())
     out = await service.list_interactions(
         tenant_id=tenant_id,
         session_id=sid,
@@ -206,9 +194,7 @@ async def test_list_interactions_treats_null_system_output_as_missing() -> None:
     )
     read_repo = AsyncMock()
     read_repo.list_interactions_by_session = AsyncMock(return_value=([row], False))
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=AsyncMock()
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=AsyncMock())
     out = await service.list_interactions(
         tenant_id=tenant_id,
         session_id=sid,
@@ -240,12 +226,8 @@ async def test_list_sessions_and_end_users() -> None:
             True,
         )
     )
-    service = ConversationReadService(
-        read_repository=read_repo, execution_repository=AsyncMock()
-    )
-    s = await service.list_sessions(
-        tenant_id=tenant_id, user_id="a", limit=20, offset=0
-    )
+    service = ConversationReadService(read_repository=read_repo, execution_repository=AsyncMock())
+    s = await service.list_sessions(tenant_id=tenant_id, user_id="a", limit=20, offset=0)
     assert len(s.items) == 1
     assert s.items[0].user_id == "a"
     e = await service.list_end_users(tenant_id=tenant_id, limit=20, offset=0)

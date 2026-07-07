@@ -10,7 +10,10 @@ from domain.execution.schemas.execution import Channel
 from domain.governance.schemas.scopes import Scope
 from domain.governance.services.access_policy_service import AccessPolicyService
 from domain.governance.services.rate_limit_service import RateLimitService
-from exceptions.service_exceptions import AuthorizationDeniedException
+from exceptions.service_exceptions import (
+    AuthorizationDeniedException,
+    DomainValidationException,
+)
 from utils.auth import AuthContext
 
 
@@ -36,10 +39,18 @@ class ConversationBoundary:
         request_id: str | None,
         trace_id: str | None,
         last_event_id: int | None,
+        end_user_authorization: str | None = None,
     ) -> AsyncGenerator[ServerSentEvent, None]:
         tenant_id = auth.tenant_id
         if tenant_id is None:
             raise AuthorizationDeniedException(message="tenant_id_required")
+        is_human_principal = auth.principal_type in {"human", "user"}
+        end_user_id = (request.user_id or "").strip()
+        if not end_user_id:
+            raise DomainValidationException(message="user_id_required")
+        if is_human_principal and end_user_id != auth.principal_id:
+            raise DomainValidationException(message="user_id_principal_mismatch")
+        trusted_end_user_authorization = end_user_authorization
         await self.rate_limit_service.enforce(
             tenant_id=tenant_id,
             principal_type=auth.principal_type,
@@ -55,6 +66,9 @@ class ConversationBoundary:
         )
         return await self.conversation_service.execute_turn(
             tenant_id=tenant_id,
+            canonical_principal_id=auth.principal_id,
+            end_user_id=end_user_id,
+            end_user_authorization=trusted_end_user_authorization,
             request=request,
             channel=channel,
             headers=headers,

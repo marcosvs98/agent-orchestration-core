@@ -26,6 +26,8 @@ SAFE_CONVERSATION_HEADERS = {
     "x-external-message-id",
 }
 
+END_USER_AUTHORIZATION_HEADER = "X-End-User-Authorization"
+
 
 class ConversationController:
     def __init__(self, boundary: ConversationBoundary, mcp_config_loader: McpConfigLoader) -> None:
@@ -75,9 +77,7 @@ class ConversationController:
         else:
             trace_uuid = uuid4()
 
-        mcp_config = await self.mcp_config_loader.load_for_tenant(
-            tenant_id=auth.tenant_id
-        )
+        mcp_config = await self.mcp_config_loader.load_for_tenant(tenant_id=auth.tenant_id)
         tok = set_conversation_mcp_config(mcp_config)
         try:
             stream = await self.boundary.send_message(
@@ -93,6 +93,7 @@ class ConversationController:
                 request_id=request.headers.get("X-Request-Id") or idempotency_key,
                 trace_id=str(trace_uuid),
                 last_event_id=parsed_last_event_id,
+                end_user_authorization=_resolve_end_user_authorization(auth, request),
             )
             async for event in stream:
                 yield event
@@ -100,3 +101,9 @@ class ConversationController:
             pass
         finally:
             _CONVERSATION_MCP_CONFIG.reset(tok)
+
+
+def _resolve_end_user_authorization(auth: AuthContext, request: Request) -> str | None:
+    if auth.principal_type in {"human", "user"}:
+        return request.headers.get("Authorization")
+    return request.headers.get(END_USER_AUTHORIZATION_HEADER)

@@ -38,7 +38,7 @@ Before insert, each referenced id is checked to belong to the **same tenant**. O
 
 Response fields:
 
-- **`endpoint`** — `{endpoint_base}/core/v1/mcp-servers/{mcp_server_id}/mcp`  
+- **`endpoint`** — `{endpoint_base}/core/v1/mcp-servers/{mcp_server_id}/mcp`
   (`endpoint_base` from the controller: `PUBLIC_BASE_URL` or request base URL.)
 - **`api_key`**
 - **`mcp_server_id`**

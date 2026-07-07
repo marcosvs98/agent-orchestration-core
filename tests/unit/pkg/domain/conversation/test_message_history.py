@@ -1,3 +1,5 @@
+import pytest
+
 from domain.conversation.utils.message_history import parse_message_history
 
 
@@ -38,3 +40,21 @@ def test_parse_message_history_skips_non_dict_items() -> None:
         }
     )
     assert history == [{"role": "user", "content": "ok"}]
+
+
+def test_parse_message_history_rejects_forbidden_metadata() -> None:
+    with pytest.raises(ValueError, match="forbidden_metadata_key:uora_end_user_authorization"):
+        parse_message_history({"uora_end_user_authorization": "Bearer forged"})
+
+
+def test_parse_message_history_limits_items_and_content() -> None:
+    history = parse_message_history(
+        {
+            "message_history": [
+                {"role": "user", "content": "x" * 17000},
+                *[{"role": "assistant", "content": f"msg-{index}"} for index in range(70)],
+            ]
+        }
+    )
+    assert len(history) == 50
+    assert len(history[0]["content"]) == 16000

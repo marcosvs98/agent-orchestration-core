@@ -1,4 +1,5 @@
 from dependency_injector import containers, providers
+from typing import Any
 
 import settings
 from openai import AsyncOpenAI
@@ -222,7 +223,7 @@ class TenantSummaryContainer(containers.DeclarativeContainer):
 class TenantsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
-    summary_service = providers.Dependency()
+    summary_service: providers.Provider[Any] = providers.Dependency()
 
     tenants_repository = providers.Factory(
         TenantsRepository,
@@ -737,6 +738,7 @@ class ConversationContainer(containers.DeclarativeContainer):
         execution_repository=execution.execution_repository,
         agents_repository=agents.agents_repository,
         user_prompts_repository=user_prompts.user_prompts_repository,
+        tracer=adapters.tracer,
     )
     conversation_boundary = providers.Factory(
         ConversationBoundary,

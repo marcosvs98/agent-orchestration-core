@@ -10,9 +10,7 @@ class TenantMcpCredentialRepository:
     def __init__(self, database_connection: DatabaseConnection) -> None:
         self._db = database_connection
 
-    async def find_active_for_tenant(
-        self, *, tenant_id: UUID
-    ) -> TenantMcpCredential | None:
+    async def find_active_for_tenant(self, *, tenant_id: UUID) -> TenantMcpCredential | None:
         async with self._db.get_session() as session:
             stmt = (
                 select(TenantMcpCredential)

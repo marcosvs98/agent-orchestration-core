@@ -15,10 +15,12 @@ def test_build_conversation_mcp_tools_uses_end_user_authorization() -> None:
     )
     tools = build_conversation_mcp_tools(
         cfg,
-        {"uora_end_user_authorization": "Bearer user-jwt"},
+        end_user_authorization="Bearer user-jwt",
     )
-    assert tools[0]["headers"]["x-api-key"] == "mcp-access-key"
-    assert tools[0]["headers"]["authorization"] == "Bearer user-jwt"
+    headers = tools[0]["headers"]
+    assert isinstance(headers, dict)
+    assert headers["x-api-key"] == "mcp-access-key"
+    assert headers["authorization"] == "Bearer user-jwt"
 
 
 def test_build_conversation_mcp_tools_falls_back_to_outbound_key() -> None:
@@ -28,5 +30,7 @@ def test_build_conversation_mcp_tools_falls_back_to_outbound_key() -> None:
         mcp_access_key="mcp-access-key",
         outbound_api_key="outbound-fallback",
     )
-    tools = build_conversation_mcp_tools(cfg, {})
-    assert tools[0]["headers"]["authorization"] == "Bearer outbound-fallback"
+    tools = build_conversation_mcp_tools(cfg, end_user_authorization=None)
+    headers = tools[0]["headers"]
+    assert isinstance(headers, dict)
+    assert headers["authorization"] == "Bearer outbound-fallback"
