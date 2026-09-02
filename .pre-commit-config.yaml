@@ -3,54 +3,51 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        name: '[A01] Removendo espaços em branco no final das linhas'
+        name: '[A01] Removing trailing whitespace'
         stages:
           - pre-commit
       - id: debug-statements
-        name: '[A02] Removendo statements de debug (pdb, rdb)'
+        name: '[A02] Removing debug statements (pdb, rdb)'
         stages:
           - pre-commit
       - id: end-of-file-fixer
-        name: '[A03] Garantindo uma linha em branco no final dos arquivos'
+        name: '[A03] Ensuring files end with a single newline'
         stages:
           - pre-commit
       - id: check-executables-have-shebangs
-        name: '[A04] Garantindo que executáveis não binários tenham shebang'
+        name: '[A04] Ensuring non-binary executables have a shebang'
         stages:
           - pre-commit
       - id: check-builtin-literals
-        name: >-
-          [A05] Requerendo sintaxe literal ao inicializar tipos nativos do
-          Python
+        name: '[A05] Requiring literal syntax when initializing Python builtins'
         stages:
           - pre-commit
       - id: check-vcs-permalinks
-        name: '[A06] Garantindo que links para repositórios (VCS) sejam permalinks'
+        name: '[A06] Ensuring links to repositories (VCS) are permalinks'
         stages:
           - pre-commit
       - id: destroyed-symlinks
-        name: '[A07] Detectando symlinks alterados para arquivos regulares'
+        name: '[A07] Detecting symlinks turned into regular files'
         stages:
           - pre-commit
       - id: detect-private-key
-        name: '[A08] Detectando a presença de chaves privadas'
+        name: '[A08] Detecting committed private keys'
         stages:
           - pre-commit
       - id: fix-byte-order-marker
-        name: '[A09] Removendo marca de ordem de byte UTF-8'
+        name: '[A09] Removing the UTF-8 byte order marker'
         stages:
           - pre-commit
       - id: forbid-new-submodules
-        name: '[A10] Prevenindo a adição de novos submódulos git'
+        name: '[A10] Preventing new git submodules from being added'
         stages:
           - pre-commit
       - id: forbid-submodules
-        name: '[A11] Proibindo qualquer submódulo no repositório'
+        name: '[A11] Forbidding any submodule in the repository'
         stages:
           - pre-commit
       - id: no-commit-to-branch
-        name: '[A12] Impedindo commits em branches principais'
-
+        name: '[A12] Blocking commits to protected branches'
         stages:
           - pre-commit
           - pre-push
@@ -60,11 +57,11 @@ repos:
           - '--branch'
           - master
       - id: sort-simple-yaml
-        name: '[A13] Ordenando arquivos YAML simples com preservação de comentários'
+        name: '[A13] Sorting simple YAML files while preserving comments'
         stages:
           - pre-commit
       - id: pretty-format-json
-        name: '[A14] Formatando arquivos JSON com padrão definido'
+        name: '[A14] Formatting JSON files to a fixed style'
         stages:
           - pre-commit
         args:
@@ -72,47 +69,45 @@ repos:
           - '--no-ensure-ascii'
           - '--autofix'
       - id: check-json
-        name: '[A15] Verificando se os arquivos JSON possuem sintaxe válida'
+        name: '[A15] Checking JSON files for valid syntax'
         stages:
           - pre-commit
       - id: check-toml
-        name: '[A16] Verificando se os arquivos TOML possuem sintaxe válida'
+        name: '[A16] Checking TOML files for valid syntax'
         stages:
           - pre-commit
       - id: check-added-large-files
-        name: '[A17] Verificando se arquivos grandes foram adicionados'
+        name: '[A17] Checking whether large files were added'
         stages:
           - pre-commit
       - id: check-xml
-        name: '[A18] Verificando se os arquivos XML possuem sintaxe válida'
+        name: '[A18] Checking XML files for valid syntax'
         stages:
           - pre-commit
       - id: check-yaml
-        name: '[A19] Verificando se os arquivos YAML possuem sintaxe válida'
+        name: '[A19] Checking YAML files for valid syntax'
         stages:
           - pre-commit
         args:
           - '--unsafe'
       - id: check-case-conflict
-        name: >-
-          [A20] Verificando se existem arquivos que gerariam conflitos de
-          maiúsculas/minúsculas
+        name: '[A20] Checking for filenames that clash on case-insensitive filesystems'
         stages:
           - pre-commit
       - id: check-merge-conflict
-        name: '[A21] Verificando se existem conflitos de merge nos arquivos'
+        name: '[A21] Checking for merge conflict markers'
         stages:
           - pre-commit
       - id: check-symlinks
-        name: '[A22] Verificando symlinks que não apontam para nada'
+        name: '[A22] Checking for symlinks that point nowhere'
         stages:
           - pre-commit
       - id: check-ast
-        name: '[A23] Verificando se os arquivos Python são válidos'
+        name: '[A23] Checking that Python files parse'
         stages:
           - pre-commit
       - id: name-tests-test
-        name: '[A25] Verificando se os arquivos de teste possuem nome correto'
+        name: '[A25] Checking that test files are named correctly'
         stages:
           - pre-commit
         args:
@@ -121,7 +116,7 @@ repos:
   - repo: local
     hooks:
       - id: mypy
-        name: '[B01] Verificando tipos estáticos no código Python'
+        name: '[B01] Checking static types in Python code'
         entry: mypy
         language: system
         types:
@@ -137,12 +132,12 @@ repos:
     rev: v0.14.10
     hooks:
       - id: ruff-format
-        name: '[B02] Fazendo formatação automática de código (ruff format)'
+        name: '[B02] Formatting code automatically (ruff format)'
         stages:
           - pre-commit
         exclude: ^src/tests/
       - id: ruff
-        name: '[B03] Análisando de qualidade código (ruff check)'
+        name: '[B03] Analysing code quality (ruff check)'
         stages:
           - pre-commit
         args:
@@ -152,7 +147,7 @@ repos:
   - repo: local
     hooks:
       - id: markdown-links
-        name: '[B05] Verificando links markdown em todo o repositorio'
+        name: '[B05] Checking markdown links across the repository'
         entry: python resources/scripts/check_markdown_links.py
         language: system
         pass_filenames: false
@@ -162,7 +157,7 @@ repos:
   - repo: local
     hooks:
       - id: pylint
-        name: '[B04] Analisando qualidade e boas práticas no código Python'
+        name: '[B04] Analysing Python code quality and best practices'
         entry: pylint
         language: system
         types:
