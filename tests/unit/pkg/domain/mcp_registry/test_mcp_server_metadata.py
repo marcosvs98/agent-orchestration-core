@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from domain.mcp_registry.mcp_server_metadata import (
     OUTBOUND_AUTHORIZATION_SECRET_REF_KEY,
@@ -17,14 +16,31 @@ class TestOutboundAuthorizationSecretRefFromServerMetadata:
 
     def test_returns_none_when_key_absent(self):
         assert outbound_authorization_secret_ref_from_server_metadata({}) is None
-        assert outbound_authorization_secret_ref_from_server_metadata({"other_key": "value"}) is None
+        assert (
+            outbound_authorization_secret_ref_from_server_metadata({"other_key": "value"}) is None
+        )
 
     def test_returns_none_when_key_is_none(self):
-        assert outbound_authorization_secret_ref_from_server_metadata({OUTBOUND_AUTHORIZATION_SECRET_REF_KEY: None}) is None
+        assert (
+            outbound_authorization_secret_ref_from_server_metadata(
+                {OUTBOUND_AUTHORIZATION_SECRET_REF_KEY: None}
+            )
+            is None
+        )
 
     def test_returns_none_when_value_is_blank(self):
-        assert outbound_authorization_secret_ref_from_server_metadata({OUTBOUND_AUTHORIZATION_SECRET_REF_KEY: "   "}) is None
-        assert outbound_authorization_secret_ref_from_server_metadata({OUTBOUND_AUTHORIZATION_SECRET_REF_KEY: ""}) is None
+        assert (
+            outbound_authorization_secret_ref_from_server_metadata(
+                {OUTBOUND_AUTHORIZATION_SECRET_REF_KEY: "   "}
+            )
+            is None
+        )
+        assert (
+            outbound_authorization_secret_ref_from_server_metadata(
+                {OUTBOUND_AUTHORIZATION_SECRET_REF_KEY: ""}
+            )
+            is None
+        )
 
     def test_returns_stripped_string_when_present(self):
         result = outbound_authorization_secret_ref_from_server_metadata(

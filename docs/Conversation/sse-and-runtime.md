@@ -31,24 +31,35 @@ The conversation contract uses `agent_id` as selector and keeps `user_input` / `
 4. Binds sessions to **`ConversationRequest.user_id`** (end-user), not the machine `principal_id`.
 5. Delegates to **`ConversationService.execute_turn`**.
 
-Request `metadata` must not include `uora_end_user_authorization` or other forbidden authority keys — use inbound headers instead.
+Request `metadata` must not include `end_user_authorization` or other forbidden authority keys — use inbound headers instead.
 
 ### Runtime path
 
 The endpoint runs in direct low-friction mode:
 
 - `ConversationService` creates minimal interaction audit.
-- `agent_id` is resolved to active version for system prompt.
-- `OpenAIProviderAdapter.infer_conversation_stream` performs `responses.create(stream=True)`.
+- **`ConversationTurnAssembler.assemble`** resolves the agent's active version and builds a typed
+  **`ConversationTurnSpec`** — ordered prompt parts, each carrying a **trust level** — see
+  [Turn assembly](turn-assembly.md).
+- `turn_spec.to_streaming_request()` produces an **`OpenAIStreamingRequest`**.
+- **`OpenAIProviderAdapter.infer_streaming_request`** performs `responses.create(stream=True)`.
 - OpenAI events are mapped to internal SSE events.
 
 ### SSE event contract
 
-- `connected`
-- `content_delta`
-- `tool_progress`
-- `done`
-- `error`
+`SSEEventType` has six members; there is no node- or edge-level event on this stream.
+
+| Event | Terminal | Payload |
+|-------|----------|---------|
+| `connected` | no | `session_id`, `correlation_id`, `interaction_id` |
+| `content_delta` | no | `delta`, `source_event_type` |
+| `tool_progress` | no | provider-side tool call started / completed |
+| `ping` | no | keep-alive |
+| `done` | **yes** | `final_text` |
+| `error` | **yes** | `error_code`, `correlation_id`, `trace_id` |
+
+Errors arrive **inside** the stream with HTTP 200 — read events until `done` or `error` rather than
+trusting the status line.
 
 ## Sequence
 
@@ -58,16 +69,20 @@ sequenceDiagram
   participant CC as ConversationController
   participant CB as ConversationBoundary
   participant CS as ConversationService
+  participant TA as ConversationTurnAssembler
   participant OAI as OpenAIProviderAdapter
   Client->>CC: POST + Idempotency-Key
   CC->>CB: send_message
   CB->>CB: rate_limit + access_policy
   CB->>CS: execute_turn
-  CS->>OAI: infer_conversation_stream
+  CS->>TA: assemble(...)
+  TA-->>CS: ConversationTurnSpec
+  CS->>OAI: infer_streaming_request(to_streaming_request())
   CS-->>Client: SSE events
 ```
 
 ## Related
 
 - [Conversation overview](index.md)
+- [Turn assembly](turn-assembly.md) — prompt parts, trust levels, history modes
 - [Read API](read-api.md)

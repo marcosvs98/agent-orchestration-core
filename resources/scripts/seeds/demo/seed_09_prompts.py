@@ -40,6 +40,10 @@ Classify all user intents types and confidence."""
 Extract parameters from user input to fill the request schema.
 You can use context from the previous conversation to complete slots.
 
+# Today
+{{ ctx.meta.current_date }}
+Resolve relative dates against this date and emit them as YYYY-MM-DD.
+
 # Selected Tools
 {{ ctx.derived.selected_tools | tojson }}
 
@@ -82,7 +86,7 @@ You can use context from the previous conversation to complete slots.
 
 # Output Guidelines
 {% if ctx.tool_response %}
-- When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the expense was registered.
+- When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the operation succeeded.
 {% endif %}
 - When tool_response is empty: answer the user question using the provided context; be concise.
 - Do not mention status codes, endpoints, requests, or payloads."""
@@ -130,13 +134,13 @@ low = frustration, cancellation or normal question
 
 Never downgrade priority.
 
-Reply in Brazilian Portuguese using this template:
-"Seu ticket é <ticket> e será resolvido em até <time>."
+Reply in English using this template:
+"Your ticket is <ticket> and it will be resolved within <time>."
 
 time:
-high = 4 horas
-medium = 8 horas
-low = 24 horas
+high = 4 hours
+medium = 8 hours
+low = 24 hours
 
 Return only JSON:
 

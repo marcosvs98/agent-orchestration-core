@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Dict
 from uuid import UUID
 
@@ -26,8 +27,38 @@ from domain.llm.schemas.llm import (
     LLMResult,
     LLMTaskType,
 )
+from domain.llm.schemas.usage import LLMUsageRecord
 from domain.prompts.schemas.prompt import NodeType, PromptIntent
 from exceptions.service_exceptions import DomainValidationException
+
+
+def _token_count(token_usage: Dict[str, Any] | None, *keys: str) -> int:
+    usage = token_usage or {}
+    for key in keys:
+        value = usage.get(key)
+        if isinstance(value, (int, float)):
+            return int(value)
+    return 0
+
+
+def _usage_record(
+    *,
+    llm_result: LLMResult,
+    provider: str,
+    task_type: LLMTaskType,
+    agent_version_id: UUID | None,
+) -> LLMUsageRecord:
+    return LLMUsageRecord(
+        provider=provider,
+        provider_model=llm_result.model_alias,
+        task_type=task_type.value if task_type else None,
+        inference_layer=(llm_result.inference_layer.value if llm_result.inference_layer else None),
+        input_tokens=_token_count(llm_result.token_usage, "prompt_tokens", "input_tokens"),
+        output_tokens=_token_count(llm_result.token_usage, "completion_tokens", "output_tokens"),
+        cost_usd=Decimal(str(llm_result.cost_usd)) if llm_result.cost_usd is not None else None,
+        agent_version_id=agent_version_id,
+        latency_ms=llm_result.latency_ms,
+    )
 
 
 class LLMNodeExecutor:
@@ -108,9 +139,13 @@ class LLMNodeExecutor:
                 raise DomainValidationException(message="prompt_resolution_failed")
             if chain_handle:
                 chain_handle.success(output=resolved_prompt.model_dump(mode="json"))
+        agent_version_id: UUID | None = None
         if self.agent_runtime_resolver and node_uuid:
             system_prompt = await self.agent_runtime_resolver.resolve_system_prompt(
                 context.flow_run_id, node_uuid, context.state
+            )
+            agent_version_id = await self.agent_runtime_resolver.resolve_agent_version_id(
+                node_uuid, context.state
             )
         else:
             system_prompt = context.system_prompt
@@ -119,6 +154,13 @@ class LLMNodeExecutor:
         system_context = context.system_context
         if not (llm_cfg or {}).get("use_system_context", True):
             system_context = None
+        extra_system_context = (config or {}).get("extra_system_context")
+        if isinstance(extra_system_context, str) and extra_system_context.strip():
+            system_context = (
+                f"{system_context}\n\n{extra_system_context}"
+                if system_context
+                else extra_system_context
+            )
         input_schema = resolved_prompt.input_schema or llm_cfg.get("input_schema", {})
         output_schema = resolved_prompt.output_schema or llm_cfg.get("output_schema", {})
         json_schema = output_schema or llm_cfg.get("output_schema", {})
@@ -213,4 +255,10 @@ class LLMNodeExecutor:
             data=llm_result.output,
             metrics=llm_result.token_usage,
             next_state=next_state,
+            usage=_usage_record(
+                llm_result=llm_result,
+                provider=provider,
+                task_type=self.llm_task,
+                agent_version_id=agent_version_id,
+            ),
         )

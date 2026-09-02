@@ -1,0 +1,82 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: aoc-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: aoc-tempo
+
+  - name: Tempo
+    uid: aoc-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: aoc-loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: true
+        filterBySpanID: false
+      tracesToMetrics:
+        datasourceUid: aoc-prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        queries:
+          - name: Span duration p95
+            query: histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket{$$__tags}[5m])) by (le))
+      serviceMap:
+        datasourceUid: aoc-prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: aoc-loki
+
+  - name: Loki
+    uid: aoc-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: $${__value.raw}
+          datasourceUid: aoc-tempo
+        - name: TraceIDFromJson
+          matcherType: regex
+          matcherRegex: '"trace_id":\s*"([a-f0-9]{32})"'
+          url: $${__value.raw}
+          datasourceUid: aoc-tempo
+
+  - name: AOC Postgres
+    uid: aoc-postgres
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: $AOC_POSTGRES_HOST
+    database: $AOC_POSTGRES_DB
+    user: $AOC_POSTGRES_READONLY_USER
+    editable: false
+    secureJsonData:
+      password: $AOC_POSTGRES_READONLY_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      timescaledb: false

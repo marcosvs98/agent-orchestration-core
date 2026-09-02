@@ -31,15 +31,11 @@ class TestTenantsController:
         return TenantsController(service=service)
 
     @pytest.mark.asyncio
-    async def test_create_returns_tenant_when_scope_present(
-        self, controller, service
-    ):
+    async def test_create_returns_tenant_when_scope_present(self, controller, service):
         tenant_id = uuid4()
         external_id = uuid4()
         settings = {"feature_flag": True}
-        tenant_create = TenantCreate(
-            name="Test Tenant", external_id=external_id, settings=settings
-        )
+        tenant_create = TenantCreate(name="Test Tenant", external_id=external_id, settings=settings)
         principal_id = "admin-123"
 
         auth = AuthContext(
@@ -98,9 +94,7 @@ class TestTenantsController:
         service.create.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_works_with_tenant_id_in_token(
-        self, controller, service
-    ):
+    async def test_create_works_with_tenant_id_in_token(self, controller, service):
         tenant_id = uuid4()
         tenant_create = TenantCreate(name="Test Tenant")
         principal_id = "admin-123"
@@ -186,9 +180,7 @@ class TestTenantsController:
         )
 
     @pytest.mark.asyncio
-    async def test_create_with_all_fields(
-        self, controller, service
-    ):
+    async def test_create_with_all_fields(self, controller, service):
         tenant_id = uuid4()
         external_id = uuid4()
         tenant_create = TenantCreate(

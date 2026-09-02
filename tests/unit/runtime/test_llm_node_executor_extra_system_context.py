@@ -62,9 +62,7 @@ def context():
 async def test_extra_system_context_merged_into_llm_request(
     tracer, prompt_resolver, llm_executor, context
 ) -> None:
-    llm_executor.execute_llm = AsyncMock(
-        return_value=LLMResult(output={"message": "ok"})
-    )
+    llm_executor.execute_llm = AsyncMock(return_value=LLMResult(output={"message": "ok"}))
     node = QueryClarifier(
         tracer=tracer,
         llm_executor=llm_executor,
@@ -90,9 +88,7 @@ async def test_extra_system_context_merged_into_llm_request(
 async def test_extra_system_context_appended_to_existing_context(
     tracer, prompt_resolver, llm_executor, context
 ) -> None:
-    llm_executor.execute_llm = AsyncMock(
-        return_value=LLMResult(output={})
-    )
+    llm_executor.execute_llm = AsyncMock(return_value=LLMResult(output={}))
     node = QueryClarifier(
         tracer=tracer,
         llm_executor=llm_executor,

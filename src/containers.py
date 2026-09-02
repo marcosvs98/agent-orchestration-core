@@ -8,15 +8,19 @@ from adapters.cache.redis_adapter import RedisAdapter
 from adapters.document_conversion.factory import build_document_to_text
 from domain.user_input.normalizer import UserInputNormalizer
 from adapters.secrets.env_secret_resolver import EnvSecretResolver
-from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
+from adapters.observability.otel_runtime_tracer import OtelRuntimeTracer
+from adapters.temporal.engine import TemporalWorkflowEngine
+from adapters.temporal.tool_scheduler import TemporalToolRunScheduler
 from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
 from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
-from domain.llm.adapters.slm_local_provider import SLMLocalProvider
+from domain.llm.adapters.slm_local_provider import build_slm_local_provider
 from domain.llm.adapters.moderation_openai_adapter import ModerationOpenAIAdapter
-from domain.llm.adapters.moderation_slm_adapter import ModerationSLMAdapter
+from domain.llm.adapters.moderation_slm_adapter import build_moderation_slm_adapter
+from domain.llm.services.cost_engine import CostEngine
 from domain.llm.services.moderation_orchestration_service import (
     ModerationOrchestrationService,
 )
+from domain.execution.services.guardrails.guardrail_engine import GuardrailEngine
 from infra.database import DatabaseConnection, async_session, engine
 
 from domain.auth.controllers.auth_controller import AuthController
@@ -34,7 +38,14 @@ from domain.tenants.services.tenants_service import TenantsService
 from domain.flows.controllers.flows_controller import FlowsController
 from domain.flows.services.flows_service import FlowsService
 from domain.flows.repositories.flows_repository import FlowsRepository
+from domain.agents.controllers.a2a_controller import A2AController
 from domain.agents.controllers.agents_controller import AgentsController
+from domain.agents.repositories.agent_delegation_repository import (
+    AgentDelegationRepository,
+)
+from domain.agents.services.a2a_delegation_service import A2ADelegationService
+from domain.agents.services.a2a_translator import A2ATranslator
+from domain.agents.services.agent_card_service import AgentCardService
 from domain.agents.services.agents_service import AgentsService
 from domain.agents.repositories.agents_repository import AgentsRepository
 from domain.tools.controllers.tools_controller import ToolsController
@@ -52,11 +63,19 @@ from domain.rag.services.embedding_executor import EmbeddingExecutor
 from domain.rag.services.embedding_adapter_factory import EmbeddingProviderFactory
 from domain.rag.services.embedding_provider_selector import EmbeddingProviderSelector
 from domain.rag.repositories.rag_repository import RagRepository
-from domain.execution.controllers.execution_controller import ExecutionController
+from domain.execution.controllers.agent_run_controller import AgentRunController
 from domain.execution.controllers.execution_plane_controller import (
     ExecutionPlaneController,
 )
+from domain.execution.repositories.agent_run_repository import AgentRunRepository
+from domain.execution.services.agent_run_service import AgentRunService
+from domain.execution.services.agent_runtime.agent_loop import AgentCognitiveLoop
+from domain.execution.services.agent_runtime.context_builder import AgentRunContextBuilder
+from domain.execution.services.agent_runtime.definition import AgentDefinitionResolver
+from domain.execution.services.agent_runtime.tool_dispatcher import AgentToolDispatcher
+from domain.execution.services.agent_runtime.tool_grant import ToolGrantResolver
 from domain.execution.services.execution_service import ExecutionService
+from domain.tools.services.agent_tool_catalog import AgentToolCatalog
 from domain.execution.services.state_machine import RunLifecycleStateMachine
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.governance.services.rag_policy_service import RagPolicyService
@@ -137,6 +156,12 @@ from domain.conversation.repositories.conversation_read_repository import (
 from domain.conversation.services.conversation_read_service import (
     ConversationReadService,
 )
+from domain.conversation.repositories.conversation_summary_repository import (
+    ConversationSummaryRepository,
+)
+from domain.conversation.services.conversation_continuity_service import (
+    ConversationContinuityService,
+)
 from domain.conversation.services.conversation_service import ConversationService
 from domain.human_sla.controllers.human_sla_controller import HumanSLAController
 from domain.human_sla.repositories.human_sla_policy_repository import (
@@ -159,12 +184,14 @@ class CoreContainer(containers.DeclarativeContainer):
 
 
 class AdaptersContainer(containers.DeclarativeContainer):
+    core = providers.DependenciesContainer()
+
     redis_adapter = providers.Singleton(
         RedisAdapter,
         silent_mode=settings.CACHE_SILENT_MODE,
     )
     secret_resolver = providers.Singleton(EnvSecretResolver)
-    tracer = providers.Singleton(LangfuseRuntimeTracer)
+    tracer = providers.Singleton(OtelRuntimeTracer)
 
     blob_store = providers.Singleton(UnconfiguredBlobStore)
     document_to_text = providers.Singleton(build_document_to_text)
@@ -176,15 +203,29 @@ class AdaptersContainer(containers.DeclarativeContainer):
 
     openai_client = providers.Singleton(AsyncOpenAI, api_key=settings.OPENAI_API_KEY)
 
+    conversation_summary_repository = providers.Factory(
+        ConversationSummaryRepository,
+        database_connection=core.database_connection,
+    )
+    conversation_continuity_service = providers.Factory(
+        ConversationContinuityService,
+        repository=conversation_summary_repository,
+        cache_adapter=redis_adapter,
+    )
     openai_provider = providers.Singleton(
         OpenAIProviderAdapter,
         cache_adapter=redis_adapter,
         openai_client=openai_client,
+        continuity_service=conversation_continuity_service,
     )
     slm_local_provider = providers.Singleton(
-        SLMLocalProvider,
+        build_slm_local_provider,
         credential_secret_ref=None,
     )
+
+    workflow_engine = providers.Singleton(TemporalWorkflowEngine)
+
+    tool_run_scheduler = providers.Singleton(TemporalToolRunScheduler)
 
 
 class TenantSummaryContainer(containers.DeclarativeContainer):
@@ -274,6 +315,7 @@ class AuthContainer(containers.DeclarativeContainer):
         tenants_repository=tenants_repository,
         authoring_event_repository=authoring_event_repository,
         inbound_service_key_repository=inbound_service_key_repository,
+        cache_adapter=adapters.redis_adapter,
     )
     auth_controller = providers.Factory(AuthController, service=auth_service)
 
@@ -317,6 +359,7 @@ class FlowsContainer(containers.DeclarativeContainer):
 class AgentsContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
+    tools = providers.DependenciesContainer()
 
     agents_repository = providers.Factory(
         AgentsRepository,
@@ -335,6 +378,25 @@ class AgentsContainer(containers.DeclarativeContainer):
         authoring_events=authoring_event_repository,
     )
     agents_controller = providers.Factory(AgentsController, service=agents_service)
+
+    agent_delegation_repository = providers.Factory(
+        AgentDelegationRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    a2a_translator = providers.Singleton(A2ATranslator)
+    a2a_delegation_service = providers.Factory(
+        A2ADelegationService,
+        repository=agent_delegation_repository,
+        translator=a2a_translator,
+        tracer=adapters.tracer,
+    )
+    agent_card_service = providers.Factory(
+        AgentCardService,
+        agents_repository=agents_repository,
+        tools_repository=tools.tools_repository,
+        public_base_url=providers.Object((settings.PUBLIC_BASE_URL or "").rstrip("/")),
+    )
 
 
 class ToolsContainer(containers.DeclarativeContainer):
@@ -500,6 +562,8 @@ class ExecutionContainer(containers.DeclarativeContainer):
     core = providers.DependenciesContainer()
     adapters = providers.DependenciesContainer()
     tools = providers.DependenciesContainer()
+    agents = providers.DependenciesContainer()
+    governance = providers.DependenciesContainer()
     human_sla = providers.DependenciesContainer()
 
     access_policy_repository = providers.Factory(
@@ -572,7 +636,7 @@ class ExecutionContainer(containers.DeclarativeContainer):
         timeout=1,
     )
     slm_moderation_adapter = providers.Factory(
-        ModerationSLMAdapter,
+        build_moderation_slm_adapter,
         slm_provider=adapters.slm_local_provider,
         prompt_text=None,
         output_schema=None,
@@ -617,6 +681,8 @@ class ExecutionContainer(containers.DeclarativeContainer):
         llm_moderation_provider=moderation_orchestration_service,
         human_sla_service=human_sla.human_sla_service,
         user_input_normalizer=adapters.user_input_normalizer,
+        workflow_engine=adapters.workflow_engine,
+        tool_run_scheduler=adapters.tool_run_scheduler,
     )
     tool_executor = providers.Singleton(HttpToolExecutor, tracer=adapters.tracer)
     tool_orchestrator = providers.Factory(
@@ -627,22 +693,77 @@ class ExecutionContainer(containers.DeclarativeContainer):
         tracer=adapters.tracer,
         tools_repository=tools.tools_repository,
     )
+    agent_run_repository = providers.Factory(
+        AgentRunRepository,
+        database_connection=core.database_connection,
+        tracer=adapters.tracer,
+    )
+    agent_tool_catalog = providers.Factory(
+        AgentToolCatalog,
+        tools_repository=tools.tools_repository,
+    )
+    agent_definition_resolver = providers.Factory(
+        AgentDefinitionResolver,
+        agents_repository=agents.agents_repository,
+        execution_repository=execution_repository,
+        tool_catalog=agent_tool_catalog,
+    )
+    agent_tool_grant_resolver = providers.Factory(
+        ToolGrantResolver,
+        agents_repository=agents.agents_repository,
+    )
+    agent_run_context_builder = providers.Singleton(AgentRunContextBuilder)
+    agent_tool_dispatcher = providers.Factory(
+        AgentToolDispatcher,
+        execution_repository=execution_repository,
+        tool_orchestrator=tool_orchestrator,
+        delegation_service=agents.a2a_delegation_service,
+        tracer=adapters.tracer,
+    )
+    agent_cognitive_loop = providers.Factory(
+        AgentCognitiveLoop,
+        agent_llm=adapters.openai_provider,
+        dispatcher=agent_tool_dispatcher,
+        agent_run_repository=agent_run_repository,
+        execution_repository=execution_repository,
+        tracer=adapters.tracer,
+        cost_engine=governance.cost_engine,
+    )
+    agent_run_service = providers.Singleton(
+        AgentRunService,
+        repository=agent_run_repository,
+        delegation_repository=agents.agent_delegation_repository,
+        definition_resolver=agent_definition_resolver,
+        grant_resolver=agent_tool_grant_resolver,
+        context_builder=agent_run_context_builder,
+        loop=agent_cognitive_loop,
+        translator=agents.a2a_translator,
+        idempotency=idempotency_service,
+        tracer=adapters.tracer,
+    )
     execution_boundary = providers.Factory(
         ExecutionBoundary,
         execution_service=execution_service,
+        agent_run_service=agent_run_service,
         tool_orchestrator=tool_orchestrator,
         access_policy_service=access_policy_service,
         rate_limit_service=rate_limit_service,
-    )
-    execution_controller = providers.Factory(
-        ExecutionController,
-        boundary=execution_boundary,
-        tracer=adapters.tracer,
     )
     execution_plane_controller = providers.Factory(
         ExecutionPlaneController,
         boundary=execution_boundary,
         tracer=adapters.tracer,
+    )
+    agent_run_controller = providers.Factory(
+        AgentRunController,
+        boundary=execution_boundary,
+        tracer=adapters.tracer,
+    )
+    a2a_controller = providers.Factory(
+        A2AController,
+        boundary=execution_boundary,
+        agent_card_service=agents.agent_card_service,
+        translator=agents.a2a_translator,
     )
 
 
@@ -711,6 +832,7 @@ class ConversationContainer(containers.DeclarativeContainer):
     adapters = providers.DependenciesContainer()
     agents = providers.DependenciesContainer()
     user_prompts = providers.DependenciesContainer()
+    governance = providers.DependenciesContainer()
 
     conversation_read_repository = providers.Factory(
         ConversationReadRepository,
@@ -739,6 +861,8 @@ class ConversationContainer(containers.DeclarativeContainer):
         agents_repository=agents.agents_repository,
         user_prompts_repository=user_prompts.user_prompts_repository,
         tracer=adapters.tracer,
+        cost_engine=governance.cost_engine,
+        continuity_service=adapters.conversation_continuity_service,
     )
     conversation_boundary = providers.Factory(
         ConversationBoundary,
@@ -801,6 +925,17 @@ class GovernanceContainer(containers.DeclarativeContainer):
         database_connection=core.database_connection,
         tracer=adapters.tracer,
         cache_adapter=adapters.redis_adapter,
+    )
+    cost_engine = providers.Factory(
+        CostEngine,
+        pricing_repository=llm_pricing_repository,
+        tracer=adapters.tracer,
+    )
+    guardrail_engine = providers.Factory(
+        GuardrailEngine,
+        tracer=adapters.tracer,
+        redis_adapter=adapters.redis_adapter,
+        cost_engine=cost_engine,
     )
     ai_repository = providers.Factory(
         AIRepository,
@@ -867,20 +1002,23 @@ class ApplicationContainer(containers.DeclarativeContainer):
     config = providers.Configuration()
 
     core = providers.Container(CoreContainer)
-    adapters = providers.Container(AdaptersContainer)
+    adapters = providers.Container(AdaptersContainer, core=core)
 
     auth = providers.Container(AuthContainer, core=core, adapters=adapters)
     rag = providers.Container(RAGContainer, core=core, adapters=adapters)
     flows = providers.Container(FlowsContainer, core=core, adapters=adapters, rag=rag)
-    agents = providers.Container(AgentsContainer, core=core, adapters=adapters)
     tools = providers.Container(ToolsContainer, core=core, adapters=adapters)
+    agents = providers.Container(AgentsContainer, core=core, adapters=adapters, tools=tools)
     ai_policy = providers.Container(AIPolicyContainer, core=core, adapters=adapters)
     human_sla = providers.Container(HumanSLAContainer, core=core)
+    governance = providers.Container(GovernanceContainer, core=core, adapters=adapters)
     execution = providers.Container(
         ExecutionContainer,
         core=core,
         adapters=adapters,
         tools=tools,
+        agents=agents,
+        governance=governance,
         human_sla=human_sla,
     )
     onboarding = providers.Container(OnboardingContainer, core=core, adapters=adapters)
@@ -895,8 +1033,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         adapters=adapters,
         agents=agents,
         user_prompts=user_prompts,
+        governance=governance,
     )
-    governance = providers.Container(GovernanceContainer, core=core, adapters=adapters)
     summary = providers.Container(
         TenantSummaryContainer,
         core=core,

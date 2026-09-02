@@ -9,9 +9,15 @@ from adapters.mcp.tenant_mcp_gateway import (
     shutdown_tenant_mcp_lifespans,
 )
 from adapters.observability.logging import configure_logger, get_logger
+from adapters.observability.otel_bootstrap import bootstrap_telemetry
 from containers import ApplicationContainer
 from rest import init_middlewares, init_routes
-from settings import APPLICATION_DESCRIPTION, APPLICATION_NAME, APPLICATION_VERSION
+from settings import (
+    APPLICATION_DESCRIPTION,
+    APPLICATION_NAME,
+    APPLICATION_VERSION,
+    EXPOSE_API_DOCS,
+)
 
 configure_logger(is_async=False)
 
@@ -25,7 +31,14 @@ logger.debug(
 )
 
 
+def api_documentation_urls(*, expose: bool) -> tuple[str | None, str | None, str | None]:
+    if expose:
+        return "/docs", "/redoc", "/openapi.json"
+    return None, None, None
+
+
 def create_app() -> FastAPI:
+    bootstrap_telemetry(component="api")
     container = ApplicationContainer()
     container.config.from_dict(
         {
@@ -61,11 +74,15 @@ def create_app() -> FastAPI:
         container.shutdown_resources()
         logger.debug("Service resources cleaned")
 
+    docs_url, redoc_url, openapi_url = api_documentation_urls(expose=EXPOSE_API_DOCS)
     app = FastAPI(
         title=APPLICATION_NAME,
         description=APPLICATION_DESCRIPTION,
         version=APPLICATION_VERSION,
         lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
     )
 
     app.state.container = container
@@ -84,8 +101,9 @@ def create_app() -> FastAPI:
             container.ai_policy.ai_controller(),
             container.rag.rag_controller(),
             container.human_sla.human_sla_controller(),
-            container.execution.execution_controller(),
             container.execution.execution_plane_controller(),
+            container.execution.agent_run_controller(),
+            container.execution.a2a_controller(),
             container.conversation.conversation_controller(),
             container.conversation.conversation_read_controller(),
             container.onboarding.onboarding_controller(),

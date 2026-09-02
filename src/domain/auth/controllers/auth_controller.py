@@ -14,7 +14,13 @@ from exceptions.service_exceptions import (
     AuthorizationDeniedException,
     RouterValidationException,
 )
-from utils.auth import AuthContext, get_admin_auth, get_auth_context, get_tenant_token_m2m_auth
+from utils.auth import (
+    ADMIN_PRINCIPAL_ID,
+    AuthContext,
+    get_admin_auth,
+    get_auth_context,
+    get_tenant_token_m2m_auth,
+)
 from domain.governance.schemas.scopes import Scope
 
 
@@ -61,6 +67,12 @@ class AuthController:
     ) -> TenantTokenResponse:
         if Scope.TenantsCreate not in auth.scopes:
             raise AuthorizationDeniedException(message="insufficient_scope")
+        if (
+            auth.tenant_id is not None
+            and body.tenant_id is not None
+            and body.tenant_id != auth.tenant_id
+        ):
+            raise AuthorizationDeniedException(message="tenant_scope_mismatch")
         tid = body.tenant_id if body.tenant_id is not None else auth.tenant_id
         if tid is None:
             raise RouterValidationException(message="tenant_id_required")
@@ -108,7 +120,7 @@ class AuthController:
         admin_auth = AuthContext(
             tenant_id=None,
             principal_type="machine",
-            principal_id="admin",
+            principal_id=ADMIN_PRINCIPAL_ID,
             scopes={"tenants:create"},
             token_issuer="admin",
             token_audience="admin",

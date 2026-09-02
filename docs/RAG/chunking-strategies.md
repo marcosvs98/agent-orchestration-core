@@ -108,6 +108,20 @@ When chunking stops early because of **`max_chunks_per_document`** or (for **`PE
 
 Downstream retrieval is unchanged; this is an **operator signal** that the corpus did not fully fit the rule.
 
+!!! warning "`truncated` means chunks were dropped"
+    The tail of the document was **never embedded** and can never be retrieved. Treat it as a
+    data-loss signal rather than a warning: either raise `max_chunks_per_document`, lower
+    `target_tokens`, or split the source before ingest.
+
+## Overlap must stay below the target
+
+`overlap_tokens` is **not** validated against `target_tokens`, and `chunk_overlap` is not validated against `chunk_size`. The window advances by `max(1, target_tokens - overlap_tokens)`, so an overlap greater than or equal to the target degrades to a **one-token step** and burns straight through `max_chunks_per_document` — producing a near-useless corpus of almost-identical chunks, plus `truncated: true`.
+
+Keep the overlap at roughly **10–20%** of the target. `examples/rag/chunking_strategies.py` prints the effect side by side.
+
+!!! note "Fixed in this repository"
+    `_chunk_text` previously advanced by `end - overlap_tokens`, which stalled once the final window was reached and re-emitted that last chunk until the cap. A 202-token document produced **100 chunks, 4 distinct**, with a false `truncated: true`. The loop now terminates on the final window and advances by a fixed step, matching the algorithm described above. See `tests/unit/rag/test_rag_chunking.py`.
+
 ## Choosing a strategy (operator)
 
 | Goal | Suggested strategy | Notes |
@@ -120,6 +134,7 @@ Downstream retrieval is unchanged; this is an **operator signal** that the corpu
 
 ## Related
 
+- `examples/rag/chunking_strategies.py` — every strategy applied to one document, with bounds and failure modes (runnable, no infrastructure required)
 - [RAG overview](index.md)
 - [Runtime and integration](runtime-and-integration.md) — ingest HTTP ([batch vs media](runtime-and-integration.md#batch-text-ingest)), retrievers, policies
 - [Data model reference](data-model-reference.md) — `rag_chunking_rule`, `rag_chunk`

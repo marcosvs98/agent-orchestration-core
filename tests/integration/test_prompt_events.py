@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -52,9 +52,7 @@ class TestPromptEvents:
         tracer = MagicMock()
         tracer.observe.side_effect = lambda **_: contextlib.nullcontext(MagicMock())
 
-        service = PromptService(
-            tracer=tracer, repository=repo, execution_repository=exec_repo
-        )
+        service = PromptService(tracer=tracer, repository=repo, execution_repository=exec_repo)
         await service.create_or_update_prompt(create, tenant_id=tenant_id)
 
         exec_repo.append_execution_event.assert_called_once()

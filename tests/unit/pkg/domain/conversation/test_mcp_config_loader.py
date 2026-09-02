@@ -46,9 +46,7 @@ class TestMcpConfigLoader:
         )
         result = await loader.load_for_tenant(tenant_id=_TENANT_ID)
         assert result is not None
-        expected_url = (
-            f"{_PUBLIC_BASE_URL}/core/v1/mcp-servers/{_MCP_SERVER_ID}/mcp"
-        )
+        expected_url = f"{_PUBLIC_BASE_URL}/core/v1/mcp-servers/{_MCP_SERVER_ID}/mcp"
         assert result.mcp_server_url == expected_url
 
     @pytest.mark.asyncio

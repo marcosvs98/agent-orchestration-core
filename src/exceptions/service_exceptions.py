@@ -23,7 +23,7 @@ class BaseServiceException(HTTPException):
         status_code: int | None = None,
         detail: Any | None = None,
         name: str | None = None,
-        input_data: dict | None = {},
+        input_data: dict | None = None,
         service: str | None = None,
         headers: dict[str, str] | None = None,
         errors: Sequence[Any] | None = None,
@@ -162,6 +162,18 @@ class LimitExceededException(BaseServiceException):
     status_code = status.HTTP_409_CONFLICT
     name = "LIMIT_EXCEEDED"
     message = "Execution limit exceeded."
+
+
+class GuardrailUnavailableException(BaseServiceException):
+    """The spend or rate counter could not be read or written.
+
+    Raised instead of assuming zero: a budget that cannot be measured must block, otherwise the
+    guardrail stops guarding precisely when the infrastructure is unhealthy.
+    """
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    name = "GUARDRAIL_UNAVAILABLE"
+    message = "Guardrail counters are unavailable."
 
 
 async def router_http_exception_handler(request: Request, exc: BaseServiceException) -> Response:

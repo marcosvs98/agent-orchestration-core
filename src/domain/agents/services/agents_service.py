@@ -82,6 +82,7 @@ class AgentsService(AgentsServicePort):
                     supported_tool_config_hash_prefix=version.supported_tool_config_hash_prefix,
                     persona_config=persona_config,
                     system_prompt=version.system_prompt,
+                    ai_execution_policy_version_id=version.ai_execution_policy_version_id,
                 )
             )
         return result
@@ -97,6 +98,14 @@ class AgentsService(AgentsServicePort):
         agent = await self.repository.get_agent(agent_id)
         if agent is None or agent.tenant_id != tenant_id:
             raise NotFoundServiceException(message="agent_not_found")
+        policy_version_id = agent_version_create.ai_execution_policy_version_id
+        if policy_version_id is not None:
+            belongs = await self.repository.ai_execution_policy_version_belongs_to_tenant(
+                tenant_id=tenant_id,
+                ai_execution_policy_version_id=policy_version_id,
+            )
+            if not belongs:
+                raise NotFoundServiceException(message="ai_execution_policy_version_not_found")
         persona_config_dict = None
         if agent_version_create.persona_config:
             persona_config_dict = agent_version_create.persona_config.model_dump()
@@ -112,6 +121,7 @@ class AgentsService(AgentsServicePort):
             supported_tool_config_hash_prefix=agent_version_create.supported_tool_config_hash_prefix,
             persona_config=persona_config_dict,
             system_prompt=agent_version_create.system_prompt,
+            ai_execution_policy_version_id=agent_version_create.ai_execution_policy_version_id,
             created_by=principal_id,
         )
         await self.authoring_events.append_event(
@@ -142,6 +152,7 @@ class AgentsService(AgentsServicePort):
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
             system_prompt=model.system_prompt,
+            ai_execution_policy_version_id=model.ai_execution_policy_version_id,
         )
 
     async def create_node_agent_binding(

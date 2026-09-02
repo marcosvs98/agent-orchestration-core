@@ -11,12 +11,8 @@ class TestConditionEvaluator:
         assert ConditionEvaluator.evaluate("a == 1", {"a": 2}) is False
 
     def test_evaluate_and_or_aliases(self) -> None:
-        assert (
-            ConditionEvaluator.evaluate("x > 1 && x < 10", {"x": 5}) is True
-        )
-        assert (
-            ConditionEvaluator.evaluate("x < 2 || x > 20", {"x": 1}) is True
-        )
+        assert ConditionEvaluator.evaluate("x > 1 && x < 10", {"x": 5}) is True
+        assert ConditionEvaluator.evaluate("x < 2 || x > 20", {"x": 1}) is True
 
     def test_evaluate_not(self) -> None:
         assert ConditionEvaluator.evaluate("not flag", {"flag": False}) is True

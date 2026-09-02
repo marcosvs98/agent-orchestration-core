@@ -5,6 +5,7 @@ from typing import NewType
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, AsyncEngine
 from sqlalchemy.orm import sessionmaker
+from infra.database.json_serialization import jsonb_serializer
 from infra.database.models.base import ORMBaseModel
 from settings import DATABASE_URL
 from adapters.observability.logging import EnvironmentSet, ENVIRONMENT
@@ -12,12 +13,14 @@ from adapters.observability.logging import EnvironmentSet, ENVIRONMENT
 DbSession = NewType("DbSession", _AsyncGeneratorContextManager[AsyncSession])
 ContextDBSession = Callable[[], _AsyncGeneratorContextManager[AsyncSession]]
 
+
 engine = create_async_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=3600,
     echo_pool=False,
     pool_reset_on_return="rollback",
+    json_serializer=jsonb_serializer,
     connect_args={"server_settings": {"application_name": "agent-orchestration-core"}},
 )
 async_session = sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)

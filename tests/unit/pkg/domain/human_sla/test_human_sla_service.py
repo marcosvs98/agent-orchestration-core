@@ -261,6 +261,7 @@ async def test_evaluate_sla_no_op_when_case_has_no_policy() -> None:
 @pytest.mark.asyncio
 async def test_evaluate_sla_applies_escalation_and_marks_breached() -> None:
     from domain.human_sla.schemas.human_sla_policy import HumanSLAEscalationRule
+
     case_id = uuid4()
     tenant_id = uuid4()
     policy_id = uuid4()
@@ -355,7 +356,9 @@ async def test_assign_and_resolve_case_lifecycle() -> None:
 
 def _make_fallback_node(human_sla_service=None, llm_output=None):
     tracer = MagicMock()
-    tracer.observe = MagicMock(return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=None)))
+    tracer.observe = MagicMock(
+        return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=None))
+    )
     llm_executor = AsyncMock()
     llm_executor.execute_llm = AsyncMock(
         return_value=LLMResult(
@@ -389,9 +392,7 @@ async def test_fallback_node_execute_with_service_creates_ticket() -> None:
     sla_response.sla_case_id = created_sla_case_id
     sla_response.priority = "high"
     human_sla_service = AsyncMock()
-    human_sla_service.get_or_create_open_case_for_fallback = AsyncMock(
-        return_value=sla_response
-    )
+    human_sla_service.get_or_create_open_case_for_fallback = AsyncMock(return_value=sla_response)
     node = _make_fallback_node(
         human_sla_service=human_sla_service,
         llm_output={

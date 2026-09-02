@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -61,3 +61,6 @@ class FlowRun(ORMBaseModel):
     llm_provider_config_hash = Column(String(length=128), nullable=True)
     trace_id = Column(PG_UUID(as_uuid=True), nullable=True)
     root_observation_id = Column(String(length=128), nullable=True)
+    temporal_workflow_id = Column(String(length=255), nullable=True)
+    temporal_run_id = Column(String(length=64), nullable=True)
+    turn_index = Column(Integer, nullable=False, server_default="0")

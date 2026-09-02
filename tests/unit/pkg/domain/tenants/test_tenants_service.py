@@ -197,9 +197,7 @@ class TestTenantsService:
 
         assert created is False
         assert result.id == tenant_id
-        limit_repo.ensure_default_published_policy_for_tenant.assert_awaited_once_with(
-            tenant_id
-        )
+        limit_repo.ensure_default_published_policy_for_tenant.assert_awaited_once_with(tenant_id)
 
     @pytest.mark.asyncio
     async def test_create_new_tenant_ensures_default_execution_limit_policy(
@@ -248,9 +246,7 @@ class TestTenantsService:
 
         assert created is True
         assert result.id == tenant_id
-        limit_repo.ensure_default_published_policy_for_tenant.assert_awaited_once_with(
-            tenant_id
-        )
+        limit_repo.ensure_default_published_policy_for_tenant.assert_awaited_once_with(tenant_id)
 
     @pytest.mark.asyncio
     async def test_create_returns_existing_tenant_when_external_id_matches(
@@ -347,9 +343,7 @@ class TestTenantsService:
         repository.create_tenant.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_get_current_returns_tenant_when_found(
-        self, tenants_service, repository
-    ):
+    async def test_get_current_returns_tenant_when_found(self, tenants_service, repository):
         tenant_id = uuid4()
         external_id = uuid4()
         mock_tenant = SimpleNamespace(
@@ -437,9 +431,7 @@ class TestTenantsService:
         assert result.contact_phone is None
 
     @pytest.mark.asyncio
-    async def test_get_current_raises_when_tenant_not_found(
-        self, tenants_service, repository
-    ):
+    async def test_get_current_raises_when_tenant_not_found(self, tenants_service, repository):
         tenant_id = uuid4()
         repository.get_tenant = AsyncMock(return_value=None)
 
@@ -447,14 +439,10 @@ class TestTenantsService:
             await tenants_service.get_current(tenant_id=tenant_id)
 
     @pytest.mark.asyncio
-    async def test_get_settings_returns_settings_when_found(
-        self, tenants_service, repository
-    ):
+    async def test_get_settings_returns_settings_when_found(self, tenants_service, repository):
         tenant_id = uuid4()
         settings = {"feature_flag": True, "max_requests": 1000}
-        mock_tenant = SimpleNamespace(
-            tenant_id=tenant_id, settings=settings
-        )
+        mock_tenant = SimpleNamespace(tenant_id=tenant_id, settings=settings)
         repository.get_tenant = AsyncMock(return_value=mock_tenant)
 
         result = await tenants_service.get_settings(tenant_id=tenant_id)
@@ -477,9 +465,7 @@ class TestTenantsService:
         assert result.settings is None
 
     @pytest.mark.asyncio
-    async def test_get_settings_raises_when_tenant_not_found(
-        self, tenants_service, repository
-    ):
+    async def test_get_settings_raises_when_tenant_not_found(self, tenants_service, repository):
         tenant_id = uuid4()
         repository.get_tenant = AsyncMock(return_value=None)
 

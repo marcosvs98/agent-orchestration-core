@@ -35,7 +35,7 @@ async def seed_billing_policy() -> None:
             billing_policy = BillingPolicy(
                 billing_policy_id=BILLING_POLICY_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Uora - Billing Policy",
+                name="Demo - Billing Policy",
             )
             session.add(billing_policy)
             await session.commit()

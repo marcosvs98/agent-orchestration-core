@@ -34,11 +34,11 @@ from seeds.demo.ids import (
     TOOL_CONFIG_DEMO_ID,
     TOOL_DEMO_ID,
 )
-from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
+from seeds.demo.demo_tool_catalog import fetch_demo_tool_rows
 
 
 async def seed_rag_policy() -> None:
-    tool_rows = await fetch_uora_platform_tool_rows(
+    tool_rows = await fetch_demo_tool_rows(
         demo_tool_id=TOOL_DEMO_ID,
         demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
     )
@@ -54,7 +54,7 @@ async def seed_rag_policy() -> None:
                 RagPolicy(
                     rag_policy_id=RAG_POLICY_DEMO_ID,
                     tenant_id=TENANT_DEMO_ID,
-                    name="Uora - RAG Activation Policy",
+                    name="Demo - RAG Activation Policy",
                 )
             )
             await session.commit()

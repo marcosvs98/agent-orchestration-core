@@ -29,7 +29,9 @@ async def test_normalize_media_ref_composes() -> None:
     store.put(tenant_id=tid, ref=ref, data=b"%PDF-1.4 fake")
     norm = UserInputNormalizer(store, FakeDocumentToText(), max_composed_chars=100_000)
     parts = [
-        MediaRefUserInputPart(type="media_ref", ref=ref, mime_type="application/pdf", filename="x.pdf"),
+        MediaRefUserInputPart(
+            type="media_ref", ref=ref, mime_type="application/pdf", filename="x.pdf"
+        ),
         TextUserInputPart(type="text", text="explain"),
     ]
     out = await norm.normalize(tenant_id=tid, user_input="explain", input_parts=parts)

@@ -11,8 +11,7 @@ HOST: str = config("HOST", default="0.0.0.0", cast=str)
 PORT: int = config("PORT", default=8010, cast=int)
 LOG_LEVEL: str = config("LOG_LEVEL", default="DEBUG", cast=str)
 RELOAD: bool = config("RELOAD", default=False, cast=bool)
-PYTEST_RUNNING: int = config("PYTEST_RUNNING", default=0, cast=int)
-TRACING_ENABLE: bool = config("TRACING_ENABLE", default=False, cast=bool)
+EXPOSE_API_DOCS: bool = config("EXPOSE_API_DOCS", default=ENVIRONMENT == "development", cast=bool)
 
 DATABASE_URL: str = config(
     "DATABASE_URL",
@@ -20,6 +19,7 @@ DATABASE_URL: str = config(
     cast=str,
 )
 
+REDIS_URL: str = config("REDIS_URL", default="", cast=str)
 REDIS_HOST: str = config("REDIS_HOST", default="localhost")
 REDIS_PASSWORD: str | None = config("REDIS_PASSWORD", default=None)
 REDIS_PORT: int = config("REDIS_PORT", default=6379, cast=int)
@@ -83,16 +83,31 @@ SLM_MODEL_PATH: str = config(
 SLM_INFERENCE_TIMEOUT_MS: int = config("SLM_INFERENCE_TIMEOUT_MS", default=500, cast=int)
 LLM_DEFAULT_MAX_LATENCY_MS: int = config("LLM_DEFAULT_MAX_LATENCY_MS", default=15000, cast=int)
 
-LANGFUSE_PUBLIC_KEY: str | None = config("LANGFUSE_PUBLIC_KEY", default=None)
-LANGFUSE_SECRET_KEY: str | None = config("LANGFUSE_SECRET_KEY", default=None)
-LANGFUSE_HOST: str = config("LANGFUSE_HOST", default="https://cloud.langfuse.com", cast=str)
 TRACING_ENABLED: bool = config("TRACING_ENABLED", default=True, cast=bool)
-TRACING_LEVEL: str = config("TRACING_LEVEL", default="DEFAULT", cast=str)
+METRICS_ENABLED: bool = config("METRICS_ENABLED", default=True, cast=bool)
+LOGS_ENABLED: bool = config("LOGS_ENABLED", default=True, cast=bool)
+
+TOOL_IMPORT_DEFAULT_BASE_URL: str = config("TOOL_IMPORT_DEFAULT_BASE_URL", default="", cast=str)
 
 OTEL_SERVICE_NAME: str = config("OTEL_SERVICE_NAME", default="agent-orchestration-core", cast=str)
-OTEL_EXPORTER_OTLP_ENDPOINT: str = config(
-    "OTEL_EXPORTER_OTLP_ENDPOINT", default="http://localhost:4317", cast=str
+OTEL_SERVICE_NAMESPACE: str = config(
+    "OTEL_SERVICE_NAMESPACE", default="agent-orchestration", cast=str
 )
+OTEL_EXPORTER_OTLP_ENDPOINT: str = config(
+    "OTEL_EXPORTER_OTLP_ENDPOINT", default="http://localhost:4318", cast=str
+)
+OTEL_EXPORTER_OTLP_HEADERS: str = config("OTEL_EXPORTER_OTLP_HEADERS", default="", cast=str)
+OTEL_CAPTURE_CONTENT: bool = config("OTEL_CAPTURE_CONTENT", default=False, cast=bool)
+OTEL_ATTRIBUTE_MAX_LENGTH: int = config("OTEL_ATTRIBUTE_MAX_LENGTH", default=4096, cast=int)
+OTEL_SAMPLE_RATIO_DEFAULT: float = config("OTEL_SAMPLE_RATIO_DEFAULT", default=1.0, cast=float)
+OTEL_SAMPLE_RATIO_REPOSITORY: float = config(
+    "OTEL_SAMPLE_RATIO_REPOSITORY", default=0.1, cast=float
+)
+OTEL_METRIC_EXPORT_INTERVAL_MS: int = config(
+    "OTEL_METRIC_EXPORT_INTERVAL_MS", default=15000, cast=int
+)
+OTEL_FLUSH_TIMEOUT_MS: int = config("OTEL_FLUSH_TIMEOUT_MS", default=2000, cast=int)
+OTEL_SHUTDOWN_TIMEOUT_MS: int = config("OTEL_SHUTDOWN_TIMEOUT_MS", default=10000, cast=int)
 
 JWT_SECRET: str = config("JWT_SECRET", default="", cast=str)
 JWT_ALGORITHM: str = config("JWT_ALGORITHM", default="HS256", cast=str)
@@ -120,3 +135,67 @@ DOCUMENT_CONVERSION_TIMEOUT_SECONDS: int = config(
     cast=int,
 )
 DOCLING_ENABLED: bool = config("DOCLING_ENABLED", default=False, cast=bool)
+
+TEMPORAL_ENABLED: bool = config("TEMPORAL_ENABLED", default=False, cast=bool)
+TEMPORAL_HOST: str = config("TEMPORAL_HOST", default="localhost:7233", cast=str)
+TEMPORAL_NAMESPACE: str = config("TEMPORAL_NAMESPACE", default="default", cast=str)
+TEMPORAL_TASK_QUEUE: str = config("TEMPORAL_TASK_QUEUE", default="flow-runs", cast=str)
+TEMPORAL_TLS: bool = config("TEMPORAL_TLS", default=False, cast=bool)
+TEMPORAL_API_KEY: str = config("TEMPORAL_API_KEY", default="", cast=str)
+TEMPORAL_FAIRNESS_ENABLED: bool = config("TEMPORAL_FAIRNESS_ENABLED", default=False, cast=bool)
+TEMPORAL_WORKER_MAX_CONCURRENT_ACTIVITIES: int = config(
+    "TEMPORAL_WORKER_MAX_CONCURRENT_ACTIVITIES",
+    default=20,
+    cast=int,
+)
+TEMPORAL_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS: int = config(
+    "TEMPORAL_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS",
+    default=50,
+    cast=int,
+)
+TEMPORAL_NODE_START_TO_CLOSE_TIMEOUT_MS: int = config(
+    "TEMPORAL_NODE_START_TO_CLOSE_TIMEOUT_MS",
+    default=30_000,
+    cast=int,
+)
+TEMPORAL_WORKFLOW_RUN_TIMEOUT_MS: int = config(
+    "TEMPORAL_WORKFLOW_RUN_TIMEOUT_MS",
+    default=120_000,
+    cast=int,
+)
+TEMPORAL_TURN_WAIT_TIMEOUT_MS: int = config(
+    "TEMPORAL_TURN_WAIT_TIMEOUT_MS",
+    default=125_000,
+    cast=int,
+)
+TEMPORAL_TOOL_RUN_TASK_QUEUE: str = config(
+    "TEMPORAL_TOOL_RUN_TASK_QUEUE",
+    default="tool-runs",
+    cast=str,
+)
+TEMPORAL_TOOL_RUN_MAX_ATTEMPTS: int = config(
+    "TEMPORAL_TOOL_RUN_MAX_ATTEMPTS",
+    default=3,
+    cast=int,
+)
+
+FLOW_RUN_RECONCILER_ENABLED: bool = config(
+    "FLOW_RUN_RECONCILER_ENABLED",
+    default=True,
+    cast=bool,
+)
+FLOW_RUN_RECONCILER_INTERVAL_SECONDS: int = config(
+    "FLOW_RUN_RECONCILER_INTERVAL_SECONDS",
+    default=60,
+    cast=int,
+)
+FLOW_RUN_RECONCILER_STALE_AFTER_SECONDS: int = config(
+    "FLOW_RUN_RECONCILER_STALE_AFTER_SECONDS",
+    default=900,
+    cast=int,
+)
+FLOW_RUN_RECONCILER_BATCH_SIZE: int = config(
+    "FLOW_RUN_RECONCILER_BATCH_SIZE",
+    default=50,
+    cast=int,
+)

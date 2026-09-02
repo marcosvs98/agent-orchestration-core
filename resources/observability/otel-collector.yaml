@@ -1,0 +1,93 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+  transform/redact:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - delete_key(attributes, "request.query_params")
+          - delete_key(attributes, "request.url")
+          - delete_key(attributes, "request.headers")
+          - delete_key(attributes, "request.user_agent")
+          - delete_key(attributes, "request.referer")
+  transform/metric_cardinality:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - delete_key(attributes, "telemetry.sdk.language")
+          - delete_key(attributes, "telemetry.sdk.name")
+          - delete_key(attributes, "telemetry.sdk.version")
+          - delete_key(attributes, "process.pid")
+          - delete_key(attributes, "host.name")
+  filter/drop_event_bookkeeping:
+    error_mode: ignore
+    traces:
+      span:
+        - attributes["aoc.observation.type"] == "event"
+        - IsMatch(name, "^event\\.")
+
+connectors:
+  spanmetrics:
+    namespace: traces.span.metrics
+    dimensions:
+      - name: aoc.observation.type
+      - name: node_type
+      - name: http.route
+      - name: http.request.method
+      - name: aoc.http.status_class
+      - name: gen_ai.request.model
+      - name: gen_ai.operation.name
+      - name: tenant_id
+    histogram:
+      explicit:
+        buckets: [5ms, 25ms, 100ms, 250ms, 1s, 5s, 15s, 60s]
+    dimensions_cache_size: 10000
+    metrics_flush_interval: 15s
+
+exporters:
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+    tls:
+      insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    enable_open_metrics: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  telemetry:
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/redact, filter/drop_event_bookkeeping, batch]
+      exporters: [otlphttp/tempo, spanmetrics]
+    metrics:
+      receivers: [otlp, spanmetrics]
+      processors: [memory_limiter, transform/metric_cardinality, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki]

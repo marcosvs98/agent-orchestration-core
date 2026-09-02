@@ -1,0 +1,315 @@
+{
+    "uid": "aoc-d4-sla-governance",
+    "title": "AOC / D4 Human SLA and Governance",
+    "tags": [
+        "aoc",
+        "sla",
+        "governance"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "5m",
+    "time": {
+        "from": "now-90d",
+        "to": "now"
+    },
+    "templating": {
+        "list": [
+            {
+                "name": "tenant",
+                "label": "Tenant",
+                "type": "query",
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "aoc-postgres"
+                },
+                "query": {
+                    "refId": "tenant",
+                    "format": "table",
+                    "rawQuery": true,
+                    "editorMode": "code",
+                    "rawSql": "select name as __text, tenant_id::text as __value from tenant order by name"
+                },
+                "refresh": 1,
+                "includeAll": true,
+                "multi": true,
+                "current": {
+                    "text": "All",
+                    "value": "$__all"
+                },
+                "allValue": "$__all",
+                "definition": "select name as __text, tenant_id::text as __value from tenant order by name"
+            }
+        ]
+    },
+    "panels": [
+        {
+            "id": 1,
+            "type": "text",
+            "title": "Containment comes from node_run, never from sla_case",
+            "gridPos": {
+                "h": 6,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "options": {
+                "mode": "markdown",
+                "content": "`get_or_create_open_case_for_fallback` **requires** an existing OPEN case for the session, so repeated failures inside one session create no new case. Measured: 15 HumanFallback node runs produced only 9 cases \u2014 **40% suppression**, all six misses inside a single session. Using `sla_case` as the numerator would report 10.34% escalation instead of the true **17.24%**.\n\nEvery handoff and containment number here is therefore computed from `node_run` joined to `node` on `node_type = 'HumanFallback'`. The reconciliation panel below is what makes the suppression visible.\n\n**The contractual SLA numbers are deliberately absent \u2014 see the placeholder at the bottom. An SLA-breach alert built today would be permanently silent.**"
+            }
+        },
+        {
+            "id": 2,
+            "type": "stat",
+            "title": "Handoff rate and automation containment",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 0,
+                "y": 6
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percentunit",
+                    "decimals": 4
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "with runs as (\n  select fr.flow_run_id\n  from flow_run fr\n  join session s on s.session_id = fr.session_id\n  where $__timeFilter(fr.created_at)\n    and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\n),\nfallbacks as (\n  select distinct nr.flow_run_id\n  from node_run nr\n  join node n on n.node_id = nr.node_id\n  where n.node_type = 'HumanFallback'\n    and nr.flow_run_id in (select flow_run_id from runs)\n)\nselect\n  (select count(*) from fallbacks)::numeric / nullif((select count(*) from runs), 0) as \"handoff rate\",\n  1 - (select count(*) from fallbacks)::numeric / nullif((select count(*) from runs), 0) as \"containment\""
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "table",
+            "title": "sla_case vs HumanFallback reconciliation",
+            "description": "The check that makes the 40% dedupe suppression detectable and localises it to a cohort. A day where fallbacks exceed cases is a day where users hit a dead end repeatedly inside one session with no new case opened.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 6
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "with fallbacks as (\n  select date_trunc('day', nr.created_at) as day, count(*) as fallback_node_runs\n  from node_run nr\n  join node n on n.node_id = nr.node_id\n  join flow_run fr on fr.flow_run_id = nr.flow_run_id\n  join session s on s.session_id = fr.session_id\n  where n.node_type = 'HumanFallback'\n    and $__timeFilter(nr.created_at)\n    and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\n  group by 1\n),\ncases as (\n  select date_trunc('day', opened_at) as day, count(*) as sla_cases\n  from sla_case\n  where $__timeFilter(opened_at)\n    and ('${tenant:csv}' = '$__all' or tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\n  group by 1\n)\nselect\n  coalesce(f.day, c.day) as day,\n  coalesce(f.fallback_node_runs, 0) as fallback_node_runs,\n  coalesce(c.sla_cases, 0) as sla_cases,\n  coalesce(f.fallback_node_runs, 0) - coalesce(c.sla_cases, 0) as suppressed\nfrom fallbacks f\nfull outer join cases c on c.day = f.day\norder by day desc"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "table",
+            "title": "Open case backlog by fallback reason",
+            "description": "Uses ix_sla_case_tenant_status. Deliberately not labelled by priority, which is 0/9 populated.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 14
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select status, fallback_reason, count(*) as cases\nfrom sla_case\nwhere $__timeFilter(opened_at) and ('${tenant:csv}' = '$__all' or tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by status, fallback_reason\norder by cases desc"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "table",
+            "title": "Open case age",
+            "description": "The only breach-adjacent signal obtainable without a policy or an evaluator. The oldest open case is currently 132 days old.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 14
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select\n  sla_case_id::text as sla_case_id,\n  fallback_reason,\n  opened_at,\n  round(extract(epoch from (now() - opened_at))::numeric, 0) as age_seconds\nfrom sla_case\nwhere $__timeFilter(opened_at) and status = 'OPEN'\n  and ('${tenant:csv}' = '$__all' or tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\norder by opened_at\nlimit 100"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "piechart",
+            "title": "Handoff reason mix",
+            "description": "Only 4 of 10 SLAFallbackReason values have an emitter (POLICY_BLOCK, TOOL_FAILURE, UNKNOWN_INTENT, LOW_CONFIDENCE). USER_REQUESTED_HUMAN, USER_FRUSTRATION and TIMEOUT are unreachable, so this mix cannot distinguish a customer asking for a human (healthy) from the bot failing (unhealthy).",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 22
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select fallback_reason as metric, count(*) as value\nfrom sla_case\nwhere $__timeFilter(opened_at)\n  and ('${tenant:csv}' = '$__all' or tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by fallback_reason\norder by value desc"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "table",
+            "title": "Authoring audit by resource type",
+            "description": "The one governance surface that genuinely works: 1015 rows with justification on every one. A spike in VERSION_PUBLISHED is the leading incident indicator.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 22
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select resource_type, event_type, change_type, count(*) as events\nfrom authoring_event\nwhere $__timeFilter(occurred_at)\n  and ('${tenant:csv}' = '$__all' or tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by 1, 2, 3\norder by events desc\nlimit 50"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "table",
+            "title": "Policy authoring blind spot",
+            "description": "Inverted risk profile: importing a tool is fully audited, while publishing an access-policy version that grants a principal a new scope leaves no trace. Any family showing 0 events is unaudited.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 22
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "with families(resource_type) as (\n  values ('access_policy'), ('billing_policy'), ('execution_limit_policy'), ('memory_policy'),\n         ('rag_policy'), ('rate_limit_policy'), ('runtime_policy'), ('ai_execution_policy')\n)\nselect\n  f.resource_type,\n  count(a.authoring_event_id) as authoring_events,\n  case when count(a.authoring_event_id) = 0 then 'UNAUDITED' else 'audited' end as audit_status\nfrom families f\nleft join authoring_event a\n  on a.resource_type = f.resource_type\n  and ('${tenant:csv}' = '$__all' or a.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by f.resource_type\norder by authoring_events"
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "type": "table",
+            "title": "Runtime governance decisions",
+            "description": "GuardrailChecked is the only runtime governance decision persisted in Postgres. If every row reads ALLOW with limit 'none', that is the misconfiguration described in gap G-10, not a clean bill of health.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 30
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select\n  ee.type,\n  ee.payload->>'decision' as decision,\n  ee.payload->>'guardrail_type' as guardrail_type,\n  ee.payload->>'model_alias' as model_alias,\n  ee.payload->>'limit' as applied_limit,\n  count(*) as events\nfrom execution_event ee\nwhere ee.type in ('GuardrailChecked', 'GuardrailBlocked', 'GuardrailDegraded', 'LimitExceeded')\n  and $__timeFilter(ee.occurred_at)\n  and ('${tenant:csv}' = '$__all' or ee.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by 1, 2, 3, 4, 5\norder by events desc"
+                }
+            ]
+        },
+        {
+            "id": 10,
+            "type": "table",
+            "title": "Authoring activity by principal",
+            "description": "principal_id is safe as a SQL GROUP BY here. It must never become a Prometheus label: user identity is unbounded and would blow the series budget.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 30
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select principal_id, resource_type, count(*) as events, max(occurred_at) as last_event\nfrom authoring_event\nwhere $__timeFilter(occurred_at)\n  and ('${tenant:csv}' = '$__all' or tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by 1, 2\norder by events desc\nlimit 50"
+                }
+            ]
+        },
+        {
+            "id": 11,
+            "type": "text",
+            "title": "Not measurable: SLA breach, assignment, resolution, guardrail enforcement",
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 38
+            },
+            "options": {
+                "mode": "markdown",
+                "content": "These panels are **deliberately absent**. Each would render as a healthy-looking zero forever, which is a worse failure mode than a missing chart.\n\n**SLA breach rate, time to assign, time to resolve, resolution-status mix, escalation level (gap G-07b).** Three independent breaks, all of which must be fixed together:\n1. `human_sla_policy` has **0 rows** and `HumanSLAPolicyRepository` exposes no create method; the OpenAPI document's 144 paths contain none matching `human` or `escalation`. So `resolve_policy` returns None and the service explicitly nulls `priority`, `sla_target_at` and `human_sla_policy_id`.\n2. **No evaluator runs.** `evaluate_sla` has no caller anywhere in `src` \u2014 no scheduler, no cron \u2014 and it short-circuits on `human_sla_policy_id is None` regardless.\n3. **No case ever leaves OPEN.** `SLAStatus.ABANDONED` is declared and never set.\n\nMeasured: `assigned_at`, `resolved_at`, `sla_target_at`, `sla_breached`, `priority`, `human_agent_id`, `resolution_status`, `human_sla_policy_id` are **all 0/9**.\n\n**Guardrail block and degrade rate (gap G-10).** `RuntimePolicyLlmSchema` declares no cost field at any scope, so Pydantic **silently drops** `max_cost_usd`, `max_cost_usd_per_flow_run`, `max_llm_calls_per_flow_run` and friends before they reach the engine. Every cost branch is guarded by `if max_cost_flow is not None` and is therefore unreachable. Fixing the Redis counters or the 1000x pricing bug would not make a single guardrail fire \u2014 the schema addition is the unlock.\n\n**Rate-limit and access-policy denial rate (gap G-12).** Recorded nowhere: not Postgres, not Redis, not logs. The rate-limit raise sits outside both tracer spans, and the span on that path is even recorded as a **success** immediately before returning 403."
+            }
+        }
+    ]
+}

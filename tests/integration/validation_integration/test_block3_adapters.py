@@ -83,11 +83,19 @@ async def test_channel_agnostic_topology(db_session) -> None:
     http_events = await fetch(flows["http"])
     whatsapp_events = await fetch(flows["whatsapp"])
     normalized_http = [
-        {"type": e["type"], "event_sequence": e["event_sequence"], "payload_keys": sorted(e["payload"].keys())}
+        {
+            "type": e["type"],
+            "event_sequence": e["event_sequence"],
+            "payload_keys": sorted(e["payload"].keys()),
+        }
         for e in http_events
     ]
     normalized_whatsapp = [
-        {"type": e["type"], "event_sequence": e["event_sequence"], "payload_keys": sorted(e["payload"].keys())}
+        {
+            "type": e["type"],
+            "event_sequence": e["event_sequence"],
+            "payload_keys": sorted(e["payload"].keys()),
+        }
         for e in whatsapp_events
     ]
     assert normalized_http == normalized_whatsapp

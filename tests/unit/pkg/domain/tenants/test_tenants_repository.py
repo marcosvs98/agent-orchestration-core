@@ -42,9 +42,7 @@ class TestTenantsRepository:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.get_tenant_by_external_id(external_id)
 
@@ -64,9 +62,7 @@ class TestTenantsRepository:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.get_tenant_by_external_id(external_id)
 

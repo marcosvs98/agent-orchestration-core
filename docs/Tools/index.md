@@ -14,8 +14,9 @@ The **tools** bounded context registers **HTTP (and related) tool definitions** 
 ## Split reading
 
 1. [HTTP API](http-api.md) — authoring and registry
-2. [Runtime execution](runtime-execution.md) — orchestrator + execution plane
-3. [MCP](../MCP/index.md) — exposes tool configs to MCP clients
+2. [OpenAPI to MCP](openapi-to-mcp.md) — how an `openapi.json` becomes tool configs and MCP tools
+3. [Runtime execution](runtime-execution.md) — orchestrator + execution plane
+4. [MCP](../MCP/index.md) — exposes tool configs to MCP clients
 
 ## Related
 

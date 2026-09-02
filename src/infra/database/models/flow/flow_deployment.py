@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from infra.database.models.base import ORMBaseModel, uuid_pk
@@ -28,5 +28,11 @@ class FlowDeployment(ORMBaseModel):
     deployed_by = Column(String(length=128), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("flow_id", "environment", "status", name="uq_flow_deployment_slot"),
+        Index(
+            "uq_flow_deployment_active_slot",
+            "flow_id",
+            "environment",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
     )

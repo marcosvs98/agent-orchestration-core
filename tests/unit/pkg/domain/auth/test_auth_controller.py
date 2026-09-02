@@ -22,9 +22,7 @@ class TestAuthController:
         return AuthController(service=service)
 
     @pytest.mark.asyncio
-    async def test_issue_tenant_token_returns_token_when_scope_present(
-        self, controller, service
-    ):
+    async def test_issue_tenant_token_returns_token_when_scope_present(self, controller, service):
         tenant_id = uuid4()
         body = TenantTokenRequest(tenant_id=tenant_id)
         auth = AuthContext(
@@ -55,9 +53,7 @@ class TestAuthController:
         )
 
     @pytest.mark.asyncio
-    async def test_issue_tenant_token_raises_when_scope_missing(
-        self, controller, service
-    ):
+    async def test_issue_tenant_token_raises_when_scope_missing(self, controller, service):
         body = TenantTokenRequest(tenant_id=uuid4())
         auth = AuthContext(
             tenant_id=None,

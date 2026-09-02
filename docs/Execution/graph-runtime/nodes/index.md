@@ -7,14 +7,14 @@ Concrete node implementations live in `src/domain/execution/services/graph_runti
 | Node type | Module | Base | Notable dependencies |
 |-----------|--------|------|----------------------|
 | `ToolResolver` | `tool_resolver.py` | `LLMNodeExecutor` | `LLMExecutorPort`, `PromptResolver`, tool catalog retriever/indexer, `AgentsRepository` |
-| `IntentClassifier` | `intent_classifier.py` | *(metadata-only class; see [LLM nodes](llm-nodes.md))* | Injected via registry closure |
+| `IntentClassifier` | `intent_classifier.py` | `LLMNodeExecutor` (class attributes only) | LLM + prompts + budget policy |
 | `ToolInputFiller` | `tool_input_filler.py` | `LLMNodeExecutor` | LLM + prompts + budget policy |
 | `QueryClarifier` | `query_clarifier.py` | `LLMNodeExecutor` | LLM + prompts |
 | `ResponseBuilder` | `response_builder.py` | `LLMNodeExecutor` | LLM + prompts |
-| `ContextSummarizer` | `context_summarizer.py` | `LLMNodeExecutor` | LLM + prompts |
+| `ContextSummarizer` | `context_summarizer.py` | `LLMNodeExecutor` (overrides `execute`) | LLM + prompts |
 | `HumanFallback` | `human_fallback.py` | `LLMNodeExecutor` | LLM + optional `HumanSLAService` |
 | `ContentModeration` | `content_moderation.py` | `NodeExecutor` | `ModerationProviderPort` |
-| `ToolExecutor` | `tool_executor.py` | `NodeExecutor` | `ToolOrchestrator`, `ExecutionRepository` |
+| `ToolExecutor` | `tool_executor.py` | `NodeExecutor` | `ToolOrchestrator`, `ExecutionRepository`, optional `ToolRunSchedulerPort` |
 | `ToolErrorHandlerNode` | `tool_error_handler.py` | `NodeExecutor` | None (state-only) |
 | `MemoryCommitNode` | `memory_commit.py` | *(class with `execute`; registry injects services)* | `MemoryWriteServicePort`, `ExecutionRepository` |
 

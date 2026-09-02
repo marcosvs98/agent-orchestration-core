@@ -40,9 +40,7 @@ async def test_build_template_context_no_longer_performs_retrieval_for_tool_sele
             persona_config={},
         )
     )
-    agents_repository.get_agent = AsyncMock(
-        return_value=SimpleNamespace(tenant_id=tenant_id)
-    )
+    agents_repository.get_agent = AsyncMock(return_value=SimpleNamespace(tenant_id=tenant_id))
     agents_repository.resolve_effective_rag_config_id_for_node = AsyncMock(
         return_value=rag_config_id
     )

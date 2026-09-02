@@ -10,21 +10,13 @@ def _repository_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def resolve_slm_model_path(path: str) -> str:
-    """Return an absolute path to an existing GGUF file.
-
-    Tries, in order: path as-is, cwd/path, project_root/path, then first
-    *smollm2*.gguf under models/ (project root or cwd). Raises if none found.
-    """
+def find_slm_model_path(path: str) -> str | None:
     if not path or not path.strip():
-        raise DomainValidationException(
-            "llm_provider_missing_model_path",
-            errors=["SLM_MODEL_PATH is empty"],
-        )
+        return None
     path = path.strip()
-    p = Path(path)
-    if p.is_absolute() and p.is_file():
-        return str(p)
+    candidate = Path(path)
+    if candidate.is_absolute() and candidate.is_file():
+        return str(candidate)
     cwd = Path.cwd()
     if (cwd / path).is_file():
         return str((cwd / path).resolve())
@@ -44,14 +36,28 @@ def resolve_slm_model_path(path: str) -> str:
         for root, _dirs, files in models_dir.walk():
             if ".no_exist" in root.parts:
                 continue
-            for f in files:
-                if not f.endswith(".gguf"):
+            for name in files:
+                if not name.endswith(".gguf"):
                     continue
-                if "smollm2" in f.lower() or any("schematron" in p.lower() for p in root.parts):
-                    found = root / f
+                if "smollm2" in name.lower() or any(
+                    "schematron" in part.lower() for part in root.parts
+                ):
+                    found = root / name
                     if found.is_file():
                         return str(found.resolve())
-    raise DomainValidationException(
-        "llm_provider_invalid_model_path",
-        errors=[f"Model path does not exist: {path}"],
-    )
+    return None
+
+
+def resolve_slm_model_path(path: str) -> str:
+    if not path or not path.strip():
+        raise DomainValidationException(
+            "llm_provider_missing_model_path",
+            errors=["SLM_MODEL_PATH is empty"],
+        )
+    found = find_slm_model_path(path)
+    if found is None:
+        raise DomainValidationException(
+            "llm_provider_invalid_model_path",
+            errors=[f"Model path does not exist: {path.strip()}"],
+        )
+    return found

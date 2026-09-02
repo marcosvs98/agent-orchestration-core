@@ -14,6 +14,7 @@ from domain.execution.schemas.events import ExecutionEventType
 from domain.tools.schemas.http_result import HttpToolResult
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.tools.repositories.tools_repository import ToolsRepository
+from domain.common.interaction_metadata import resolve_metadata_value
 from exceptions.service_exceptions import DomainValidationException
 
 
@@ -69,7 +70,7 @@ class ToolOrchestrator:
                 continue
             if isinstance(value, dict) and "interaction_metadata_key" in value:
                 mk = str(value["interaction_metadata_key"])
-                raw = meta.get(mk)
+                raw = resolve_metadata_value(meta, mk)
                 if raw is None or (isinstance(raw, str) and not raw.strip()):
                     raise DomainValidationException(
                         message="interaction_metadata_header_missing",
@@ -82,6 +83,105 @@ class ToolOrchestrator:
                 continue
             raise DomainValidationException(message="invalid_tool_headers_config")
         return resolved, used_secret_refs
+
+    async def execute_agent_tool_run(
+        self,
+        *,
+        tool_run_id: UUID,
+        tenant_id: UUID,
+        interaction_metadata: dict[str, Any] | None = None,
+    ) -> dict:
+        """Run a tool call issued by an agent run rather than by a flow node.
+
+        Same transport, secret resolution and response contract as ``execute_tool_run``; what
+        differs is only the parent, so the flow-scoped execution events and response artifact
+        are left to the agent runtime, which records them against the agent run instead.
+
+        ``interaction_metadata`` carries the run-scoped values a tool config may bind headers to.
+        Header resolution runs inside the failure path so a tool that cannot be configured leaves
+        the same audit trail as one that fails in flight, rather than a ``tool_run`` stuck in
+        ``CREATED`` with no error.
+        """
+
+        tool_run = await self.repository.get_tool_run(tool_run_id)
+        if tool_run is None:
+            raise DomainValidationException(message="tool_run_not_found")
+
+        tool_config = await self.repository.get_tool_config(tool_run.tool_config_id)
+        if tool_config is None:
+            raise DomainValidationException(message="tool_config_not_found")
+        if tool_config.tenant_id != tenant_id:
+            raise DomainValidationException(message="tool_config_not_found")
+
+        await self.repository.update_tool_run_result(
+            tool_run_id=tool_run.tool_run_id,
+            status=RunStatus.RUNNING,
+            canonical_status=ToolRunStatus.EXECUTING,
+            output={},
+            error={},
+        )
+
+        try:
+            config: dict = tool_config.config or {}
+            url = effective_tool_http_url(config)
+            if not url:
+                raise DomainValidationException(message="tool_config_missing_url")
+            method = config.get("method", "POST")
+            timeout_seconds = float(config.get("timeout_seconds", 10))
+            headers, _ = await self._resolve_headers(
+                headers_config=config.get("headers", {}) or {},
+                interaction_metadata=interaction_metadata,
+            )
+            with self.tracer.observe(
+                as_type="tool",
+                name="domain.tools.tool_orchestrator.execute_agent_tool_run",
+                input={
+                    "tool_run_id": str(tool_run.tool_run_id),
+                    "tool_config_id": str(tool_run.tool_config_id),
+                },
+            ) as tool_handle:
+                result = await self.executor.execute_http(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    json_body=tool_run.input or {},
+                    timeout_seconds=timeout_seconds,
+                )
+                try:
+                    HttpToolResult.model_validate(result)
+                except ValidationError as validation_error:
+                    raise DomainValidationException(
+                        message="tool_response_validation_failed",
+                        detail=validation_error.errors(),
+                    ) from validation_error
+                if tool_handle:
+                    tool_handle.success(output={"status": "completed"})
+        except Exception as exc:
+            await self.repository.update_tool_run_result(
+                tool_run_id=tool_run.tool_run_id,
+                status=RunStatus.FAILED,
+                canonical_status=ToolRunStatus.ERROR,
+                output={},
+                error={"error": str(exc)},
+            )
+            await self.repository.create_run_failure_for_tool_run(
+                tool_run_id=tool_run.tool_run_id,
+                correlation_id=tool_run.correlation_id,
+                error_type="tool_execution_error"
+                if not isinstance(exc, DomainValidationException)
+                else "tool_response_validation_failed",
+                error={"error": str(exc)},
+            )
+            raise
+
+        await self.repository.update_tool_run_result(
+            tool_run_id=tool_run.tool_run_id,
+            status=RunStatus.COMPLETED,
+            canonical_status=ToolRunStatus.SUCCESS,
+            output=result,
+            error={},
+        )
+        return result
 
     async def execute_tool_run(self, *, tool_run_id: UUID) -> dict:
         tool_run = await self.repository.get_tool_run(tool_run_id)

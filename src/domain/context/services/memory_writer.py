@@ -324,6 +324,21 @@ class MemoryWriteService:
                         event_type=ExecutionEventType.MemoryEmbeddingQueued,
                         payload=queued_payload,
                     )
+            else:
+                with self.tracer.observe(
+                    as_type="guardrail",
+                    name="domain.memory.write.cap_reached",
+                    input={
+                        "tenant_id": str(tenant_id),
+                        "user_id": user_id,
+                        "rag_config_id": str(memory_item.rag_config_id),
+                        "reason_code": cap.get("reason_code"),
+                        "effective_cap": cap.get("effective_cap"),
+                        "current_count": current_count,
+                    },
+                ) as cap_handle:
+                    if cap_handle:
+                        cap_handle.success(output={"skipped": True})
 
         return result
 

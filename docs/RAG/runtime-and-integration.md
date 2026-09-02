@@ -58,7 +58,7 @@ When **`embedding_job_queue`** is set, workers still finalize vectors through th
 
 ### Agent binding (single RAG config for runtime)
 
-- **`agent_version.rag_config_id`**: Optional FK to a published `rag_config`. Used for layered prompt context, intent examples (`IntentDetectionNode`), and semantic tool ranking (`ToolSelectionNode`).
+- **`agent_version.rag_config_id`**: Optional FK to a published `rag_config`. Used for layered prompt context, intent examples (**`IntentClassifier`**), and semantic tool ranking (**`ToolResolver`**).
 - **Validation** (`ExecutionService`): If `agent_version.rag_config_id` is set and the current graph node has `allow_rag_tenant == False`, startup fails with `RagNotAllowedException` (`rag_not_allowed_for_task`).
 
 ### Document metadata and filters
@@ -69,7 +69,16 @@ When **`embedding_job_queue`** is set, workers still finalize vectors through th
 
 ### Query cache
 
-- **Table**: `rag_query_cache` (tenant + query hash) when enabled in runtime paths.
+- **Table**: `rag_query_cache`. `RagRuntimeService.get_context` caches the **query embedding vector**
+  (not the retrieved chunks) under `(tenant_id, vector_store_id, vector_store_version, contract_hash,
+  query_hash)`, where `query_hash` is a hash of `user_input` and `contract_hash` identifies the
+  embedding contract (provider, model, dimension, metric, version).
+- **Hit**: reuses the stored vector and updates usage counters (`update_query_cache_usage`); the
+  similarity search still runs, so filters, `top_k`, and thresholds continue to apply.
+- **Invalidation**: `invalidate_query_cache_contract` on contract change (called before every lookup)
+  and `invalidate_query_cache_vector_store` when the store is re-indexed, so cached vectors never
+  outlive the embedding model that produced them.
+- Cross-layer view: [Context and cache strategy](../Architecture/context-and-cache-strategy.md).
 
 ## Retrieval paths: tenant knowledge vs user memory
 
@@ -221,8 +230,8 @@ flowchart TD
 
 | Stage | Mechanism | Purpose |
 |-------|-----------|---------|
-| **Intent detection** | `IntentDetectionNode` + `IntentExamplesRetriever` | Examples from `agent_version.rag_config_id` via `RagRuntimeService.get_context`. |
-| **Tool selection (semantic)** | `ToolSelectionNode` + `ToolCatalogRetriever` | Same `rag_config_id`; metadata filters isolate tool-catalog chunks. |
+| **Intent detection** | `IntentClassifier` + `IntentExamplesRetriever` | Examples from `agent_version.rag_config_id` via `RagRuntimeService.get_context`. |
+| **Tool selection (semantic)** | `ToolResolver` + `ToolCatalogRetriever` | Same `rag_config_id`; metadata filters isolate tool-catalog chunks. |
 | **User context enrichment (gating)** | `ContextBuilder` + `runtime_policy.user_context_enrichment` | Layer flags can be tightened per run. |
 | **Prompt rendering (LLM nodes)** | `PromptResolver` → `ContextBuilder` | Loads persona and `rag_config_id` from `agent_version`; runs `MemoryRetrievalService` unless `execution_context.system_context` is already populated. |
 

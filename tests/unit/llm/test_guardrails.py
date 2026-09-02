@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import uuid
 from unittest.mock import MagicMock
@@ -11,7 +12,10 @@ from domain.execution.services.guardrails.guardrail_engine import GuardrailEngin
 from domain.llm.schemas.llm import LLMRequest, LLMTaskType, LLMResult
 from domain.llm.services.llm_executor import LLMExecutor
 from domain.llm.services.provider_selector import LLMProviderSelection
-from exceptions.service_exceptions import DomainValidationException
+from exceptions.service_exceptions import (
+    DomainValidationException,
+    GuardrailUnavailableException,
+)
 
 
 def _tracer() -> MagicMock:
@@ -24,6 +28,7 @@ class _FakeRedis:
     def __init__(self) -> None:
         self.data: dict[str, dict] = {}
         self.counts: dict[str, int] = {}
+        self.floats: dict[str, float] = {}
 
     async def get(self, key: str):
         return self.data.get(key)
@@ -37,6 +42,26 @@ class _FakeRedis:
     async def incr_with_ttl(self, key: str, ttl: int):
         self.counts[key] = self.counts.get(key, 0) + 1
         return self.counts[key]
+
+    async def get_float(self, key: str) -> float:
+        return self.floats.get(key, 0.0)
+
+    async def incrbyfloat_with_ttl(self, key: str, amount: float, ttl: int) -> float:
+        self.floats[key] = self.floats.get(key, 0.0) + amount
+        return self.floats[key]
+
+
+class _BrokenRedis(_FakeRedis):
+    """Every counter operation fails, as it would with Redis unreachable."""
+
+    async def get_float(self, key: str) -> float:
+        raise ConnectionError("redis down")
+
+    async def incrbyfloat_with_ttl(self, key: str, amount: float, ttl: int) -> float:
+        raise ConnectionError("redis down")
+
+    async def incr_with_ttl(self, key: str, ttl: int):
+        raise ConnectionError("redis down")
 
 
 class _FixedCostEngine:
@@ -170,7 +195,10 @@ async def test_llm_executor_blocks_on_guardrail():
     provider = _Provider()
     guardrail = _GuardrailEngineStub(
         GuardrailDecision(
-            decision=GuardrailDecisionType.BLOCK, reason_code="BLOCKED", applied_limits={}, overrides={}
+            decision=GuardrailDecisionType.BLOCK,
+            reason_code="BLOCKED",
+            applied_limits={},
+            overrides={},
         )
     )
     executor = LLMExecutor(
@@ -242,3 +270,87 @@ async def test_llm_executor_degrades_and_calls_provider():
     )
     assert provider.calls == 1
     assert ExecutionEventType.GuardrailDegraded in repo.events
+
+
+@pytest.mark.asyncio
+async def test_post_call_cost_accumulates_atomically_across_concurrent_calls():
+    """Concurrent calls must add up.
+
+    The previous GET-then-SET pair lost writes under concurrency: two callers both read the same
+    total and both wrote their own, so one call's spend vanished.
+    """
+
+    redis = _FakeRedis()
+    engine = GuardrailEngine(_tracer(), redis, _FixedCostEngine(cost=1.0))
+    tenant_id = uuid.uuid4()
+    flow_run_id = uuid.uuid4()
+
+    await asyncio.gather(
+        *[
+            engine.record_post_call_cost(
+                tenant_id=tenant_id,
+                flow_run_id=flow_run_id,
+                cost_usd=0.25,
+                policy_llm={},
+            )
+            for _ in range(20)
+        ]
+    )
+
+    assert redis.floats[f"cost:tenant:{tenant_id}"] == pytest.approx(5.0)
+    assert redis.floats[f"cost:flow_run:{flow_run_id}"] == pytest.approx(5.0)
+
+
+@pytest.mark.asyncio
+async def test_recorded_cost_is_visible_to_the_next_reservation():
+    redis = _FakeRedis()
+    engine = GuardrailEngine(_tracer(), redis, _FixedCostEngine(cost=1.0))
+    tenant_id = uuid.uuid4()
+    flow_run_id = uuid.uuid4()
+    request = LLMRequest(task_type=LLMTaskType.INTENT_SELECTION, model_alias="m", max_tokens=100)
+
+    await engine.record_post_call_cost(
+        tenant_id=tenant_id, flow_run_id=flow_run_id, cost_usd=4.5, policy_llm={}
+    )
+    decision = await engine.check_and_reserve(
+        tenant_id=tenant_id,
+        flow_run_id=flow_run_id,
+        request=request,
+        policy_llm={"max_cost_usd_per_flow_run": 5.0},
+        provider="OPENAI",
+        provider_model="gpt-4o",
+    )
+
+    assert decision.decision == GuardrailDecisionType.BLOCK
+    assert decision.reason_code == "COST_LIMIT_FLOW_RUN"
+
+
+@pytest.mark.asyncio
+async def test_guardrail_fails_closed_when_the_counter_is_unreadable():
+    """An unreadable budget must block, not read as zero and wave the call through."""
+
+    engine = GuardrailEngine(_tracer(), _BrokenRedis(), _FixedCostEngine(cost=1.0))
+    request = LLMRequest(task_type=LLMTaskType.INTENT_SELECTION, model_alias="m", max_tokens=100)
+
+    with pytest.raises(GuardrailUnavailableException):
+        await engine.check_and_reserve(
+            tenant_id=uuid.uuid4(),
+            flow_run_id=uuid.uuid4(),
+            request=request,
+            policy_llm={"max_cost_usd_per_flow_run": 5.0},
+            provider="OPENAI",
+            provider_model="gpt-4o",
+        )
+
+
+@pytest.mark.asyncio
+async def test_recording_cost_fails_closed_when_redis_is_down():
+    engine = GuardrailEngine(_tracer(), _BrokenRedis(), _FixedCostEngine(cost=1.0))
+
+    with pytest.raises(GuardrailUnavailableException):
+        await engine.record_post_call_cost(
+            tenant_id=uuid.uuid4(),
+            flow_run_id=uuid.uuid4(),
+            cost_usd=1.0,
+            policy_llm={},
+        )

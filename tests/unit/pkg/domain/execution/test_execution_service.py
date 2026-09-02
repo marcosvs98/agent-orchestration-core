@@ -1,6 +1,7 @@
 import contextlib
+import inspect
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -19,9 +20,11 @@ from domain.governance.schemas.runtime_policy import (
     RuntimePolicySource,
 )
 from domain.execution.schemas.trace import TraceContext
+from domain.execution.schemas.workflow_dispatch import FlowRunDispatch
 from domain.execution.services.execution_service import ExecutionService
 from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
 from domain.execution.services.graph_runtime.execution_plan import ExecutionPlan
+from domain.execution.services.graph_runtime.executor import RuntimeExecutor
 from domain.execution.services.state_machine import (
     RunStatus,
     RunLifecycleStateMachine,
@@ -76,6 +79,8 @@ class TestExecutionService:
                 session_id=kwargs.get("session_id"),
                 user_id=kwargs.get("user_id"),
                 root_observation_id=None,
+                temporal_workflow_id=None,
+                temporal_run_id=None,
                 flow_id=kwargs.get("flow_id"),
                 flow_version_id=kwargs.get("flow_version_id"),
                 interaction_id=kwargs.get("interaction_id"),
@@ -118,15 +123,11 @@ class TestExecutionService:
         repo.update_agent_run_result = AsyncMock()
         repo.create_interaction = AsyncMock(return_value=uuid4())
         repo.link_interaction_to_flow_run = AsyncMock()
-        repo.get_flow_version = AsyncMock(
-            return_value=SimpleNamespace(status="PUBLISHED")
-        )
+        repo.get_flow_version = AsyncMock(return_value=SimpleNamespace(status="PUBLISHED"))
         repo.get_flow = AsyncMock(return_value=SimpleNamespace(tenant_id=uuid4(), name="f"))
         repo.get_active_flow_version_id = AsyncMock(return_value=uuid4())
         repo.get_tool_config = AsyncMock(
-            return_value=SimpleNamespace(
-                status="PUBLISHED", schema_version=None, config_hash=None
-            )
+            return_value=SimpleNamespace(status="PUBLISHED", schema_version=None, config_hash=None)
         )
         repo.get_agent_run = AsyncMock(return_value=None)
         repo.get_agent_version = AsyncMock(return_value=None)
@@ -148,6 +149,8 @@ class TestExecutionService:
                 started_at=None,
                 finished_at=None,
                 root_observation_id=None,
+                temporal_workflow_id=None,
+                temporal_run_id=None,
             )
         )
         repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
@@ -179,9 +182,7 @@ class TestExecutionService:
         service.llm_executor = MagicMock()
         service.runtime = MagicMock()
         service.runtime.run = AsyncMock()
-        service.tools_service.list_available_tools_for_execution = AsyncMock(
-            return_value=[]
-        )
+        service.tools_service.list_available_tools_for_execution = AsyncMock(return_value=[])
         service.cache_adapter.get = AsyncMock(return_value=None)
         service.cache_adapter.set = AsyncMock()
         service.hook.on_flow_start = AsyncMock()
@@ -204,7 +205,7 @@ class TestExecutionService:
         self, execution_service, repository, idempotency_service
     ):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "unique-key-123"
         flow_id = uuid4()
         payload = FlowRunCreate(
@@ -240,11 +241,145 @@ class TestExecutionService:
         idempotency_service.set_result.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_create_flow_run_dispatches_to_the_workflow_engine_when_enabled(
+        self, execution_service, repository, idempotency_service
+    ):
+        tenant_id = uuid4()
+        flow_id = uuid4()
+        payload = FlowRunCreate(
+            flow_version_id=uuid4(),
+            session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
+            input=FlowRunInput(user_input="data"),
+        )
+        repository.get_flow_version.return_value = SimpleNamespace(
+            status="PUBLISHED",
+            flow_id=flow_id,
+            flow_version_id=payload.flow_version_id,
+            to_dict=lambda: {},
+        )
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
+        repository.get_active_flow_version_id.return_value = payload.flow_version_id
+        repository.set_flow_run_dispatch = AsyncMock()
+
+        engine = MagicMock()
+        engine.start_flow_run = AsyncMock(
+            return_value=FlowRunDispatch(
+                flow_run_id=uuid4(), workflow_id="flow-run-x", run_id="run-1"
+            )
+        )
+        engine.await_flow_run_turn = AsyncMock()
+        execution_service.workflow_engine = engine
+
+        with patch("domain.execution.services.execution_service.settings") as mock_settings:
+            mock_settings.TEMPORAL_ENABLED = True
+            mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+            mock_settings.TEMPORAL_WORKFLOW_RUN_TIMEOUT_MS = 60_000
+            mock_settings.TEMPORAL_TURN_WAIT_TIMEOUT_MS = 65_000
+            await execution_service.create_flow_run(
+                tenant_id=tenant_id,
+                endpoint="/core/v1/executions/flow-runs",
+                idempotency_key="dispatch-key",
+                flow_run=payload,
+            )
+
+        engine.start_flow_run.assert_awaited_once()
+        request = engine.start_flow_run.await_args.kwargs["request"]
+        assert request.tenant_id == tenant_id
+        assert request.flow_id == flow_id
+        repository.set_flow_run_dispatch.assert_awaited_once()
+        dispatch_kw = repository.set_flow_run_dispatch.await_args.kwargs
+        assert dispatch_kw["temporal_workflow_id"] == "flow-run-x"
+        assert dispatch_kw["status"] == RunStatus.QUEUED
+        assert dispatch_kw["canonical_status"] == FlowRunStatus.CREATED
+        engine.await_flow_run_turn.assert_not_awaited()
+        execution_service.runtime.run.assert_not_called()
+        idempotency_service.set_result.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_create_flow_run_waits_for_the_turn_when_wait_is_requested(
+        self, execution_service, repository
+    ):
+        tenant_id = uuid4()
+        payload = FlowRunCreate(
+            flow_version_id=uuid4(),
+            session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
+            input=FlowRunInput(user_input="data"),
+        )
+        repository.get_flow_version.return_value = SimpleNamespace(
+            status="PUBLISHED",
+            flow_id=uuid4(),
+            flow_version_id=payload.flow_version_id,
+            to_dict=lambda: {},
+        )
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
+        repository.get_active_flow_version_id.return_value = payload.flow_version_id
+        repository.set_flow_run_dispatch = AsyncMock()
+
+        engine = MagicMock()
+        engine.start_flow_run = AsyncMock(
+            return_value=FlowRunDispatch(
+                flow_run_id=uuid4(), workflow_id="flow-run-y", run_id="run-2"
+            )
+        )
+        engine.await_flow_run_turn = AsyncMock()
+        execution_service.workflow_engine = engine
+
+        with patch("domain.execution.services.execution_service.settings") as mock_settings:
+            mock_settings.TEMPORAL_ENABLED = True
+            mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+            mock_settings.TEMPORAL_WORKFLOW_RUN_TIMEOUT_MS = 60_000
+            mock_settings.TEMPORAL_TURN_WAIT_TIMEOUT_MS = 65_000
+            await execution_service.create_flow_run(
+                tenant_id=tenant_id,
+                endpoint="/core/v1/executions/flow-runs",
+                idempotency_key="dispatch-wait",
+                flow_run=payload,
+                wait=True,
+            )
+
+        engine.await_flow_run_turn.assert_awaited_once()
+        assert engine.await_flow_run_turn.await_args.kwargs["timeout_ms"] == 65_000
+
+    @pytest.mark.asyncio
+    async def test_create_flow_run_fails_loudly_without_a_workflow_engine(
+        self, execution_service, repository
+    ):
+        tenant_id = uuid4()
+        payload = FlowRunCreate(
+            flow_version_id=uuid4(),
+            session_id=uuid4(),
+            user_id=self._TEST_USER_ID,
+            input=FlowRunInput(user_input="data"),
+        )
+        repository.get_flow_version.return_value = SimpleNamespace(
+            status="PUBLISHED",
+            flow_id=uuid4(),
+            flow_version_id=payload.flow_version_id,
+            to_dict=lambda: {},
+        )
+        repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
+        repository.get_active_flow_version_id.return_value = payload.flow_version_id
+        execution_service.workflow_engine = None
+
+        with patch("domain.execution.services.execution_service.settings") as mock_settings:
+            mock_settings.TEMPORAL_ENABLED = True
+            mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+            with pytest.raises(DomainValidationException):
+                await execution_service.create_flow_run(
+                    tenant_id=tenant_id,
+                    endpoint="/core/v1/executions/flow-runs",
+                    idempotency_key="dispatch-missing-engine",
+                    flow_run=payload,
+                )
+
+    @pytest.mark.asyncio
     async def test_create_flow_run_returns_existing_when_idempotency_key_reused(
         self, execution_service, repository, idempotency_service
     ):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "reused-key-123"
         existing_flow_run = FlowRunCreate(
             flow_version_id=uuid4(),
@@ -280,9 +415,7 @@ class TestExecutionService:
             to_dict=lambda: {},
         )
         repository.get_flow.return_value = SimpleNamespace(tenant_id=tenant_id, name="f")
-        repository.get_active_flow_version_id.return_value = (
-            existing_flow_run.flow_version_id
-        )
+        repository.get_active_flow_version_id.return_value = existing_flow_run.flow_version_id
 
         result = await execution_service.create_flow_run(
             tenant_id=tenant_id,
@@ -299,7 +432,7 @@ class TestExecutionService:
         self, execution_service, repository, idempotency_service
     ):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "in-progress-key"
         payload = FlowRunCreate(
             flow_version_id=uuid4(),
@@ -333,7 +466,7 @@ class TestExecutionService:
         self, execution_service, repository, idempotency_service
     ):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "rerun-key-123"
         origin_flow_run_id = uuid4()
         flow_id = uuid4()
@@ -390,6 +523,8 @@ class TestExecutionService:
                     waiting_deadline_at=None,
                     trace_id=uuid4(),
                     root_observation_id=None,
+                    temporal_workflow_id=None,
+                    temporal_run_id=None,
                     flow_graph_snapshot_id=uuid4(),
                     flow_snapshot_id=None,
                     flow_deployment_id=None,
@@ -419,6 +554,8 @@ class TestExecutionService:
                     error={},
                     trace_id=uuid4(),
                     root_observation_id=None,
+                    temporal_workflow_id=None,
+                    temporal_run_id=None,
                     flow_graph_snapshot_id=uuid4(),
                     flow_snapshot_id=None,
                     flow_deployment_id=None,
@@ -482,6 +619,8 @@ class TestExecutionService:
             failure_reason=None,
             trace_id=uuid4(),
             root_observation_id=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
             flow_graph_snapshot_id=graph_snapshot_id,
             flow_snapshot_id=None,
             flow_deployment_id=None,
@@ -518,9 +657,7 @@ class TestExecutionService:
         execution_service.tools_service.list_available_tools_for_execution = AsyncMock(
             return_value=[]
         )
-        execution_service.cache_adapter.get = AsyncMock(
-            return_value=plan.model_dump(mode="json")
-        )
+        execution_service.cache_adapter.get = AsyncMock(return_value=plan.model_dump(mode="json"))
         execution_service.cache_adapter.set = AsyncMock()
         execution_service.runtime.run = AsyncMock()
 
@@ -536,16 +673,126 @@ class TestExecutionService:
 
         assert result.id == flow_run_id
         execution_service.runtime.run.assert_called_once()
-        _, kwargs = execution_service.runtime.run.call_args
+        args, kwargs = execution_service.runtime.run.call_args
         assert kwargs["start_node_id"] == resume_node_id
+        inspect.signature(RuntimeExecutor.run).bind(RuntimeExecutor, *args, **kwargs)
         repository.create_flow_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resume_flow_run_dispatches_a_temporal_turn_when_enabled(
+        self, execution_service, repository
+    ):
+        flow_run_id = uuid4()
+        flow_version_id = uuid4()
+        flow_id = uuid4()
+        session_id = uuid4()
+        tenant_id = uuid4()
+        graph_snapshot_id = uuid4()
+        resume_node_id = "resume-node"
+        plan = ExecutionPlan(
+            start_node_id=resume_node_id,
+            ordered_nodes=[],
+            adjacency_map={},
+            terminal_nodes=set(),
+            structural_hash="hash",
+            nodes={},
+        )
+
+        repository.get_flow_run.return_value = SimpleNamespace(
+            flow_run_id=flow_run_id,
+            user_id="resume-user",
+            origin_flow_run_id=None,
+            flow_version_id=flow_version_id,
+            session_id=session_id,
+            interaction_id=None,
+            status="WAITING_INPUT",
+            canonical_status="WAITING",
+            correlation_id=uuid4(),
+            started_at=None,
+            finished_at=None,
+            waiting_reason=None,
+            waiting_deadline_at=None,
+            input={"user_input": "first turn"},
+            output={},
+            error={},
+            failure_reason=None,
+            trace_id=uuid4(),
+            root_observation_id=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
+            flow_graph_snapshot_id=graph_snapshot_id,
+            flow_snapshot_id=None,
+            flow_deployment_id=None,
+            runtime_contract={},
+            execution_plan_hash=None,
+            runtime_policy_hash=None,
+            tool_catalog_hash=None,
+            llm_provider_config_hash=None,
+        )
+        repository.get_flow_context.return_value = (session_id, tenant_id)
+        repository.get_graph_state = AsyncMock(
+            return_value=SimpleNamespace(
+                state={"resume_to_node_id": resume_node_id, "state": {}, "memory": []}
+            )
+        )
+        repository.get_flow_version.return_value = SimpleNamespace(
+            flow_id=flow_id, flow_version_id=flow_version_id
+        )
+        repository.get_flow_graph_snapshot_by_flow_version.return_value = SimpleNamespace(
+            graph_hash="hash",
+            flow_graph_snapshot_id=graph_snapshot_id,
+            snapshot={"start_node": resume_node_id, "nodes": {}, "edges": []},
+        )
+        repository.create_interaction.return_value = uuid4()
+        repository.link_interaction_to_flow_run = AsyncMock()
+        repository.set_flow_run_status = AsyncMock()
+        repository.set_root_observation_id = AsyncMock()
+        repository.set_flow_run_input = AsyncMock()
+        repository.next_flow_run_turn_index = AsyncMock(return_value=1)
+        repository.set_flow_run_dispatch = AsyncMock()
+
+        execution_service.cache_adapter.get = AsyncMock(return_value=plan.model_dump(mode="json"))
+        execution_service.runtime.run = AsyncMock()
+        engine = MagicMock()
+        engine.start_resume_turn = AsyncMock(
+            return_value=SimpleNamespace(
+                flow_run_id=flow_run_id, workflow_id="flow-run-x-t1", run_id="run-1"
+            )
+        )
+        engine.await_flow_run_turn = AsyncMock()
+        execution_service.workflow_engine = engine
+
+        with patch("domain.execution.services.execution_service.settings") as mock_settings:
+            mock_settings.TEMPORAL_ENABLED = True
+            mock_settings.TEMPORAL_WORKFLOW_RUN_TIMEOUT_MS = 60_000
+            mock_settings.TEMPORAL_TURN_WAIT_TIMEOUT_MS = 65_000
+            await execution_service.resume_flow_run(
+                flow_run_id=flow_run_id,
+                input_payload=FlowRunResumeInput(user_id="resume-user", user_input="second turn"),
+                channel="http",
+                headers={},
+                external_message_id=None,
+                request_id=None,
+                trace_id=None,
+            )
+
+        execution_service.runtime.run.assert_not_called()
+        engine.start_resume_turn.assert_awaited_once()
+        request = engine.start_resume_turn.await_args.kwargs["request"]
+        assert request.turn_index == 1
+        assert request.start_node_id == resume_node_id
+        repository.set_flow_run_input.assert_awaited_once()
+        assert repository.set_flow_run_input.await_args.kwargs["input_payload"] == {
+            "user_input": "second turn"
+        }
+        engine.await_flow_run_turn.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_create_tool_run_creates_new_run_when_idempotency_key_not_used(
         self, execution_service, repository, idempotency_service
     ):
         tenant_id = uuid4()
-        endpoint = "/core/v1/tool-runs"
+        endpoint = "/core/v1/executions/tool-runs"
         idempotency_key = "tool-key-123"
         node_run_id = uuid4()
         payload = ToolRunCreate(
@@ -574,7 +821,7 @@ class TestExecutionService:
     @pytest.mark.asyncio
     async def test_create_flow_run_blocks_draft_status(self, execution_service, repository):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "blocked-flow"
         payload = FlowRunCreate(
             flow_version_id=uuid4(),
@@ -595,11 +842,9 @@ class TestExecutionService:
             )
 
     @pytest.mark.asyncio
-    async def test_create_flow_run_blocks_when_flow_not_active(
-        self, execution_service, repository
-    ):
+    async def test_create_flow_run_blocks_when_flow_not_active(self, execution_service, repository):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "no-active"
         flow_id = uuid4()
         flow_version_id = uuid4()
@@ -626,7 +871,7 @@ class TestExecutionService:
     @pytest.mark.asyncio
     async def test_create_tool_run_blocks_draft_status(self, execution_service, repository):
         tenant_id = uuid4()
-        endpoint = "/core/v1/tool-runs"
+        endpoint = "/core/v1/executions/tool-runs"
         idempotency_key = "blocked-tool"
         payload = ToolRunCreate(tool_config_id=uuid4(), node_run_id=uuid4())
         repository.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
@@ -644,11 +889,9 @@ class TestExecutionService:
             )
 
     @pytest.mark.asyncio
-    async def test_create_tool_run_validates_schema_version(
-        self, execution_service, repository
-    ):
+    async def test_create_tool_run_validates_schema_version(self, execution_service, repository):
         tenant_id = uuid4()
-        endpoint = "/core/v1/tool-runs"
+        endpoint = "/core/v1/executions/tool-runs"
         idempotency_key = "schema-mismatch"
         agent_run_id = uuid4()
         payload = ToolRunCreate(
@@ -680,7 +923,7 @@ class TestExecutionService:
         with pytest.raises(DomainValidationException, match="tool_run_missing_parent"):
             await execution_service.create_tool_run(
                 tenant_id=uuid4(),
-                endpoint="/core/v1/tool-runs",
+                endpoint="/core/v1/executions/tool-runs",
                 idempotency_key="k",
                 tool_run=ToolRunCreate(tool_config_id=uuid4()),
             )
@@ -699,9 +942,7 @@ class TestExecutionService:
         policy_version_id = uuid4()
         model_id = uuid4()
 
-        repository.get_node_run.return_value = SimpleNamespace(
-            node_id=uuid4(), flow_run_id=uuid4()
-        )
+        repository.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
         repository.get_node.return_value = SimpleNamespace(
             node_id=node_id,
             node_prompt_id=uuid4(),
@@ -761,9 +1002,7 @@ class TestExecutionService:
         policy_version_id = uuid4()
         model_id = uuid4()
 
-        repository.get_node_run.return_value = SimpleNamespace(
-            node_id=uuid4(), flow_run_id=uuid4()
-        )
+        repository.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
         rag_cfg = uuid4()
         repository.get_node.return_value = SimpleNamespace(
             node_id=uuid4(),
@@ -811,9 +1050,7 @@ class TestExecutionService:
             )
 
     @pytest.mark.asyncio
-    async def test_complete_agent_run_validates_output_schema(
-        self, execution_service, repository
-    ):
+    async def test_complete_agent_run_validates_output_schema(self, execution_service, repository):
         from pydantic import BaseModel
 
         agent_run_id = uuid4()
@@ -865,9 +1102,7 @@ class TestExecutionService:
         repository.append_execution_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_get_flow_run_returns_complete_flow_run(
-        self, execution_service, repository
-    ):
+    async def test_get_flow_run_returns_complete_flow_run(self, execution_service, repository):
         from datetime import datetime, timezone
 
         flow_run_id = uuid4()
@@ -894,6 +1129,8 @@ class TestExecutionService:
             error={},
             trace_id=uuid4(),
             root_observation_id=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
             flow_graph_snapshot_id=uuid4(),
             flow_snapshot_id=None,
             flow_deployment_id=None,
@@ -914,9 +1151,7 @@ class TestExecutionService:
         repository.get_flow_run.assert_called_once_with(flow_run_id)
 
     @pytest.mark.asyncio
-    async def test_get_flow_run_raises_when_not_found(
-        self, execution_service, repository
-    ):
+    async def test_get_flow_run_raises_when_not_found(self, execution_service, repository):
         flow_run_id = uuid4()
         repository.get_flow_run.return_value = None
 
@@ -924,9 +1159,7 @@ class TestExecutionService:
             await execution_service.get_flow_run(str(flow_run_id))
 
     @pytest.mark.asyncio
-    async def test_get_graph_state_returns_graph_state(
-        self, execution_service, repository
-    ):
+    async def test_get_graph_state_returns_graph_state(self, execution_service, repository):
         flow_run_id = uuid4()
         graph_state_id = uuid4()
         last_node_run_id = uuid4()
@@ -1050,7 +1283,7 @@ class TestExecutionService:
         from decimal import Decimal
 
         tenant_id = uuid4()
-        flow_run_id = uuid4()
+        uuid4()
         agent_run_id = uuid4()
         started_at = datetime.now(timezone.utc)
 

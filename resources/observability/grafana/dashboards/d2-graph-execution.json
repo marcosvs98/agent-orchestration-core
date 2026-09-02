@@ -1,0 +1,350 @@
+{
+    "uid": "aoc-d2-graph-execution",
+    "title": "AOC / D2 Graph Execution",
+    "tags": [
+        "aoc",
+        "graph",
+        "execution"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "1m",
+    "time": {
+        "from": "now-7d",
+        "to": "now"
+    },
+    "templating": {
+        "list": [
+            {
+                "name": "tenant",
+                "label": "Tenant",
+                "type": "query",
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "aoc-postgres"
+                },
+                "query": {
+                    "refId": "tenant",
+                    "format": "table",
+                    "rawQuery": true,
+                    "editorMode": "code",
+                    "rawSql": "select name as __text, tenant_id::text as __value from tenant order by name"
+                },
+                "refresh": 1,
+                "includeAll": true,
+                "multi": true,
+                "current": {
+                    "text": "All",
+                    "value": "$__all"
+                },
+                "allValue": "$__all",
+                "definition": "select name as __text, tenant_id::text as __value from tenant order by name"
+            }
+        ]
+    },
+    "panels": [
+        {
+            "id": 1,
+            "type": "text",
+            "title": "Read the caveats before trusting these numbers",
+            "gridPos": {
+                "h": 5,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "options": {
+                "mode": "markdown",
+                "content": "- **Node duration is survivorship-biased (gap G-11).** `node_run.finished_at` is populated on 411 of 424 rows, and the 13 missing rows are *exactly the failures* \u2014 a failing node returns before `update_node_run_result` is called. So `ResponseBuilder p95` is computed over successes only and failures contribute nothing. A reliability regression can make this chart look *better*.\n- **Flow duration uses `created_at` as a proxy** because `flow_run.started_at` is written on 0 of 87 rows. It therefore folds in plan-compile and dispatch time.\n- **In-flight runs are not measurable.** `RunStatus.RUNNING` is never written on the in-process path, so the number would be permanently zero. See the placeholder panel at the bottom."
+            }
+        },
+        {
+            "id": 2,
+            "type": "timeseries",
+            "title": "Node duration p95 by node type (from spans)",
+            "description": "Span-derived, so it is NOT subject to the node_run.finished_at survivorship bias above.",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 9,
+                "w": 12,
+                "x": 0,
+                "y": 5
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms"
+                },
+                "overrides": []
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "histogram_quantile(0.95, sum by (le, node_type) (rate(traces_span_metrics_duration_milliseconds_bucket{node_type!=\"\"}[$__rate_interval])))",
+                    "legendFormat": "{{node_type}}"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "timeseries",
+            "title": "Node span error rate by node type",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 9,
+                "w": 12,
+                "x": 12,
+                "y": 5
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum by (node_type) (rate(traces_span_metrics_calls_total{node_type!=\"\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval]))",
+                    "legendFormat": "{{node_type}}"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "stat",
+            "title": "Execution funnel",
+            "description": "Reconciles exactly against the event stream today: flow_run 87 / node_run 424 / finished node_run 411 / finished flow_run 76. A divergence here means events and relational rows have drifted.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 6,
+                "w": 24,
+                "x": 0,
+                "y": 14
+            },
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select\n  (select count(*) from flow_run fr join session s on s.session_id = fr.session_id where $__timeFilter(fr.created_at) and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))) as \"flow runs\",\n  (select count(*) from node_run nr join flow_run fr on fr.flow_run_id = nr.flow_run_id join session s on s.session_id = fr.session_id where $__timeFilter(nr.created_at) and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))) as \"node runs\",\n  (select count(*) from node_run nr join flow_run fr on fr.flow_run_id = nr.flow_run_id join session s on s.session_id = fr.session_id where nr.finished_at is not null and $__timeFilter(nr.created_at) and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))) as \"node runs finished\",\n  (select count(*) from flow_run fr join session s on s.session_id = fr.session_id where fr.finished_at is not null and $__timeFilter(fr.created_at) and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))) as \"flow runs finished\""
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "piechart",
+            "title": "Flow outcome mix",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 20
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select fr.canonical_status as metric, count(*) as value\nfrom flow_run fr\njoin session s on s.session_id = fr.session_id\nwhere $__timeFilter(fr.created_at)\n  and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by fr.canonical_status\norder by value desc"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "table",
+            "title": "Node runs by type and status",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 20
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select n.node_type, nr.canonical_status, count(*) as runs\nfrom node_run nr\njoin node n on n.node_id = nr.node_id\njoin flow_run fr on fr.flow_run_id = nr.flow_run_id\njoin session s on s.session_id = fr.session_id\nwhere $__timeFilter(nr.created_at)\n  and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by n.node_type, nr.canonical_status\norder by runs desc"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "table",
+            "title": "Stuck nodes (started, never finished)",
+            "description": "The only per-node failure attribution available until gap G-11 is fixed. These rows map 1:1 to FAILED flow runs today.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 20
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select n.node_type, count(*) as stuck\nfrom node_run nr\njoin node n on n.node_id = nr.node_id\njoin flow_run fr on fr.flow_run_id = nr.flow_run_id\njoin session s on s.session_id = fr.session_id\nwhere nr.finished_at is null\n  and $__timeFilter(nr.created_at)\n  and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by n.node_type\norder by stuck desc"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "table",
+            "title": "Edge decisions (routing quality)",
+            "description": "The sharpest product signal available today. Watch the ToolExecutor -> ToolErrorHandlerNode share: 43% of tool executions currently take the error branch. The payload does not carry the condition expression, so you see which branch won, not why.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 28
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select\n  coalesce(nfrom.node_type, 'unknown') as from_node_type,\n  coalesce(nto.node_type, 'unknown') as to_node_type,\n  (ee.payload->>'result')::boolean as taken,\n  count(*) as evaluations\nfrom execution_event ee\nleft join node nfrom on nfrom.node_id = (ee.payload->>'from_node')::uuid\nleft join node nto on nto.node_id = (ee.payload->>'to_node')::uuid\nwhere ee.type = 'EdgeEvaluated'\n  and $__timeFilter(ee.occurred_at)\n  and ('${tenant:csv}' = '$__all' or ee.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by 1, 2, 3\norder by evaluations desc\nlimit 50"
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "type": "table",
+            "title": "Flow version A/B cohorts",
+            "description": "Directional only: 11 of 17 cohorts currently have 2 or fewer runs and 4 have exactly one. Do not promote or roll back a version on this alone until cohort sizes grow.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 9,
+                "w": 12,
+                "x": 0,
+                "y": 38
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select\n  fr.flow_version_id::text as flow_version,\n  fr.flow_graph_snapshot_id::text as graph_snapshot,\n  count(*) as runs,\n  count(*) filter (where fr.canonical_status = 'COMPLETED') as completed,\n  count(*) filter (where fr.canonical_status = 'FAILED') as failed,\n  round(avg(extract(epoch from (fr.finished_at - fr.created_at)))::numeric, 3) as avg_seconds\nfrom flow_run fr\njoin session s on s.session_id = fr.session_id\nwhere $__timeFilter(fr.created_at)\n  and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\ngroup by 1, 2\norder by runs desc"
+                }
+            ]
+        },
+        {
+            "id": 10,
+            "type": "table",
+            "title": "Loop detection (repeated node per run)",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 9,
+                "w": 12,
+                "x": 12,
+                "y": 38
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select repeats, count(*) as node_run_pairs\nfrom (\n  select nr.flow_run_id, nr.node_id, count(*) as repeats\n  from node_run nr\n  join flow_run fr on fr.flow_run_id = nr.flow_run_id\n  join session s on s.session_id = fr.session_id\n  where $__timeFilter(nr.created_at)\n    and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\n  group by 1, 2\n) pairs\ngroup by repeats\norder by repeats"
+                }
+            ]
+        },
+        {
+            "id": 11,
+            "type": "table",
+            "title": "Recent flow runs (click trace_id to open the trace)",
+            "description": "flow_run.trace_id is 87/87 populated and is a valid W3C 128-bit trace id, so this join into Tempo needs no schema change. This panel reads the grafana_flow_run VIEW, not flow_run: the read-only role has SELECT on flow_run.error, input and output REVOKED, because those columns embed the rendered system prompt, the user's message and their username.",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aoc-postgres"
+            },
+            "gridPos": {
+                "h": 11,
+                "w": 24,
+                "x": 0,
+                "y": 47
+            },
+            "fieldConfig": {
+                "defaults": {},
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "trace_id"
+                        },
+                        "properties": [
+                            {
+                                "id": "links",
+                                "value": [
+                                    {
+                                        "title": "Open trace in Tempo",
+                                        "url": "/explore?left=%7B%22datasource%22:%22aoc-tempo%22,%22queries%22:%5B%7B%22query%22:%22${__value.raw}%22,%22queryType%22:%22traceql%22%7D%5D%7D",
+                                        "targetBlank": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "select\n  fr.created_at,\n  fr.flow_run_id::text as flow_run_id,\n  replace(fr.trace_id::text, '-', '') as trace_id,\n  fr.canonical_status,\n  round(extract(epoch from (fr.finished_at - fr.created_at))::numeric, 3) as duration_seconds,\n  fr.failure_reason,\n  fr.failure_code\nfrom grafana_flow_run fr\njoin session s on s.session_id = fr.session_id\nwhere $__timeFilter(fr.created_at)\n  and ('${tenant:csv}' = '$__all' or s.tenant_id::text = any(string_to_array('${tenant:csv}', ',')))\norder by fr.created_at desc\nlimit 200"
+                }
+            ]
+        },
+        {
+            "id": 12,
+            "type": "text",
+            "title": "Not measurable: in-flight runs",
+            "gridPos": {
+                "h": 4,
+                "w": 24,
+                "x": 0,
+                "y": 58
+            },
+            "options": {
+                "mode": "markdown",
+                "content": "**Deliberately not a panel.** A concurrency gauge would need `flow_run.canonical_status = 'RUNNING'`, but RUNNING is only ever written by the Temporal `prepare_flow_run` activity and the resume path. On the in-process path it is never written, and the observed status distribution contains **zero** RUNNING or QUEUED rows. A gauge here would sit at zero forever and read as 'healthy, nothing queued'."
+            }
+        }
+    ]
+}

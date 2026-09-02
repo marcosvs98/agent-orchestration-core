@@ -7,7 +7,10 @@ from adapters.cache.redis_adapter import RedisAdapter
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.guardrails import GuardrailDecision, GuardrailDecisionType
 from domain.llm.services.cost_engine import CostEngine
-from exceptions.service_exceptions import DomainValidationException
+from exceptions.service_exceptions import (
+    DomainValidationException,
+    GuardrailUnavailableException,
+)
 
 
 class GuardrailEngine:
@@ -38,29 +41,54 @@ class GuardrailEngine:
         return f"llm_calls:tenant:{tenant_id}"
 
     async def _get_cost(self, key: str) -> float:
+        """Current spend for a key.
+
+        Any Redis failure propagates: a budget that cannot be read must not read as zero, or the
+        guardrail silently stops guarding exactly when the infrastructure is unhealthy.
+        """
+
         with self.tracer.observe(
             as_type="retriever",
             name="domain.execution.guardrail_engine.get_cost",
             input={"key": key},
         ) as retriever_handle:
-            data = await self.redis.get(key) or {}
             try:
-                cost = float(data.get("usd", 0))
-            except (TypeError, ValueError):
-                cost = 0.0
+                cost = await self.redis.get_float(key)
+            except Exception as exc:
+                raise GuardrailUnavailableException(message="cost_counter_unavailable") from exc
             if retriever_handle:
                 retriever_handle.success(output={"key": key, "cost": cost})
             return cost
 
-    async def _set_cost(self, key: str, value: float, ttl: int | None = None) -> None:
+    async def _incr_calls(self, key: str, ttl: int) -> int:
         with self.tracer.observe(
             as_type="tool",
-            name="domain.execution.guardrail_engine.set_cost",
+            name="domain.execution.guardrail_engine.incr_calls",
             input={"key": key},
         ) as tool_handle:
-            await self.redis.set(key, {"usd": value}, ttl=ttl or 0)
+            try:
+                value = await self.redis.incr_with_ttl(key, ttl=ttl)
+            except Exception as exc:
+                raise GuardrailUnavailableException(message="call_counter_unavailable") from exc
+            if not isinstance(value, int):
+                raise GuardrailUnavailableException(message="call_counter_unavailable")
             if tool_handle:
-                tool_handle.success(output={"key": key, "value": value})
+                tool_handle.success(output={"key": key, "calls": value})
+            return value
+
+    async def _add_cost(self, key: str, amount: float, ttl: int) -> float:
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.guardrail_engine.add_cost",
+            input={"key": key, "amount": amount},
+        ) as tool_handle:
+            try:
+                total = await self.redis.incrbyfloat_with_ttl(key, amount, ttl)
+            except Exception as exc:
+                raise GuardrailUnavailableException(message="cost_counter_unavailable") from exc
+            if tool_handle:
+                tool_handle.success(output={"key": key, "total": total})
+            return total
 
     async def check_and_reserve(
         self,
@@ -126,22 +154,8 @@ class GuardrailEngine:
         # Rate limits
         flow_calls_key = self._flow_calls_key(flow_run_id)
         tenant_calls_key = self._tenant_calls_key(tenant_id)
-        with self.tracer.observe(
-            as_type="tool",
-            name="domain.execution.guardrail_engine.incr_flow_calls",
-            input={"key": flow_calls_key},
-        ) as tool_handle:
-            flow_calls = await self.redis.incr_with_ttl(flow_calls_key, ttl=tenant_calls_ttl)
-            if tool_handle:
-                tool_handle.success(output={"flow_calls": flow_calls})
-        with self.tracer.observe(
-            as_type="tool",
-            name="domain.execution.guardrail_engine.incr_tenant_calls",
-            input={"key": tenant_calls_key},
-        ) as tool_handle:
-            tenant_calls = await self.redis.incr_with_ttl(tenant_calls_key, ttl=tenant_calls_ttl)
-            if tool_handle:
-                tool_handle.success(output={"tenant_calls": tenant_calls})
+        flow_calls = await self._incr_calls(flow_calls_key, ttl=int(tenant_calls_ttl))
+        tenant_calls = await self._incr_calls(tenant_calls_key, ttl=int(tenant_calls_ttl))
         if max_calls_flow is not None and flow_calls > int(max_calls_flow):
             return GuardrailDecision(
                 decision=GuardrailDecisionType.BLOCK,
@@ -228,15 +242,17 @@ class GuardrailEngine:
         cost_usd: float | None,
         policy_llm: Dict[str, Any],
     ) -> None:
+        """Add the observed cost to both counters.
+
+        `INCRBYFLOAT` is atomic, so concurrent calls accumulate instead of overwriting each other
+        the way a read-then-write pair did.
+        """
+
         if cost_usd is None:
             return
-        flow_cost_key = self._flow_cost_key(flow_run_id)
-        tenant_cost_key = self._tenant_cost_key(tenant_id)
-        tenant_cost_ttl = policy_llm.get("tenant_cost_window_seconds") or 3600
-        flow_cost = await self._get_cost(flow_cost_key)
-        tenant_cost = await self._get_cost(tenant_cost_key)
-        await self._set_cost(flow_cost_key, flow_cost + cost_usd, ttl=tenant_cost_ttl)
-        await self._set_cost(tenant_cost_key, tenant_cost + cost_usd, ttl=tenant_cost_ttl)
+        tenant_cost_ttl = int(policy_llm.get("tenant_cost_window_seconds") or 3600)
+        await self._add_cost(self._flow_cost_key(flow_run_id), cost_usd, ttl=tenant_cost_ttl)
+        await self._add_cost(self._tenant_cost_key(tenant_id), cost_usd, ttl=tenant_cost_ttl)
 
     async def _estimate_cost(
         self,

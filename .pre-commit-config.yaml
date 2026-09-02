@@ -117,7 +117,7 @@ repos:
           - pre-commit
         args:
           - '--pytest-test-first'
-        exclude: (mocks/|/tests/mocks/).*
+        exclude: (mocks/|/tests/mocks/|/validation_integration/(evidence|helpers)\.py$|_doubles\.py$).*
   - repo: local
     hooks:
       - id: mypy
@@ -132,7 +132,7 @@ repos:
           - '--disallow-untyped-defs'
           - '--warn-unused-ignores'
           - '--cache-dir=.mypy_cache'
-        exclude: ^(src/tests/|src/.*/migrations/)
+        exclude: ^(tests/|src/.*/migrations/)
   - repo: 'https://github.com/astral-sh/ruff-pre-commit'
     rev: v0.14.10
     hooks:
@@ -149,6 +149,16 @@ repos:
           - '--fix'
           - '--unsafe-fixes'
         exclude: ^src/tests/
+  - repo: local
+    hooks:
+      - id: markdown-links
+        name: '[B05] Verificando links markdown em todo o repositorio'
+        entry: python resources/scripts/check_markdown_links.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages:
+          - pre-commit
   - repo: local
     hooks:
       - id: pylint

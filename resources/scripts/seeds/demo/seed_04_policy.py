@@ -38,7 +38,7 @@ async def seed_policy() -> None:
             policy = AIExecutionPolicy(
                 ai_execution_policy_id=POLICY_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                description="AI Execution Policy para tenant demo",
+                description="AI Execution Policy for the demo tenant",
             )
             session.add(policy)
             await session.commit()

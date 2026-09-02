@@ -16,6 +16,4 @@ class TenantInboundServiceKey(ORMBaseModel):
     key_hash = Column(String(length=64), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (
-        Index("uq_tenant_inbound_service_key_hash", "key_hash", unique=True),
-    )
+    __table_args__ = (Index("uq_tenant_inbound_service_key_hash", "key_hash", unique=True),)

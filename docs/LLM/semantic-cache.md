@@ -25,5 +25,6 @@ The `semantic_answer_cache` table is listed in [Persistence tables](../Glossary/
 
 ## See also
 
+- [Context and cache strategy](../Architecture/context-and-cache-strategy.md) — how this cache relates to RAG and the other cache layers
 - [Layered inference](layered-inference.md)
 - [Embedding orchestration](../RAG/embedding-orchestration.md) — `EmbeddingExecutor` contract details

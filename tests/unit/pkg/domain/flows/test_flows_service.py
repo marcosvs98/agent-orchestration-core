@@ -69,9 +69,7 @@ class TestFlowsService:
         )
 
     @pytest.mark.asyncio
-    async def test_list_flows_returns_empty_list_when_no_results(
-        self, flows_service, repository
-    ):
+    async def test_list_flows_returns_empty_list_when_no_results(self, flows_service, repository):
         tenant_id = uuid4()
         repository.list_flows = AsyncMock(return_value=[])
 
@@ -81,9 +79,7 @@ class TestFlowsService:
         repository.list_flows.assert_called_once_with(tenant_id=tenant_id, limit=200)
 
     @pytest.mark.asyncio
-    async def test_list_flows_returns_flows_filtered_by_tenant(
-        self, flows_service, repository
-    ):
+    async def test_list_flows_returns_flows_filtered_by_tenant(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         mock_flow = SimpleNamespace(
@@ -91,7 +87,7 @@ class TestFlowsService:
             name="Test Flow",
             description="Test description",
             tags=["tag1", "tag2"],
-            created_by="user-123"
+            created_by="user-123",
         )
         repository.list_flows = AsyncMock(return_value=[mock_flow])
 
@@ -115,11 +111,7 @@ class TestFlowsService:
         principal_id = "user-123"
 
         mock_flow = SimpleNamespace(
-            flow_id=flow_id,
-            name="New Flow",
-            description=None,
-            tags=None,
-            created_by=principal_id
+            flow_id=flow_id, name="New Flow", description=None, tags=None, created_by=principal_id
         )
         repository.create_flow = AsyncMock(return_value=mock_flow)
 
@@ -133,7 +125,11 @@ class TestFlowsService:
         assert result.tags is None
         assert result.created_by == principal_id
         repository.create_flow.assert_called_once_with(
-            tenant_id=tenant_id, name="New Flow", description=None, tags=None, created_by=principal_id
+            tenant_id=tenant_id,
+            name="New Flow",
+            description=None,
+            tags=None,
+            created_by=principal_id,
         )
         authoring_events.append_event.assert_called_once()
 
@@ -144,9 +140,7 @@ class TestFlowsService:
         tenant_id = uuid4()
         flow_id = uuid4()
         flow_create = FlowCreate(
-            name="New Flow",
-            description="Flow description",
-            tags=["tag1", "tag2"]
+            name="New Flow", description="Flow description", tags=["tag1", "tag2"]
         )
         principal_id = "user-123"
 
@@ -155,7 +149,7 @@ class TestFlowsService:
             name="New Flow",
             description="Flow description",
             tags=["tag1", "tag2"],
-            created_by=principal_id
+            created_by=principal_id,
         )
         repository.create_flow = AsyncMock(return_value=mock_flow)
 
@@ -173,14 +167,12 @@ class TestFlowsService:
             name="New Flow",
             description="Flow description",
             tags=["tag1", "tag2"],
-            created_by=principal_id
+            created_by=principal_id,
         )
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_flow_raises_when_name_is_empty(
-        self, flows_service, repository
-    ):
+    async def test_create_flow_raises_when_name_is_empty(self, flows_service, repository):
         tenant_id = uuid4()
         flow_create = FlowCreate(name="")
         principal_id = "user-123"
@@ -193,9 +185,7 @@ class TestFlowsService:
         repository.create_flow.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_flow_raises_when_name_is_only_whitespace(
-        self, flows_service, repository
-    ):
+    async def test_create_flow_raises_when_name_is_only_whitespace(self, flows_service, repository):
         tenant_id = uuid4()
         flow_create = FlowCreate(name="   ")
         principal_id = "user-123"
@@ -217,11 +207,7 @@ class TestFlowsService:
         principal_id = "user-123"
 
         mock_flow = SimpleNamespace(
-            flow_id=flow_id,
-            name="New Flow",
-            description=None,
-            tags=None,
-            created_by=principal_id
+            flow_id=flow_id, name="New Flow", description=None, tags=None, created_by=principal_id
         )
         repository.create_flow = AsyncMock(return_value=mock_flow)
 
@@ -235,14 +221,16 @@ class TestFlowsService:
         assert result.tags is None
         assert result.created_by == principal_id
         repository.create_flow.assert_called_once_with(
-            tenant_id=tenant_id, name="New Flow", description=None, tags=None, created_by=principal_id
+            tenant_id=tenant_id,
+            name="New Flow",
+            description=None,
+            tags=None,
+            created_by=principal_id,
         )
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_get_flow_returns_flow_when_exists(
-        self, flows_service, repository
-    ):
+    async def test_get_flow_returns_flow_when_exists(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         mock_flow = SimpleNamespace(
@@ -251,7 +239,7 @@ class TestFlowsService:
             name="Test Flow",
             description="Test description",
             tags=["tag1"],
-            created_by="user-123"
+            created_by="user-123",
         )
         repository.get_flow = AsyncMock(return_value=mock_flow)
 
@@ -265,9 +253,7 @@ class TestFlowsService:
         repository.get_flow.assert_called_once_with(flow_id)
 
     @pytest.mark.asyncio
-    async def test_get_flow_raises_when_not_found(
-        self, flows_service, repository
-    ):
+    async def test_get_flow_raises_when_not_found(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         repository.get_flow = AsyncMock(return_value=None)
@@ -276,9 +262,7 @@ class TestFlowsService:
             await flows_service.get_flow(tenant_id=tenant_id, flow_id=str(flow_id))
 
     @pytest.mark.asyncio
-    async def test_get_flow_raises_when_tenant_mismatch(
-        self, flows_service, repository
-    ):
+    async def test_get_flow_raises_when_tenant_mismatch(self, flows_service, repository):
         tenant_id = uuid4()
         other_tenant_id = uuid4()
         flow_id = uuid4()
@@ -304,14 +288,10 @@ class TestFlowsService:
 
         assert result == []
         repository.get_flow.assert_called_once_with(flow_id)
-        repository.list_flow_versions.assert_called_once_with(
-            flow_id=flow_id, status_filter=None
-        )
+        repository.list_flow_versions.assert_called_once_with(flow_id=flow_id, status_filter=None)
 
     @pytest.mark.asyncio
-    async def test_list_flow_versions_filters_by_status(
-        self, flows_service, repository
-    ):
+    async def test_list_flow_versions_filters_by_status(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         version_id = uuid4()
@@ -364,9 +344,7 @@ class TestFlowsService:
         )
         repository.get_flow = AsyncMock(return_value=mock_flow)
         repository.create_flow_version = AsyncMock(return_value=mock_version)
-        flow_version_create = FlowVersionCreate(
-            version_major=2, version_minor=1, version_patch=0
-        )
+        flow_version_create = FlowVersionCreate(version_major=2, version_minor=1, version_patch=0)
 
         result = await flows_service.create_flow_version(
             tenant_id=tenant_id,
@@ -383,9 +361,7 @@ class TestFlowsService:
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_list_nodes_returns_nodes_for_version(
-        self, flows_service, repository
-    ):
+    async def test_list_nodes_returns_nodes_for_version(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         version_id = uuid4()
@@ -455,9 +431,7 @@ class TestFlowsService:
         authoring_events.append_event.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_node_rejects_second_allow_memory_write(
-        self, flows_service, repository
-    ):
+    async def test_create_node_rejects_second_allow_memory_write(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         version_id = uuid4()
@@ -472,9 +446,7 @@ class TestFlowsService:
         )
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow = AsyncMock(return_value=mock_flow)
-        repository.list_nodes_for_flow_version = AsyncMock(
-            return_value=[existing_node]
-        )
+        repository.list_nodes_for_flow_version = AsyncMock(return_value=[existing_node])
         node_create = NodeCreate(
             flow_version_id=version_id,
             node_prompt_id=prompt_id,
@@ -511,9 +483,7 @@ class TestFlowsService:
         repository.get_flow = AsyncMock(return_value=mock_flow)
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow_graph_draft = AsyncMock(return_value=mock_draft)
-        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(
-            return_value=mock_policy
-        )
+        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(return_value=mock_policy)
         limit_policy_repository.get_published_policy_version = AsyncMock(
             return_value=mock_policy_version
         )
@@ -532,9 +502,7 @@ class TestFlowsService:
         assert exc.value.message == "multiple_nodes_allow_memory_write"
 
     @pytest.mark.asyncio
-    async def test_list_routers_returns_routers_filtered_by_tenant(
-        self, flows_service, repository
-    ):
+    async def test_list_routers_returns_routers_filtered_by_tenant(self, flows_service, repository):
         tenant_id = uuid4()
         router_id = uuid4()
         node_id = uuid4()
@@ -582,9 +550,7 @@ class TestFlowsService:
     ):
         tenant_id = uuid4()
         expr_id = uuid4()
-        mock_expr = SimpleNamespace(
-            condition_expression_id=expr_id, expression="x > 5"
-        )
+        mock_expr = SimpleNamespace(condition_expression_id=expr_id, expression="x > 5")
         repository.create_condition_expression = AsyncMock(return_value=mock_expr)
         expr_create = ConditionExpressionCreate(expression="x > 5")
 
@@ -668,9 +634,7 @@ class TestFlowsService:
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow_graph_draft = AsyncMock(return_value=mock_draft)
         repository.set_flow_version_status = AsyncMock()
-        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(
-            return_value=mock_policy
-        )
+        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(return_value=mock_policy)
         limit_policy_repository.get_published_policy_version = AsyncMock(
             return_value=mock_policy_version
         )
@@ -686,9 +650,7 @@ class TestFlowsService:
             min_agent_version_minor=None,
             min_agent_version_patch=None,
         )
-        repository.get_flow_version = AsyncMock(
-            side_effect=[mock_version, validated_version]
-        )
+        repository.get_flow_version = AsyncMock(side_effect=[mock_version, validated_version])
 
         result = await flows_service.validate_flow_version(
             tenant_id=tenant_id, flow_id=str(flow_id), flow_version_id=str(version_id)
@@ -696,17 +658,13 @@ class TestFlowsService:
 
         assert result.status == VersionStatus.VALIDATED
         repository.get_flow_graph_draft.assert_called_once_with(version_id)
-        limit_policy_repository.get_default_policy_for_tenant.assert_called_once_with(
-            tenant_id
-        )
+        limit_policy_repository.get_default_policy_for_tenant.assert_called_once_with(tenant_id)
         repository.set_flow_version_status.assert_called_once_with(
             flow_version_id=version_id, status=VersionStatus.VALIDATED
         )
 
     @pytest.mark.asyncio
-    async def test_validate_flow_version_fails_when_draft_missing(
-        self, flows_service, repository
-    ):
+    async def test_validate_flow_version_fails_when_draft_missing(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         version_id = uuid4()
@@ -720,9 +678,7 @@ class TestFlowsService:
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow_graph_draft = AsyncMock(return_value=None)
 
-        with pytest.raises(
-            DomainValidationException, match="flow_graph_draft_not_found"
-        ):
+        with pytest.raises(DomainValidationException, match="flow_graph_draft_not_found"):
             await flows_service.validate_flow_version(
                 tenant_id=tenant_id,
                 flow_id=str(flow_id),
@@ -750,9 +706,7 @@ class TestFlowsService:
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow_graph_draft = AsyncMock(return_value=mock_draft)
 
-        with pytest.raises(
-            DomainValidationException, match="flow_graph_draft_not_validated"
-        ):
+        with pytest.raises(DomainValidationException, match="flow_graph_draft_not_validated"):
             await flows_service.validate_flow_version(
                 tenant_id=tenant_id,
                 flow_id=str(flow_id),
@@ -779,9 +733,7 @@ class TestFlowsService:
         repository.get_flow = AsyncMock(return_value=mock_flow)
         repository.get_flow_version = AsyncMock(return_value=mock_version)
         repository.get_flow_graph_draft = AsyncMock(return_value=mock_draft)
-        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(
-            return_value=None
-        )
+        limit_policy_repository.get_default_policy_for_tenant = AsyncMock(return_value=None)
 
         with pytest.raises(
             ResourceBlockedServiceException,
@@ -794,9 +746,7 @@ class TestFlowsService:
             )
 
     @pytest.mark.asyncio
-    async def test_publish_flow_version_materializes_flow_snapshot(
-        self, flows_service, repository
-    ):
+    async def test_publish_flow_version_materializes_flow_snapshot(self, flows_service, repository):
         tenant_id = uuid4()
         flow_id = uuid4()
         version_id = uuid4()

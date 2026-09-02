@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -17,6 +18,9 @@ from domain.conversation.schemas.conversation import (
     ConversationRequest,
     SSEEventType,
 )
+from domain.conversation.services.conversation_continuity_service import (
+    ConversationContinuityService,
+)
 from domain.conversation.services.conversation_mcp_tools import build_conversation_mcp_tools
 from domain.conversation.services.conversation_turn_assembler import ConversationTurnAssembler
 from domain.conversation.services.sse_writer import SSEWriter
@@ -26,13 +30,18 @@ from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.execution import Channel
 from domain.llm.adapters.openai_provider import OpenAIProviderAdapter
-from domain.llm.schemas.llm import LLMResult
+from domain.llm.schemas.llm import LLMProviderType, LLMResult
+from domain.llm.services.cost_engine import CostEngine
 from domain.user_prompts.repositories.user_prompts_repository import (
     UserPromptsRepository,
 )
 from exceptions.service_exceptions import DomainValidationException
 
 logger = get_logger(__name__)
+
+
+def _int_or_zero(value: object) -> int:
+    return int(value) if isinstance(value, (int, float)) else 0
 
 
 class ConversationService(ConversationServicePort):
@@ -44,6 +53,8 @@ class ConversationService(ConversationServicePort):
         agents_repository: AgentsRepository,
         user_prompts_repository: UserPromptsRepository,
         tracer: RuntimeTracerPort,
+        cost_engine: CostEngine | None = None,
+        continuity_service: ConversationContinuityService | None = None,
     ) -> None:
         self.openai_provider = openai_provider
         self.idempotency = idempotency
@@ -51,10 +62,129 @@ class ConversationService(ConversationServicePort):
         self.agents_repository = agents_repository
         self.user_prompts_repository = user_prompts_repository
         self.tracer = tracer
+        self.cost_engine = cost_engine
+        self.continuity_service = continuity_service
         self.turn_assembler = ConversationTurnAssembler(
             agents_repository=agents_repository,
             user_prompts_repository=user_prompts_repository,
         )
+
+    async def _record_turn_usage(
+        self,
+        *,
+        tenant_id: UUID,
+        session_id: UUID,
+        model: str,
+        llm_result: LLMResult,
+    ) -> None:
+        """Put a direct-conversation turn in the same ledger as graph execution.
+
+        This endpoint calls the provider adapter directly rather than going through
+        `LLMExecutor`, so without this its spend was invisible to the product's own database.
+        Failures are logged, never raised: accounting must not break a turn already streamed.
+        """
+
+        try:
+            token_usage = llm_result.token_usage or {}
+            input_tokens = _int_or_zero(token_usage.get("input_tokens"))
+            output_tokens = _int_or_zero(token_usage.get("output_tokens"))
+            cost_usd: Decimal | None = None
+            if self.cost_engine is not None:
+                cost = await self.cost_engine.compute_cost(
+                    provider=LLMProviderType.OPENAI.value,
+                    provider_model=model,
+                    token_usage={
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    },
+                )
+                cost_usd = Decimal(str(cost)) if cost is not None else None
+            await self.execution_repository.record_llm_usage(
+                tenant_id=tenant_id,
+                flow_run_id=None,
+                node_run_id=None,
+                agent_run_id=None,
+                session_id=session_id,
+                provider=LLMProviderType.OPENAI.value,
+                provider_model=model,
+                task_type="conversation_turn",
+                inference_layer="LLM",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost_usd,
+                latency_ms=llm_result.latency_ms,
+            )
+        except Exception:
+            logger.exception(
+                "conversation_turn_usage_not_recorded",
+                tenant_id=str(tenant_id),
+                session_id=str(session_id),
+            )
+
+    async def _bound_conversation_growth(
+        self,
+        *,
+        tenant_id: UUID,
+        session_id: UUID,
+        conversation_key: str | None,
+        turn_text: str,
+    ) -> None:
+        """Track how large the provider-side conversation has grown, and roll it when it is too big.
+
+        The transcript lives with the provider, so the size here is an estimate maintained from the
+        text this service sends and receives. Crossing the threshold starts a **new** provider
+        conversation seeded with a carry-forward summary, instead of letting the old one grow
+        without bound or letting the Redis TTL drop it entirely.
+        """
+
+        continuity = self.continuity_service
+        if continuity is None or not conversation_key:
+            return
+        try:
+            decision = await continuity.record_turn(
+                conversation_key=conversation_key, text=turn_text
+            )
+            if not decision.should_roll_over:
+                return
+            summary_text = await self._build_carry_forward_summary(
+                conversation_key=conversation_key, latest_turn=turn_text
+            )
+            with self.tracer.observe(
+                as_type="span",
+                name="domain.conversation.rollover",
+                input={
+                    "conversation_key": conversation_key,
+                    "reason_code": decision.reason_code,
+                    "turns": decision.growth.turns,
+                    "estimated_tokens": decision.growth.estimated_tokens,
+                },
+            ) as rollover_span:
+                await self.openai_provider.roll_over_conversation(
+                    tenant_id=tenant_id,
+                    conversation_key=conversation_key,
+                    session_id=session_id,
+                    summary_text=summary_text,
+                    growth=decision.growth,
+                )
+                if rollover_span:
+                    rollover_span.success(output={"rolled_over": True})
+        except Exception:
+            logger.exception("conversation_rollover_failed", conversation_key=conversation_key)
+
+    async def _build_carry_forward_summary(self, *, conversation_key: str, latest_turn: str) -> str:
+        """Text that seeds the replacement conversation.
+
+        Layers the previous carry-forward under the newest turn so successive rollovers keep a
+        thread rather than only the last exchange.
+        """
+
+        previous = None
+        if self.continuity_service is not None:
+            previous = await self.continuity_service.carry_forward_text(
+                conversation_key=conversation_key
+            )
+        parts = [part for part in (previous, latest_turn.strip()) if part]
+        return "\n\n".join(parts)
 
     def _build_structured_error(
         self,
@@ -462,6 +592,18 @@ class ConversationService(ConversationServicePort):
                             "tool_count": len(streaming_request.tools),
                         },
                     )
+                await self._record_turn_usage(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    model=model,
+                    llm_result=llm_result,
+                )
+                await self._bound_conversation_growth(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    conversation_key=streaming_request.conversation_key,
+                    turn_text=f"{request.user_input}\n{final_text}",
+                )
                 if interaction_id is not None:
                     await self.execution_repository.update_interaction_result(
                         interaction_id=interaction_id,

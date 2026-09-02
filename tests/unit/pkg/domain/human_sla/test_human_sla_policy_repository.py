@@ -49,9 +49,7 @@ class TestHumanSLAPolicyRepositoryResolvePolicy:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.resolve_policy(
             tenant_id=tenant_id, node="ToolNode", fallback_reason="TOOL_FAILURE"
@@ -75,9 +73,7 @@ class TestHumanSLAPolicyRepositoryResolvePolicy:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.resolve_policy(
             tenant_id=tenant_id, node="ToolNode", fallback_reason="LOW_CONFIDENCE"
@@ -136,16 +132,12 @@ class TestHumanSLAPolicyRepositoryGetPolicyWithRules:
         result1 = MagicMock()
         result1.scalar_one_or_none = MagicMock(return_value=policy_row)
         result2 = MagicMock()
-        result2.scalars.return_value.all = MagicMock(
-            return_value=[rule0, rule1]
-        )
+        result2.scalars.return_value.all = MagicMock(return_value=[rule0, rule1])
         mock_session.execute = AsyncMock(side_effect=[result1, result2])
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.get_policy_with_rules(human_sla_policy_id=policy_id)
 
@@ -168,13 +160,9 @@ class TestHumanSLAPolicyRepositoryGetPolicyWithRules:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        result = await repository.get_policy_with_rules(
-            human_sla_policy_id=policy_id
-        )
+        result = await repository.get_policy_with_rules(human_sla_policy_id=policy_id)
 
         assert result is None
         mock_session.execute.assert_called_once()

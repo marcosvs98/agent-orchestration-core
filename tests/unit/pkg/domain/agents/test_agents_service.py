@@ -11,7 +11,7 @@ from domain.agents.schemas.agents import (
     NodeAgentBindingCreate,
 )
 from domain.agents.services.agents_service import AgentsService
-from exceptions.service_exceptions import NotFoundServiceException, DomainValidationException
+from exceptions.service_exceptions import NotFoundServiceException
 
 
 class TestAgentsService:
@@ -35,9 +35,7 @@ class TestAgentsService:
         return AgentsService(repository=repository, authoring_events=authoring_events)
 
     @pytest.mark.asyncio
-    async def test_list_agents_returns_empty_list_when_no_results(
-        self, agents_service, repository
-    ):
+    async def test_list_agents_returns_empty_list_when_no_results(self, agents_service, repository):
         tenant_id = uuid4()
         repository.list_agents = AsyncMock(return_value=[])
 
@@ -47,9 +45,7 @@ class TestAgentsService:
         repository.list_agents.assert_called_once_with(tenant_id=tenant_id, limit=200)
 
     @pytest.mark.asyncio
-    async def test_list_agents_returns_agents_filtered_by_tenant(
-        self, agents_service, repository
-    ):
+    async def test_list_agents_returns_agents_filtered_by_tenant(self, agents_service, repository):
         tenant_id = uuid4()
         agent_id = uuid4()
         mock_agent = SimpleNamespace(agent_id=agent_id, name="Test Agent")
@@ -128,9 +124,7 @@ class TestAgentsService:
         )
 
     @pytest.mark.asyncio
-    async def test_list_agent_versions_filters_by_status(
-        self, agents_service, repository
-    ):
+    async def test_list_agent_versions_filters_by_status(self, agents_service, repository):
         tenant_id = uuid4()
         agent_id = uuid4()
         version_id = uuid4()
@@ -148,6 +142,7 @@ class TestAgentsService:
             supported_tool_config_hash_prefix=None,
             persona_config=None,
             system_prompt=None,
+            ai_execution_policy_version_id=None,
         )
         repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.list_agent_versions = AsyncMock(return_value=[mock_version])
@@ -184,6 +179,7 @@ class TestAgentsService:
             supported_tool_config_hash_prefix=None,
             persona_config=None,
             system_prompt=None,
+            ai_execution_policy_version_id=None,
         )
         repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.create_agent_version = AsyncMock(return_value=mock_version)
@@ -217,9 +213,7 @@ class TestAgentsService:
         agent_version_id = uuid4()
         binding_id = uuid4()
         mock_agent = SimpleNamespace(agent_id=agent_id, tenant_id=tenant_id)
-        mock_agent_version = SimpleNamespace(
-            agent_version_id=agent_version_id, agent_id=agent_id
-        )
+        mock_agent_version = SimpleNamespace(agent_version_id=agent_version_id, agent_id=agent_id)
         mock_flow = SimpleNamespace(flow_id=flow_id, tenant_id=tenant_id)
         mock_flow_version = SimpleNamespace(flow_version_id=version_id, flow_id=flow_id)
         mock_node = SimpleNamespace(node_id=node_id, flow_version_id=version_id)
@@ -231,9 +225,7 @@ class TestAgentsService:
         repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.get_agent_version = AsyncMock(return_value=mock_agent_version)
         repository.create_node_agent_binding = AsyncMock(return_value=mock_binding)
-        binding_create = NodeAgentBindingCreate(
-            node_id=node_id, agent_version_id=agent_version_id
-        )
+        binding_create = NodeAgentBindingCreate(node_id=node_id, agent_version_id=agent_version_id)
 
         async def mock_get_session():
             class MockSession:
@@ -282,17 +274,13 @@ class TestAgentsService:
         agent_version_id = uuid4()
         agent_id = uuid4()
         mock_agent = SimpleNamespace(agent_id=agent_id, tenant_id=other_tenant_id)
-        mock_agent_version = SimpleNamespace(
-            agent_version_id=agent_version_id, agent_id=agent_id
-        )
+        mock_agent_version = SimpleNamespace(agent_version_id=agent_version_id, agent_id=agent_id)
         mock_flow = SimpleNamespace(flow_id=uuid4(), tenant_id=tenant_id)
         mock_flow_version = SimpleNamespace(flow_version_id=uuid4(), flow_id=uuid4())
         mock_node = SimpleNamespace(node_id=node_id, flow_version_id=uuid4())
         repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.get_agent_version = AsyncMock(return_value=mock_agent_version)
-        binding_create = NodeAgentBindingCreate(
-            node_id=node_id, agent_version_id=agent_version_id
-        )
+        binding_create = NodeAgentBindingCreate(node_id=node_id, agent_version_id=agent_version_id)
 
         async def mock_get_session():
             class MockSession:

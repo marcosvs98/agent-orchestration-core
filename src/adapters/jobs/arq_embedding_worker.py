@@ -7,7 +7,8 @@ from arq.connections import RedisSettings
 import settings
 from adapters.cache.redis_adapter import RedisAdapter
 from adapters.rag.embedding_adapter import OpenAIEmbeddingAdapter
-from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
+from adapters.observability.otel_bootstrap import bootstrap_telemetry, shutdown_telemetry
+from adapters.observability.otel_runtime_tracer import OtelRuntimeTracer
 from domain.ai_policy.repositories.ai_repository import AIRepository
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.governance.services.rag_policy_service import RagPolicyService
@@ -132,8 +133,9 @@ async def process_embedding_job(ctx: dict[str, Any], payload_data: dict[str, obj
 
 
 async def startup(ctx: dict[str, Any]) -> None:
+    bootstrap_telemetry(component="embedding-worker")
     db = DatabaseConnection(engine=engine, sessionmaker=async_session)
-    tracer = LangfuseRuntimeTracer()
+    tracer = OtelRuntimeTracer()
     cache_adapter = RedisAdapter(silent_mode=settings.CACHE_SILENT_MODE)
     execution_repository = ExecutionRepository(db, tracer=tracer, cache_adapter=cache_adapter)
     rag_repository = RagRepository(db, tracer=tracer, cache_adapter=cache_adapter)
@@ -195,9 +197,14 @@ async def _append_execution_event(
     )
 
 
+async def shutdown(ctx: dict[str, Any]) -> None:
+    shutdown_telemetry()
+
+
 class WorkerSettings:
     functions = [process_embedding_job]
     on_startup = startup
+    on_shutdown = shutdown
     redis_settings = RedisSettings(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,

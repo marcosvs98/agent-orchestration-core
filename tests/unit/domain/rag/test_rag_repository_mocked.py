@@ -97,9 +97,7 @@ async def test_get_chunking_rule(rag_repo: RagRepository) -> None:
     row = MagicMock(spec=RagChunkingRuleModel)
     session.execute = AsyncMock(return_value=execute_result_scalar_one(row))
     bind_rag_session(rag_repo, session)
-    out = await rag_repo.get_chunking_rule(
-        tenant_id=uuid4(), rag_chunking_rule_id=uuid4()
-    )
+    out = await rag_repo.get_chunking_rule(tenant_id=uuid4(), rag_chunking_rule_id=uuid4())
     assert out is row
 
 
@@ -144,7 +142,5 @@ async def test_invalidate_query_cache_vector_store(rag_repo: RagRepository) -> N
     session = async_session_double()
     session.execute = AsyncMock()
     bind_rag_session(rag_repo, session)
-    await rag_repo.invalidate_query_cache_vector_store(
-        tenant_id=uuid4(), vector_store_id=uuid4()
-    )
+    await rag_repo.invalidate_query_cache_vector_store(tenant_id=uuid4(), vector_store_id=uuid4())
     session.execute.assert_awaited()

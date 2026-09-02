@@ -26,7 +26,16 @@ Clients can send **typed parts** (`text` and `media_ref`) alongside the legacy `
 { "user_input": "<composed text>" }
 ```
 
+!!! warning "The shipped wiring cannot resolve a media ref"
+    `containers.py` binds `blob_store` to `UnconfiguredBlobStore`, which raises
+    `blob_store_unconfigured` for every ref, and no endpoint writes bytes into a blob store. Media
+    parts therefore fail in a default deployment until a real `BlobStorePort` is bound. With
+    `DOCLING_ENABLED=false` the converter is `FakeDocumentToText`, which returns a marker string
+    for a PDF **without raising** — the marker then flows into the prompt as if it were the
+    document. See [Known limitations](../Develop/limitations.md).
+
 ## Related
 
+- `examples/documents/` (repository root) — both pipelines run end to end against an in-memory blob store, plus the Docling conversion itself
 - [SSE and runtime](sse-and-runtime.md)
 - [RAG runtime — ingest from media](../RAG/runtime-and-integration.md#ingest-from-media)

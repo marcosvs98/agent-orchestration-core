@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from uuid import UUID, uuid4
+
+from domain.execution.services.state_machine import RunStatus
 
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.schemas.execution import (
-    AgentRun,
     FlowRun,
     FlowRunCreate,
     FlowRunResumeInput,
@@ -40,7 +41,10 @@ class ExecutionPlaneController:
             methods=["POST"],
             response_model=FlowRun,
             status_code=status.HTTP_201_CREATED,
-            responses=self._resp405(),
+            responses={
+                **self._resp405(),
+                status.HTTP_202_ACCEPTED: {"model": FlowRun},
+            },
         )
         r(
             "/tool-runs",
@@ -83,12 +87,6 @@ class ExecutionPlaneController:
             response_model=list[NodeRun],
         )
         r(
-            "/agent-runs",
-            self.list_agent_runs,
-            methods=["GET"],
-            response_model=list[AgentRun],
-        )
-        r(
             "/execution-events",
             self.list_execution_events,
             methods=["GET"],
@@ -102,9 +100,14 @@ class ExecutionPlaneController:
     async def create_flow_run(
         self,
         request: Request,
+        response: Response,
         flow_run: FlowRunCreate,
         auth: AuthContext = Depends(get_auth_context),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        wait: bool = Query(
+            default=False,
+            description="Block until the run reaches a terminal or waiting state.",
+        ),
     ) -> FlowRun:
         if not idempotency_key:
             raise RouterValidationException(errors=["missing_idempotency_key"])
@@ -114,7 +117,7 @@ class ExecutionPlaneController:
             try:
                 trace_uuid = UUID(trace_id_header)
             except ValueError:
-                trace_uuid = UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
+                trace_uuid = uuid4()
         else:
             trace_uuid = uuid4()
         trace_id_str = str(trace_uuid)
@@ -123,6 +126,7 @@ class ExecutionPlaneController:
         with self.tracer.observe(
             as_type="span",
             name="domain.execution.plane_controller.create_flow_run",
+            metadata={"tenant_id": str(auth.tenant_id)},
             input={"endpoint": request.url.path, "idempotency_key": idempotency_key},
             trace_context={"trace_id": trace_id_hex},
         ) as span_handle:
@@ -136,7 +140,10 @@ class ExecutionPlaneController:
                 external_message_id=request.headers.get("X-External-Message-Id"),
                 request_id=request.headers.get("X-Request-Id"),
                 trace_id=trace_id_str,
+                wait=wait,
             )
+            if flow_run.status == RunStatus.QUEUED:
+                response.status_code = status.HTTP_202_ACCEPTED
             if span_handle:
                 span_handle.success(output=flow_run.model_dump(mode="json"))
             return flow_run
@@ -159,7 +166,7 @@ class ExecutionPlaneController:
                 auth=auth,
                 endpoint=request.url.path,
                 idempotency_key=idempotency_key,
-                payload=payload,
+                tool_run=payload,
             )
 
     async def execute_tool_run(
@@ -194,7 +201,7 @@ class ExecutionPlaneController:
             try:
                 trace_uuid = UUID(trace_id_header)
             except ValueError:
-                trace_uuid = UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
+                trace_uuid = uuid4()
         else:
             trace_uuid = uuid4()
         trace_id_str = str(trace_uuid)
@@ -239,21 +246,6 @@ class ExecutionPlaneController:
             input={"flow_run_id": flow_run_id, "limit": limit},
         ):
             return await self.boundary.list_node_runs(
-                auth=auth, flow_run_id=flow_run_id, limit=limit
-            )
-
-    async def list_agent_runs(
-        self,
-        flow_run_id: str | None = Query(default=None),
-        limit: int = Query(default=200, ge=1, le=1000),
-        auth: AuthContext = Depends(get_auth_context),
-    ) -> list[AgentRun]:
-        with self.tracer.observe(
-            as_type="span",
-            name="domain.execution.plane_controller.list_agent_runs",
-            input={"flow_run_id": flow_run_id, "limit": limit},
-        ):
-            return await self.boundary.list_agent_runs(
                 auth=auth, flow_run_id=flow_run_id, limit=limit
             )
 

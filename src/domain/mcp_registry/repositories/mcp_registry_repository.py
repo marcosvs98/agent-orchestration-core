@@ -144,15 +144,15 @@ class McpRegistryRepository:
             )
             tool_ids = sorted(
                 (r[0] for r in (await session.execute(t_stmt)).fetchall()),
-                key=lambda x: str(x),
+                key=str,
             )
             vector_store_ids = sorted(
                 (r[0] for r in (await session.execute(v_stmt)).fetchall()),
-                key=lambda x: str(x),
+                key=str,
             )
             user_prompt_ids = sorted(
                 (r[0] for r in (await session.execute(p_stmt)).fetchall()),
-                key=lambda x: str(x),
+                key=str,
             )
             return tool_ids, vector_store_ids, user_prompt_ids
 
@@ -178,7 +178,7 @@ class McpRegistryRepository:
                 status="ACTIVE",
                 flow_snapshot_id=flow_snapshot_id,
                 flow_deployment_id=flow_deployment_id,
-                metadata_col=server_metadata,
+                server_metadata=server_metadata,
             )
             session.add(server)
             await session.flush()
@@ -303,7 +303,7 @@ class McpRegistryRepository:
             vss = {r[0] for r in (await session.execute(v_stmt)).fetchall()}
             ups = {r[0] for r in (await session.execute(p_stmt)).fetchall()}
             ob_ref = outbound_authorization_secret_ref_from_server_metadata(
-                getattr(server_row, "metadata_col", None)
+                server_row.server_metadata
             )
             return McpBindingState(
                 tenant_id=server_row.tenant_id,
@@ -387,7 +387,7 @@ class McpRegistryRepository:
                         slug = f"{slug}_{str(up.user_prompt_id).replace('-', '')[:8]}"
                     slugs[slug] = 1
                     prompt_rows.append((up.user_prompt_id, slug, up.title or "", up.content or ""))
-            vss = tuple(sorted(state.vector_store_ids, key=lambda x: str(x)))
+            vss = tuple(sorted(state.vector_store_ids, key=str))
             tool_rows.sort(key=lambda b: str(b.tool_config_id))
             prompt_rows.sort(key=lambda x: str(x[0]))
         return McpServerBuildSpec(
@@ -417,16 +417,17 @@ class McpRegistryRepository:
             server = result.scalar_one_or_none()
             if server is None:
                 return False
-            prev = server.metadata_col if isinstance(server.metadata_col, dict) else {}
+            prev = server.server_metadata if isinstance(server.server_metadata, dict) else {}
             meta = dict(prev)
-            if outbound_authorization_secret_ref is None or not str(
-                outbound_authorization_secret_ref
-            ).strip():
+            if (
+                outbound_authorization_secret_ref is None
+                or not str(outbound_authorization_secret_ref).strip()
+            ):
                 meta.pop(OUTBOUND_AUTHORIZATION_SECRET_REF_KEY, None)
             else:
                 meta[OUTBOUND_AUTHORIZATION_SECRET_REF_KEY] = str(
                     outbound_authorization_secret_ref
                 ).strip()
-            server.metadata_col = meta or None
+            server.server_metadata = meta or None
             await session.commit()
             return True

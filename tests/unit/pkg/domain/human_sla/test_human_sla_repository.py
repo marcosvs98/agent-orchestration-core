@@ -38,9 +38,7 @@ class TestHumanSLARepositoryGetLastOpenCaseForSession:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.get_last_open_case_for_session(
             tenant_id=tenant_id, session_id=session_id
@@ -69,9 +67,7 @@ class TestHumanSLARepositoryGetLastOpenCaseForSession:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.get_last_open_case_for_session(
             tenant_id=tenant_id, session_id=session_id
@@ -129,15 +125,11 @@ class TestHumanSLARepositoryCreateCase:
         insert_result.scalar_one_or_none = MagicMock(return_value=case_id)
         select_result = MagicMock()
         select_result.scalar_one = MagicMock(return_value=created_row)
-        mock_session.execute = AsyncMock(
-            side_effect=[insert_result, select_result]
-        )
+        mock_session.execute = AsyncMock(side_effect=[insert_result, select_result])
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         result = await repository.create_case(case_create)
 
@@ -171,9 +163,7 @@ class TestHumanSLARepositoryUpdateCaseEscalation:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
         await repository.update_case_escalation(
             sla_case_id=sla_case_id,
@@ -209,13 +199,9 @@ class TestHumanSLARepositoryUpdateCaseSlaBreached:
         database_connection.get_session.return_value.__aenter__ = AsyncMock(
             return_value=mock_session
         )
-        database_connection.get_session.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
+        database_connection.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        await repository.update_case_sla_breached(
-            sla_case_id=sla_case_id, tenant_id=tenant_id
-        )
+        await repository.update_case_sla_breached(sla_case_id=sla_case_id, tenant_id=tenant_id)
 
         assert mock_session.execute.await_count == 1
         assert mock_session.commit.await_count == 1

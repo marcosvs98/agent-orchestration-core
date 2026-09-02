@@ -94,8 +94,8 @@ class SubstituteVal:
                         else None
                         for item in val
                     ]
-                except (KeyError, AttributeError, TypeError):
-                    raise DomainValidationException(message="edge_evaluation_error")
+                except (KeyError, AttributeError, TypeError) as exc:
+                    raise DomainValidationException(message="edge_evaluation_error") from exc
             elif hasattr(val, name):
                 val = getattr(val, name)
             else:
@@ -106,8 +106,8 @@ class SubstituteVal:
                     raise DomainValidationException(message="edge_evaluation_error")
                 try:
                     val = val[idx]
-                except (IndexError, TypeError):
-                    raise DomainValidationException(message="edge_evaluation_error")
+                except (IndexError, TypeError) as exc:
+                    raise DomainValidationException(message="edge_evaluation_error") from exc
 
         return val
 
@@ -162,7 +162,7 @@ SIMPLE_VALUES = (
     | (LEFT_PARENTHESIS + EXPR + RIGHT_PARENTHESIS)
 )
 
-EXPR << pyparsing.infix_notation(
+EXPR << pyparsing.infix_notation(  # pylint: disable=expression-not-assigned
     SIMPLE_VALUES,
     [
         (BINARY_OPERATORS, 2, pyparsing.opAssoc.LEFT),

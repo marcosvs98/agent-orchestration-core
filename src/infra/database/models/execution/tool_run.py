@@ -32,6 +32,7 @@ class ToolRun(ORMBaseModel):
     output = Column(JSONB, nullable=False, server_default="{}")
     error = Column(JSONB, nullable=False, server_default="{}")
     idempotency_key = Column(String(length=255), nullable=True)
+    tool_call_id = Column(String(length=128), nullable=True)
     has_side_effect = Column(Boolean, nullable=False, server_default="false")
     estimated_cost = Column(Numeric(18, 6), nullable=True)
     billing_policy_version_id = Column(

@@ -17,6 +17,7 @@ Use this index to map **SQL table** → **domain area** → **typical `src/domai
 |-------|-------------|--------------|
 | `end_user` | Identity / end users | `domain/conversation/` / context |
 | `session` | Conversation session | `domain/conversation/` |
+| `conversation_summary` | Durable carry-forward summary for provider-conversation rollover | `domain/conversation/` |
 | `user_memory_profile` | Memory | `domain/context/` |
 | `user_prompt` | User prompts | `domain/user_prompts/` |
 
@@ -52,6 +53,10 @@ Use this index to map **SQL table** → **domain area** → **typical `src/domai
 | `graph_state` | Graph runtime state | `domain/execution/` |
 | `node_run` | Node execution | `domain/execution/` |
 | `agent_run` | Agent invocation | `domain/execution/` |
+| `agent_run_message` | Append-only agent transcript (`role`, `source`, `trust_level`) | `domain/execution/` |
+| `agent_run_event` | Append-only agent-run events (reuses `ExecutionEventType`) | `domain/execution/` |
+| `agent_run_artifact` | Agent-run output artifacts (A2A `Part` list + payload) | `domain/execution/` |
+| `agent_delegation` | One row per delegated A2A task | `domain/execution/` |
 | `tool_run` | Tool invocation | `domain/execution/` |
 | `step_run` | Onboarding steps | `domain/onboarding/` |
 | `execution_event` | Runtime events | `domain/execution/` |
@@ -109,6 +114,7 @@ Use this index to map **SQL table** → **domain area** → **typical `src/domai
 | `llm_pricing` | Pricing | `domain/governance/` / LLM |
 | `llm_model_mapping` | Aliases | `domain/llm/` |
 | `llm_provider_config` | Provider config | `domain/llm/` |
+| `llm_usage_ledger` | Append-only spend ledger (tokens, `cost_usd`, `inference_layer`) | `domain/llm/` / execution |
 
 ## Prompts
 
@@ -146,6 +152,7 @@ Use this index to map **SQL table** → **domain area** → **typical `src/domai
 | `mcp_server_vector_store` | RAG link | `domain/mcp_registry/` |
 | `mcp_server_user_prompt` | Prompts | `domain/mcp_registry/` |
 | `mcp_server_credential` | Credentials | `domain/mcp_registry/` |
+| `tenant_mcp_credential` | The tenant's own MCP server + keys, attached to conversation turns as provider tools (`McpConfigLoader`). ORM lives under `models/governance/`. | `domain/conversation/` |
 
 ## Auditing (authoring)
 

@@ -6,12 +6,18 @@ from typing import Any, Dict, List, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+from domain.llm.schemas.usage import LLMUsageRecord
 from domain.prompts.schemas.prompt import NodeType
 from domain.execution.services.graph_runtime.execution_plan import AvailableTool
 
 USER_CONTEXT_READ_GATE_STATE_KEY = "user_context_enrichment"
 NODE_OUTPUTS_BY_NODE_ID_KEY = "_node_outputs_by_node_id"
 MEMORY_CONTENT_SUMMARIZE_STAGING_KEY = "_MEMORY_CONTENT_SUMMARIZE_input"
+RETRY_COUNTS_STATE_KEY = "retry_counts"
+RETRY_OPERATION_IDS_STATE_KEY = "retry_operation_ids"
+FINALIZED_RESULTS_STATE_KEY = "finalized_results"
+FALLBACK_REASON_METADATA_KEY = "fallback_reason"
+FALLBACK_SOURCE_NODE_METADATA_KEY = "fallback_source_node"
 
 
 class NodeExecutionStatus(StrEnum):
@@ -147,6 +153,7 @@ class NodeResult(BaseModel):
     metrics: Dict[str, Any] | None = None
     next_state: Dict[str, Any] | None = None
     memory: List[Dict[str, Any]] | None = None
+    usage: LLMUsageRecord | None = None
 
 
 class NodeExecutor(Protocol):

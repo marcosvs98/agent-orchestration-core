@@ -49,9 +49,7 @@ class TestAIService:
         policy_create = AIExecutionPolicyCreate(description="Test Policy")
         principal_id = "user-123"
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, description="Test Policy"
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, description="Test Policy")
         repository.create_ai_execution_policy = AsyncMock(return_value=mock_policy)
 
         result = await ai_service.create_ai_execution_policy(
@@ -87,9 +85,7 @@ class TestAIService:
         )
         principal_id = "user-123"
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_model = SimpleNamespace(model_id=model_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
@@ -103,9 +99,7 @@ class TestAIService:
         )
         repository.get_ai_execution_policy = AsyncMock(return_value=mock_policy)
         repository.get_model = AsyncMock(return_value=mock_model)
-        repository.create_ai_execution_policy_version = AsyncMock(
-            return_value=mock_version
-        )
+        repository.create_ai_execution_policy_version = AsyncMock(return_value=mock_version)
 
         result = await ai_service.create_ai_execution_policy_version(
             tenant_id=tenant_id,
@@ -154,9 +148,7 @@ class TestAIService:
             ai_execution_policy_id=policy_id, model_id=model_id
         )
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=other_tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=other_tenant_id)
         repository.get_ai_execution_policy = AsyncMock(return_value=mock_policy)
 
         with pytest.raises(NotFoundServiceException, match="ai_execution_policy_not_found"):
@@ -167,9 +159,7 @@ class TestAIService:
             )
 
     @pytest.mark.asyncio
-    async def test_list_models_returns_empty_list_when_no_results(
-        self, ai_service, repository
-    ):
+    async def test_list_models_returns_empty_list_when_no_results(self, ai_service, repository):
         repository.list_models = AsyncMock(return_value=[])
 
         result = await ai_service.list_models()
@@ -219,9 +209,7 @@ class TestAIService:
     ):
         tenant_id = uuid4()
         policy_id = uuid4()
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         repository.get_ai_execution_policy = AsyncMock(return_value=mock_policy)
         repository.list_ai_execution_policy_versions = AsyncMock(return_value=[])
 
@@ -254,9 +242,7 @@ class TestAIService:
         model_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Ready for production")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,
@@ -278,10 +264,9 @@ class TestAIService:
             config_hash=None,
         )
         repository.get_ai_execution_policy = AsyncMock(return_value=mock_policy)
-        repository.get_ai_execution_policy_version = AsyncMock(return_value=mock_version)
         repository.set_ai_execution_policy_version_status = AsyncMock()
         repository.get_ai_execution_policy_version = AsyncMock(
-            return_value=mock_published_version
+            side_effect=[mock_version, mock_published_version]
         )
 
         result = await ai_service.publish_ai_execution_policy_version(
@@ -309,9 +294,7 @@ class TestAIService:
         version_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Ready")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,
@@ -342,9 +325,7 @@ class TestAIService:
         model_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Replaced by v2")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,
@@ -366,10 +347,9 @@ class TestAIService:
             config_hash=None,
         )
         repository.get_ai_execution_policy = AsyncMock(return_value=mock_policy)
-        repository.get_ai_execution_policy_version = AsyncMock(return_value=mock_version)
         repository.set_ai_execution_policy_version_status = AsyncMock()
         repository.get_ai_execution_policy_version = AsyncMock(
-            return_value=mock_deprecated_version
+            side_effect=[mock_version, mock_deprecated_version]
         )
 
         result = await ai_service.deprecate_ai_execution_policy_version(
@@ -397,9 +377,7 @@ class TestAIService:
         version_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Replace")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,
@@ -430,9 +408,7 @@ class TestAIService:
         model_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Security issue")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,
@@ -454,10 +430,9 @@ class TestAIService:
             config_hash=None,
         )
         repository.get_ai_execution_policy = AsyncMock(return_value=mock_policy)
-        repository.get_ai_execution_policy_version = AsyncMock(return_value=mock_version)
         repository.set_ai_execution_policy_version_status = AsyncMock()
         repository.get_ai_execution_policy_version = AsyncMock(
-            return_value=mock_disabled_version
+            side_effect=[mock_version, mock_disabled_version]
         )
 
         result = await ai_service.disable_ai_execution_policy_version(
@@ -485,9 +460,7 @@ class TestAIService:
         version_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Disable")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,
@@ -517,9 +490,7 @@ class TestAIService:
         version_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="   ")
 
-        mock_policy = SimpleNamespace(
-            ai_execution_policy_id=policy_id, tenant_id=tenant_id
-        )
+        mock_policy = SimpleNamespace(ai_execution_policy_id=policy_id, tenant_id=tenant_id)
         mock_version = SimpleNamespace(
             ai_execution_policy_version_id=version_id,
             ai_execution_policy_id=policy_id,

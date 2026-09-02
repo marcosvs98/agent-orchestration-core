@@ -27,6 +27,6 @@ Other hook classes in the same module (e.g. memory extraction) attach to `on_nod
 
 ## Pointers
 
-- [Tracing and cost](../Develop/tracing-and-cost.md) — Langfuse / trace ids
+- [Tracing and cost](../Develop/tracing-and-cost.md) — OpenTelemetry / trace ids
 - [System events reference](../Develop/system-events-reference.md) — `ExecutionEventType` catalogue
 - [Graph runtime / runtime executor](graph-runtime/runtime-executor.md) — when hooks fire

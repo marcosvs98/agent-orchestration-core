@@ -26,14 +26,9 @@ from seeds.demo.ids import (
     TOOL_CONFIG_DEMO_ID,
     TOOL_DEMO_ID,
 )
-from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
+from seeds.demo.demo_tool_catalog import fetch_demo_tool_rows
 
-# Injected Bearer token at runtime from chat metadata (app-platform JWT).
-_UORA_END_USER_AUTH_HEADERS: dict[str, Any] = {
-    "Authorization": {
-        "interaction_metadata_key": "uora_end_user_authorization",
-    },
-}
+_DEMO_TOOL_HEADERS: dict[str, Any] = {}
 
 
 def _reconcile_http_tool_config_dict(cfg: object, exec_base: str) -> dict[str, Any]:
@@ -51,18 +46,12 @@ def _reconcile_http_tool_config_dict(cfg: object, exec_base: str) -> dict[str, A
     base = exec_base.strip().rstrip("/")
     out["base_url"] = base
     out["url"] = f"{base}{path_norm}" if base else path_norm
-    headers = out.get("headers")
-    if not isinstance(headers, dict):
-        headers = {}
-    else:
-        headers = dict(headers)
-    headers["Authorization"] = dict(_UORA_END_USER_AUTH_HEADERS["Authorization"])
-    out["headers"] = headers
+    out["headers"] = dict(_DEMO_TOOL_HEADERS)
     return out
 
 
 async def seed_tool() -> None:
-    rows = await fetch_uora_platform_tool_rows(
+    rows = await fetch_demo_tool_rows(
         demo_tool_id=TOOL_DEMO_ID,
         demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
     )
@@ -123,7 +112,7 @@ async def seed_tool() -> None:
                     "tenant_knowledge": {"enabled": True},
                     "user_memory_vector": {"enabled": True, "filters_override": {}},
                 },
-                headers=dict(_UORA_END_USER_AUTH_HEADERS),
+                headers=dict(_DEMO_TOOL_HEADERS),
             )
             result = await session.execute(select(Tool).where(Tool.name == tool_display))
             same_name = result.scalar_one_or_none()

@@ -21,7 +21,7 @@ Canonical types:
 |------|------------------|
 | `FlowRunStatus` | `CREATED`, `RUNNING`, `WAITING`, `COMPLETED`, `FAILED`, `ESCALATED` |
 | `NodeRunStatus` | `PENDING`, `RUNNING`, `SKIPPED`, `COMPLETED`, `FAILED` |
-| `AgentRunStatus` | `CREATED`, `RUNNING`, `COMPLETED`, `FAILED` |
+| `AgentRunStatus` | `CREATED`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED` |
 | `ToolRunStatus` | `CREATED`, `EXECUTING`, `SUCCESS`, `ERROR`, `TIMEOUT` |
 
 Methods: `validate_flow`, `validate_node`, `validate_agent`, `validate_tool` — each enforces a **closed** transition table (`*_transitions` dicts on the class) under a traced span.

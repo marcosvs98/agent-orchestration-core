@@ -45,7 +45,7 @@ class AccessPolicyVersionCreate(BaseModel):
     version_major: int = 1
     version_minor: int = 0
     version_patch: int = 0
-    rules: AccessPolicyRules = Field(default_factory=lambda: AccessPolicyRules())
+    rules: AccessPolicyRules = Field(default_factory=AccessPolicyRules)
 
 
 class AccessPolicyResponse(BaseModel):

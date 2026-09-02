@@ -2,7 +2,9 @@
 
 Router: `APIRouter(prefix="/core/v1", dependencies=[get_auth_context])` — `src/domain/flows/controllers/flows_controller.py`.
 
-Several **`:deprecate`** and **`:disable`** flow-version actions are currently **placeholders** and raise `MethodNotAllowedPlaceholderException` (same pattern as [Agents](../Agents/http-api.md)).
+The **`:deprecate`** and **`:disable`** flow-version actions are reserved but not implemented. They
+return **405** and are hidden from the OpenAPI schema, so they do not appear in generated clients
+(same treatment as [Agents](../Agents/http-api.md)).
 
 ## Flows and versions
 

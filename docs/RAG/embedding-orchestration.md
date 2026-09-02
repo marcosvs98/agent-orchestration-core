@@ -5,7 +5,7 @@ This page describes how **query and document embeddings** are produced in the RA
 ## How it works in this repository
 
 1. **`EmbeddingPort`** (`src/domain/rag/ports/embedding.py`) is a small protocol: `generate_embedding` and `generate_embeddings_batch`, each accepting optional `model` and `dimension` overrides.
-2. **`OpenAIEmbeddingAdapter`** (`src/domain/rag/adapters/openai_embedding_adapter.py`) implements that protocol (Redis/Langfuse hooks live with the adapter implementation).
+2. **`OpenAIEmbeddingAdapter`** (`src/domain/rag/adapters/openai_embedding_adapter.py`) implements that protocol (Redis and tracing hooks live with the adapter implementation).
 3. **`EmbeddingExecutor`** (`src/domain/rag/services/embedding_executor.py`) is the domain entry point: it receives an **`EmbeddingExecutionRequest`** or **`EmbeddingBatchExecutionRequest`** (`src/domain/rag/schemas/embedding.py`) with:
    - `contract`: **`EmbeddingContract`** — `provider`, `model`, `dimension`, `metric`, `version`
    - `use_case`: `"indexing"` or `"retrieval"`

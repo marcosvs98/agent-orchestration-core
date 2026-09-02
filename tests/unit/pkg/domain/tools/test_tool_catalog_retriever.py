@@ -1,3 +1,12 @@
+"""ToolCatalogRetriever — semantic tool ranking over the tool-catalog RAG corpus.
+
+This file previously targeted `retrieve_candidates`, which returned `(candidates, evidence)` and
+emitted its own trace span. Commit c51f2f8 replaced it with `retrieve_tools`, which returns
+`list[AvailableTool]` and leaves tracing to the RAG layer. The assertions below cover the behaviour
+that survived the rename: best-score-per-tool ranking, chunk dedupe, the recall multiplier, the
+agent-version binding filter, and not touching the repository when retrieval is empty.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -9,60 +18,19 @@ import pytest
 from domain.rag.schemas.rag import RagContext, RagContextItem, RagContextReason
 from domain.tools.services.tool_catalog_retriever import (
     MAX_TOOL_CATALOG_TOP_K,
+    TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER,
+    TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP,
     ToolCatalogRetriever,
 )
 
 
 class _FakeTracer:
-    def __init__(self) -> None:
-        self.records: list[dict] = []
-
-    def observe(self, *, as_type, name, input):
-        handle = _FakeObservationHandle(
-            tracer=self,
-            as_type=as_type,
-            name=name,
-            input_payload=input,
-        )
-        return _yield_handle(handle)
+    @contextlib.contextmanager
+    def observe(self, **_):
+        yield MagicMock()
 
 
-class _FakeObservationHandle:
-    def __init__(self, *, tracer, as_type: str, name: str, input_payload: dict):
-        self._tracer = tracer
-        self._as_type = as_type
-        self._name = name
-        self._input = input_payload
-        self._output = None
-
-    def success(self, *, output, metadata=None, **kwargs) -> None:
-        self._output = output
-
-    def finalize(self) -> None:
-        self._tracer.records.append(
-            {
-                "as_type": self._as_type,
-                "name": self._name,
-                "input": self._input,
-                "output": self._output,
-            }
-        )
-
-
-@contextlib.contextmanager
-def _yield_handle(handle):
-    try:
-        yield handle
-    finally:
-        handle.finalize()
-
-
-def _cfg_tool_row(
-    *,
-    tool_config_id,
-    tool_id,
-    name: str,
-):
+def _cfg_tool_row(*, tool_config_id, tool_id, name: str):
     cfg = MagicMock()
     cfg.tool_config_id = tool_config_id
     cfg.tool_id = tool_id
@@ -73,215 +41,182 @@ def _cfg_tool_row(
     return cfg, tool
 
 
-@pytest.mark.asyncio
-async def test_retrieve_candidates_returns_top_k_ranked_by_score():
-    tool_config_id_1 = uuid4()
-    tool_config_id_2 = uuid4()
-    tool_id_1 = uuid4()
-    tool_id_2 = uuid4()
-    rag_runtime_service = MagicMock()
-    rag_runtime_service.get_context = AsyncMock(
-        return_value=RagContext(
-            context_items=[
-                RagContextItem(
-                    document_id=uuid4(),
-                    chunk_id=uuid4(),
-                    content="tool one",
-                    score=0.4,
-                    metadata={"tool_config_id": str(tool_config_id_1)},
-                ),
-                RagContextItem(
-                    document_id=uuid4(),
-                    chunk_id=uuid4(),
-                    content="tool two",
-                    score=0.9,
-                    metadata={"tool_config_id": str(tool_config_id_2)},
-                ),
-                RagContextItem(
-                    document_id=uuid4(),
-                    chunk_id=uuid4(),
-                    content="tool one better chunk",
-                    score=0.8,
-                    metadata={"tool_config_id": str(tool_config_id_1)},
-                ),
-            ],
-            eligible=True,
-            reason=RagContextReason.OK,
-        )
-    )
-    tools_repository = MagicMock()
+def _context(*items: RagContextItem, reason: RagContextReason = RagContextReason.OK) -> RagContext:
+    return RagContext(context_items=list(items), eligible=True, reason=reason)
 
-    async def _repo_side_effect(*, tenant_id, tool_config_ids):
-        by = {tool_config_id_1: _cfg_tool_row(
-            tool_config_id=tool_config_id_1, tool_id=tool_id_1, name="tool-1"
-        ), tool_config_id_2: _cfg_tool_row(
-            tool_config_id=tool_config_id_2, tool_id=tool_id_2, name="tool-2"
-        )}
-        return [by[i] for i in tool_config_ids if i in by]
 
-    tools_repository.list_published_tool_configs_with_tools_by_config_ids = (
-        AsyncMock(side_effect=_repo_side_effect)
+def _item(tool_config_id, score: float, content: str = "chunk") -> RagContextItem:
+    return RagContextItem(
+        document_id=uuid4(),
+        chunk_id=uuid4(),
+        content=content,
+        score=score,
+        metadata={"tool_config_id": str(tool_config_id)},
     )
-    tracer = _FakeTracer()
-    retriever = ToolCatalogRetriever(
+
+
+def _retriever(rag_runtime_service, tools_repository) -> ToolCatalogRetriever:
+    return ToolCatalogRetriever(
         rag_runtime_service=rag_runtime_service,
-        tracer=tracer,
+        tracer=_FakeTracer(),
         tools_repository=tools_repository,
     )
 
-    candidates, evidence = await retriever.retrieve_candidates(
-        tenant_id=uuid4(),
-        rag_config_id=uuid4(),
-        user_input="find second tool",
-        top_k=2,
-    )
 
-    assert [item.tool_config_id for item in candidates] == [
-        tool_config_id_2,
-        tool_config_id_1,
-    ]
-    assert len(evidence) == 2
-    assert evidence[0]["tool_config_id"] == str(tool_config_id_2)
-    assert candidates[0].retrieval_score == pytest.approx(0.9)
-    record = tracer.records[0]
-    assert record["name"] == "domain.tools.tool_catalog_retriever.retrieve_candidates"
-    assert record["output"]["fallback_used"] is False
-    assert record["output"]["candidate_count"] == 2
-    assert len(record["output"]["evidence"]) == 2
+def _repository(rows_by_config_id: dict) -> MagicMock:
+    repository = MagicMock()
+
+    async def side_effect(*, tenant_id, tool_config_ids):
+        return [rows_by_config_id[i] for i in tool_config_ids if i in rows_by_config_id]
+
+    repository.list_published_tool_configs_with_tools_by_config_ids = AsyncMock(
+        side_effect=side_effect
+    )
+    repository.list_tool_bindings_by_agent_version_id = AsyncMock(return_value=[])
+    return repository
 
 
 @pytest.mark.asyncio
-async def test_retrieve_candidates_returns_empty_when_no_rag_hits():
-    rag_runtime_service = MagicMock()
-    rag_runtime_service.get_context = AsyncMock(
-        return_value=RagContext(
-            context_items=[],
-            eligible=True,
-            reason=RagContextReason.NO_MATCHES,
+async def test_tools_are_ranked_by_best_chunk_score_per_tool():
+    first, second = uuid4(), uuid4()
+    rag = MagicMock()
+    rag.get_context = AsyncMock(
+        return_value=_context(
+            _item(first, 0.4, "tool one"),
+            _item(second, 0.9, "tool two"),
+            _item(first, 0.8, "tool one, better chunk"),
         )
     )
-    tracer = _FakeTracer()
-    tools_repository = MagicMock()
-    tools_repository.list_published_tool_configs_with_tools_by_config_ids = AsyncMock()
-    retriever = ToolCatalogRetriever(
-        rag_runtime_service=rag_runtime_service,
-        tracer=tracer,
-        tools_repository=tools_repository,
+    repository = _repository(
+        {
+            first: _cfg_tool_row(tool_config_id=first, tool_id=uuid4(), name="tool-1"),
+            second: _cfg_tool_row(tool_config_id=second, tool_id=uuid4(), name="tool-2"),
+        }
     )
 
-    candidates, evidence = await retriever.retrieve_candidates(
-        tenant_id=uuid4(),
-        rag_config_id=uuid4(),
-        user_input="find tool",
-        top_k=1,
+    tools = await _retriever(rag, repository).retrieve_tools(
+        tenant_id=uuid4(), rag_config_id=uuid4(), user_input="find second tool", top_k=2
     )
 
-    assert candidates == []
-    assert evidence == []
-    tools_repository.list_published_tool_configs_with_tools_by_config_ids.assert_not_called()
-    record = tracer.records[0]
-    assert record["name"] == "domain.tools.tool_catalog_retriever.retrieve_candidates"
-    assert record["output"]["fallback_used"] is False
-    assert record["output"]["candidate_count"] == 0
-    assert record["output"]["evidence"] == []
+    assert [tool.tool_config_id for tool in tools] == [second, first]
+    assert tools[0].retrieval_score == pytest.approx(0.9)
+    assert tools[1].retrieval_score == pytest.approx(0.8)
 
 
 @pytest.mark.asyncio
-async def test_retrieve_candidates_forwards_tool_intent_filter_to_rag():
-    tool_config_id = uuid4()
-    tool_id = uuid4()
-    rag_runtime_service = MagicMock()
-    rag_runtime_service.get_context = AsyncMock(
-        return_value=RagContext(
-            context_items=[
-                RagContextItem(
-                    document_id=uuid4(),
-                    chunk_id=uuid4(),
-                    content="tool",
-                    score=0.7,
-                    metadata={"tool_config_id": str(tool_config_id)},
-                )
-            ],
-            eligible=True,
-            reason=RagContextReason.OK,
-        )
+async def test_no_rag_hits_returns_no_tools_and_skips_the_repository():
+    rag = MagicMock()
+    rag.get_context = AsyncMock(return_value=_context(reason=RagContextReason.NO_MATCHES))
+    repository = _repository({})
+
+    tools = await _retriever(rag, repository).retrieve_tools(
+        tenant_id=uuid4(), rag_config_id=uuid4(), user_input="find tool", top_k=1
     )
-    tracer = _FakeTracer()
-    tools_repository = MagicMock()
-    tools_repository.list_published_tool_configs_with_tools_by_config_ids = AsyncMock(
-        return_value=[
-            _cfg_tool_row(
-                tool_config_id=tool_config_id, tool_id=tool_id, name="tool-1"
-            )
+
+    assert tools == []
+    repository.list_published_tool_configs_with_tools_by_config_ids.assert_awaited_once()
+    assert (
+        repository.list_published_tool_configs_with_tools_by_config_ids.await_args.kwargs[
+            "tool_config_ids"
         ]
+        == []
     )
-    retriever = ToolCatalogRetriever(
-        rag_runtime_service=rag_runtime_service,
-        tracer=tracer,
-        tools_repository=tools_repository,
-    )
-
-    await retriever.retrieve_candidates(
-        tenant_id=uuid4(),
-        rag_config_id=uuid4(),
-        user_input="find tool",
-        top_k=1,
-        tool_intent_filter="command",
-    )
-
-    kwargs = rag_runtime_service.get_context.call_args.kwargs
-    assert kwargs["filters_override"]["tool_intent"] == "command"
 
 
 @pytest.mark.asyncio
-async def test_retrieve_candidates_caps_top_k_at_max():
-    rag_runtime_service = MagicMock()
-    items = []
-    for i in range(10):
-        tid = uuid4()
-        items.append(
-            RagContextItem(
-                document_id=uuid4(),
-                chunk_id=uuid4(),
-                content=f"t{i}",
-                score=float(i) / 10.0,
-                metadata={"tool_config_id": str(tid)},
-            )
-        )
-    rag_runtime_service.get_context = AsyncMock(
+async def test_retrieval_uses_the_catalog_filters_and_recall_multiplier():
+    rag = MagicMock()
+    rag.get_context = AsyncMock(return_value=_context())
+
+    await _retriever(rag, _repository({})).retrieve_tools(
+        tenant_id=uuid4(), rag_config_id=uuid4(), user_input="find tool", top_k=2
+    )
+
+    kwargs = rag.get_context.call_args.kwargs
+    assert kwargs["filters_override"] == {
+        "source": "tool_catalog",
+        "doc_type": "tool_catalog",
+        "category": "TOOL_CATALOG",
+    }
+    assert kwargs["top_k_override"] == 2 * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER
+    assert kwargs["similarity_threshold_cap"] == TOOL_CATALOG_SIMILARITY_THRESHOLD_CAP
+    assert kwargs["user_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_absent_top_k_falls_back_to_the_catalog_maximum():
+    rag = MagicMock()
+    rag.get_context = AsyncMock(return_value=_context())
+
+    await _retriever(rag, _repository({})).retrieve_tools(
+        tenant_id=uuid4(), rag_config_id=uuid4(), user_input="find tool"
+    )
+
+    assert (
+        rag.get_context.call_args.kwargs["top_k_override"]
+        == MAX_TOOL_CATALOG_TOP_K * TOOL_CATALOG_RECALL_TOP_K_MULTIPLIER
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_version_bindings_restrict_the_result():
+    bound, unbound = uuid4(), uuid4()
+    agent_version_id = uuid4()
+    rag = MagicMock()
+    rag.get_context = AsyncMock(return_value=_context(_item(unbound, 0.9), _item(bound, 0.5)))
+    repository = _repository(
+        {
+            bound: _cfg_tool_row(tool_config_id=bound, tool_id=uuid4(), name="bound"),
+            unbound: _cfg_tool_row(tool_config_id=unbound, tool_id=uuid4(), name="unbound"),
+        }
+    )
+    repository.list_tool_bindings_by_agent_version_id = AsyncMock(
+        return_value=[MagicMock(tool_config_id=bound)]
+    )
+
+    tools = await _retriever(rag, repository).retrieve_tools(
+        tenant_id=uuid4(),
+        rag_config_id=uuid4(),
+        user_input="find tool",
+        agent_version_id=agent_version_id,
+    )
+
+    assert [tool.tool_config_id for tool in tools] == [bound]
+
+
+@pytest.mark.asyncio
+async def test_chunks_without_a_tool_config_id_are_ignored():
+    valid = uuid4()
+    rag = MagicMock()
+    rag.get_context = AsyncMock(
         return_value=RagContext(
-            context_items=items,
+            context_items=[
+                RagContextItem(
+                    document_id=uuid4(),
+                    chunk_id=uuid4(),
+                    content="orphan chunk",
+                    score=0.99,
+                    metadata={},
+                ),
+                RagContextItem(
+                    document_id=uuid4(),
+                    chunk_id=uuid4(),
+                    content="malformed id",
+                    score=0.98,
+                    metadata={"tool_config_id": "not-a-uuid"},
+                ),
+                _item(valid, 0.5),
+            ],
             eligible=True,
             reason=RagContextReason.OK,
         )
     )
-    tools_repository = MagicMock()
-
-    async def _repo_side_effect(*, tenant_id, tool_config_ids):
-        out = []
-        for cid in tool_config_ids:
-            out.append(
-                _cfg_tool_row(
-                    tool_config_id=cid, tool_id=uuid4(), name=f"n-{cid.hex[:6]}"
-                )
-            )
-        return out
-
-    tools_repository.list_published_tool_configs_with_tools_by_config_ids = (
-        AsyncMock(side_effect=_repo_side_effect)
-    )
-    tracer = _FakeTracer()
-    retriever = ToolCatalogRetriever(
-        rag_runtime_service=rag_runtime_service,
-        tracer=tracer,
-        tools_repository=tools_repository,
+    repository = _repository(
+        {valid: _cfg_tool_row(tool_config_id=valid, tool_id=uuid4(), name="valid")}
     )
 
-    candidates, _ = await retriever.retrieve_candidates(
-        tenant_id=uuid4(),
-        rag_config_id=uuid4(),
-        user_input="many",
-        top_k=100,
+    tools = await _retriever(rag, repository).retrieve_tools(
+        tenant_id=uuid4(), rag_config_id=uuid4(), user_input="find tool"
     )
 
-    assert len(candidates) == MAX_TOOL_CATALOG_TOP_K
+    assert [tool.tool_config_id for tool in tools] == [valid]

@@ -863,19 +863,20 @@ class RagRuntimeService:
         tokens = self._encode_tokens(text)
         if len(tokens) <= target_tokens:
             return [text], False
+        encoder = tiktoken.get_encoding("cl100k_base")
+        step = max(1, target_tokens - overlap_tokens)
         chunks: list[str] = []
         start = 0
-        while start < len(tokens) and len(chunks) < max_chunks:
-            end = min(start + target_tokens, len(tokens))
-            chunk_tokens = tokens[start:end]
-            chunk_text = tiktoken.get_encoding("cl100k_base").decode(chunk_tokens)
-            chunks.append(chunk_text)
-            start = end - overlap_tokens
-            if start < 0:  # pylint: disable=consider-using-max-builtin
-                start = 0
-            if start >= len(tokens):
+        truncated = False
+        while start < len(tokens):
+            if len(chunks) >= max_chunks:
+                truncated = True
                 break
-        truncated = len(chunks) >= max_chunks and start < len(tokens)
+            end = min(start + target_tokens, len(tokens))
+            chunks.append(encoder.decode(tokens[start:end]))
+            if end >= len(tokens):
+                break
+            start += step
         return chunks, truncated
 
     def _hash_text(self, text: str) -> str:

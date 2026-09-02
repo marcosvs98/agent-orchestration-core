@@ -220,13 +220,13 @@ def _memory_commit_node_config() -> dict[str, object]:
         data_merge=[
             {
                 "from_node_id": str(NODE_SLOT_ID),
-                "path": "result.0.params.nickname",
-                "target_key": "nickname",
+                "path": "result.0.params.category",
+                "target_key": "category",
             },
             {
                 "from_node_id": str(NODE_SLOT_ID),
-                "path": "result.0.params.financial_goal",
-                "target_key": "financial_goal",
+                "path": "result.0.params.payment_method",
+                "target_key": "payment_method",
             },
         ],
     ).model_dump(mode="json")
@@ -242,7 +242,7 @@ async def seed_graph() -> None:
         flow_version = result.scalar_one_or_none()
         if flow_version is None:
             raise ValueError(
-                f"FlowVersion {FLOW_VERSION_V1_ID} não encontrado. Execute seed_07_flow primeiro."
+                f"FlowVersion {FLOW_VERSION_V1_ID} not found. Run seed_07_flow first."
             )
 
         definition = FlowGraphDefinition(
@@ -499,7 +499,7 @@ async def seed_graph() -> None:
                 is_active=True,
                 activated_at=datetime.now(timezone.utc),
                 activated_by_principal_id=PRINCIPAL_SYSTEM,
-                justification="Bootstrap seed - ativação inicial",
+                justification="Bootstrap seed - initial activation",
             )
         )
         await session.commit()

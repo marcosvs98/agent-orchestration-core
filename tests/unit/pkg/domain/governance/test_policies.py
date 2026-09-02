@@ -71,6 +71,8 @@ class TestExecutionLimitService:
         exec_repo = MagicMock()
         exec_repo.count_tool_runs_for_flow_run = AsyncMock(return_value=1)
         exec_repo.count_agent_runs_for_flow_run = AsyncMock(return_value=0)
-        service = ExecutionLimitService(policy_repository=policy_repo, execution_repository=exec_repo)
+        service = ExecutionLimitService(
+            policy_repository=policy_repo, execution_repository=exec_repo
+        )
         with pytest.raises(LimitExceededException):
             await service.assert_can_create_tool_run(tenant_id=tenant_id, flow_run_id=uuid4())

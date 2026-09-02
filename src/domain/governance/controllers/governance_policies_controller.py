@@ -286,6 +286,7 @@ class GovernancePoliciesController:
     ) -> RuntimePolicyResponse:
         self._ensure_scope(auth, Scope.RuntimePoliciesActivate)
         return await self.service.activate_runtime_policy(
+            tenant_id=auth.tenant_id,
             runtime_policy_id=runtime_policy_id,
             principal_id=auth.principal_id,
             change_request=change,
@@ -349,6 +350,7 @@ class GovernancePoliciesController:
     ) -> AccessPolicyVersionResponse:
         self._ensure_scope(auth, Scope.AccessPolicyVersionsCreate)
         return await self.service.create_access_policy_version(
+            tenant_id=auth.tenant_id,
             access_policy_id=access_policy_id,
             payload=payload,
         )
@@ -360,7 +362,8 @@ class GovernancePoliciesController:
     ) -> AccessPolicyVersionResponse:
         self._ensure_scope(auth, Scope.AccessPolicyVersionsPublish)
         return await self.service.publish_access_policy_version(
-            access_policy_version_id=access_policy_version_id
+            tenant_id=auth.tenant_id,
+            access_policy_version_id=access_policy_version_id,
         )
 
     async def create_rate_limit_policy(
@@ -399,6 +402,7 @@ class GovernancePoliciesController:
     ) -> RateLimitPolicyVersionResponse:
         self._ensure_scope(auth, Scope.RateLimitPolicyVersionsCreate)
         return await self.service.create_rate_limit_policy_version(
+            tenant_id=auth.tenant_id,
             rate_limit_policy_id=rate_limit_policy_id,
             payload=payload,
         )
@@ -410,7 +414,8 @@ class GovernancePoliciesController:
     ) -> RateLimitPolicyVersionResponse:
         self._ensure_scope(auth, Scope.RateLimitPolicyVersionsPublish)
         return await self.service.publish_rate_limit_policy_version(
-            rate_limit_policy_version_id=rate_limit_policy_version_id
+            tenant_id=auth.tenant_id,
+            rate_limit_policy_version_id=rate_limit_policy_version_id,
         )
 
     async def create_billing_policy(
@@ -447,6 +452,7 @@ class GovernancePoliciesController:
     ) -> BillingPolicyVersionResponse:
         self._ensure_scope(auth, Scope.BillingPolicyVersionsCreate)
         return await self.service.create_billing_policy_version(
+            tenant_id=auth.tenant_id,
             billing_policy_id=billing_policy_id,
             payload=payload,
         )
@@ -458,7 +464,8 @@ class GovernancePoliciesController:
     ) -> BillingPolicyVersionResponse:
         self._ensure_scope(auth, Scope.BillingPolicyVersionsPublish)
         return await self.service.publish_billing_policy_version(
-            billing_policy_version_id=billing_policy_version_id
+            tenant_id=auth.tenant_id,
+            billing_policy_version_id=billing_policy_version_id,
         )
 
     async def activate_billing_policy_version(
@@ -509,6 +516,7 @@ class GovernancePoliciesController:
     ) -> MemoryPolicyVersionResponse:
         self._ensure_scope(auth, Scope.MemoryPolicyVersionsCreate)
         return await self.service.create_memory_policy_version(
+            tenant_id=auth.tenant_id,
             memory_policy_id=memory_policy_id,
             payload=payload,
         )
@@ -520,7 +528,8 @@ class GovernancePoliciesController:
     ) -> MemoryPolicyVersionResponse:
         self._ensure_scope(auth, Scope.MemoryPolicyVersionsPublish)
         return await self.service.publish_memory_policy_version(
-            memory_policy_version_id=memory_policy_version_id
+            tenant_id=auth.tenant_id,
+            memory_policy_version_id=memory_policy_version_id,
         )
 
     async def activate_memory_policy_version(
@@ -571,6 +580,7 @@ class GovernancePoliciesController:
     ) -> RagPolicyVersionResponse:
         self._ensure_scope(auth, Scope.RagPolicyVersionsCreate)
         return await self.service.create_rag_policy_version(
+            tenant_id=auth.tenant_id,
             rag_policy_id=rag_policy_id,
             payload=payload,
         )
@@ -582,7 +592,8 @@ class GovernancePoliciesController:
     ) -> RagPolicyVersionResponse:
         self._ensure_scope(auth, Scope.RagPolicyVersionsPublish)
         return await self.service.publish_rag_policy_version(
-            rag_policy_version_id=rag_policy_version_id
+            tenant_id=auth.tenant_id,
+            rag_policy_version_id=rag_policy_version_id,
         )
 
     async def activate_rag_policy_version(

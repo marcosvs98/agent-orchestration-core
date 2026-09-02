@@ -6,16 +6,12 @@ from exceptions.service_exceptions import DomainValidationException
 
 def test_edge_evaluator_returns_true_for_valid_condition():
     context = {"validation_status": "VALID", "confidence": 0.9}
-    assert EdgeEvaluator.is_true(
-        "validation_status == 'VALID' and confidence >= 0.85", context
-    )
+    assert EdgeEvaluator.is_true("validation_status == 'VALID' and confidence >= 0.85", context)
 
 
 def test_edge_evaluator_returns_false_for_invalid_condition():
     context = {"validation_status": "INVALID", "confidence": 0.5}
-    assert not EdgeEvaluator.is_true(
-        "validation_status == 'VALID' and confidence >= 0.85", context
-    )
+    assert not EdgeEvaluator.is_true("validation_status == 'VALID' and confidence >= 0.85", context)
 
 
 def test_edge_evaluator_handles_comparison_operators():

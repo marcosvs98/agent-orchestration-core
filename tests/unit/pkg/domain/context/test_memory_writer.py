@@ -71,9 +71,7 @@ class TestMemoryWriteServiceVectorCap:
                 "reason_code": "rag_ingest_quota_user_documents",
             }
         )
-        rag_runtime.count_user_memory_documents_for_rag_config = AsyncMock(
-            return_value=3
-        )
+        rag_runtime.count_user_memory_documents_for_rag_config = AsyncMock(return_value=3)
         rag_runtime.prepare_document_for_embedding = AsyncMock()
 
         svc = MemoryWriteService(
@@ -144,9 +142,7 @@ class TestMemoryWriteServiceVectorCap:
                 "reason_code": "app_max_user_memory_documents",
             }
         )
-        rag_runtime.count_user_memory_documents_for_rag_config = AsyncMock(
-            return_value=2
-        )
+        rag_runtime.count_user_memory_documents_for_rag_config = AsyncMock(return_value=2)
         rag_runtime.prepare_document_for_embedding = AsyncMock(
             return_value=RagPreparedDocument(
                 id=doc_id,

@@ -113,19 +113,25 @@ flowchart LR
 
 ## LLM admin — prefix `/admin/llm`
 
-Router: **`APIRouter(prefix="/admin/llm")`**.
+Router: **`APIRouter(prefix="/admin/llm", dependencies=[Depends(get_admin_auth)])`**.
 
-| Method | Path | Handler |
-|--------|------|---------|
-| POST | `/admin/llm/provider` | Upsert LLM provider config (query/body params per OpenAPI) |
-| POST | `/admin/llm/model-mapping` | Upsert alias → provider model mapping |
-| POST | `/admin/llm/pricing` | Upsert pricing row for provider model |
+This is a **platform-operator** surface, not a tenant one. Every route requires the **`X-Admin-Key`**
+header matching `ADMIN_API_KEY`; a tenant JWT is not accepted. `tenant_id` is a **request body**
+field, so operator credentials and targets never appear in URLs, access logs, or traces.
+
+| Method | Path | Body |
+|--------|------|------|
+| POST | `/admin/llm/provider` | `ProviderUpsertRequest` — `tenant_id`, `provider`, `status`, optional `base_url`, `credential_secret_ref` |
+| POST | `/admin/llm/model-mapping` | `ModelMappingUpsertRequest` — `tenant_id`, `provider`, `model_alias`, `provider_model`, `status` |
+| POST | `/admin/llm/pricing` | `PricingUpsertRequest` — `provider`, `provider_model`, `unit`, costs, `currency`, `status` (**global** rows, no tenant) |
 
 Implementation delegates to **`LLMAdminService`**, which uses `llm_provider_repository`, `llm_model_mapping_repository`, `llm_pricing_repository`, and **`AIRepository`** from `domain/ai_policy` for related consistency.
 
-!!! note "Scope gap"
+!!! warning "Pricing is global"
 
-    Unlike `GovernancePoliciesController`, **`LLMAdminController` does not call `_ensure_scope`**. Secure this route in your API gateway or add explicit scopes in code if you need parity with policy APIs.
+    `/admin/llm/pricing` writes rows that every tenant's cost engine reads. That is why the whole
+    router sits behind the admin key rather than tenant scopes — previously any authenticated
+    tenant JWT could rewrite platform-wide pricing (gap register §1).
 
 ## Related
 

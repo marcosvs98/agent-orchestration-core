@@ -46,17 +46,15 @@ class GraphCompiler:
 
                 adjacency: dict[str, list[CompiledEdge]] = defaultdict(list)
                 ordered_nodes: List[str] = list(nodes.keys())
-                terminal_nodes: Set[str] = set(
-                    [
-                        node_id
-                        for node_id, spec in nodes.items()
-                        if spec.get("type")
-                        in {
-                            NodeType.ResponseBuilder,
-                            NodeType.HumanFallback,
-                        }
-                    ]
-                )
+                terminal_nodes: Set[str] = {
+                    node_id
+                    for node_id, spec in nodes.items()
+                    if spec.get("type")
+                    in {
+                        NodeType.ResponseBuilder,
+                        NodeType.HumanFallback,
+                    }
+                }
                 if not terminal_nodes:
                     raise DomainValidationException(message="no_terminal_nodes")
 
@@ -87,7 +85,7 @@ class GraphCompiler:
                     adjacency[ce.from_node].append(ce)
 
                 self._validate_reachability(start_node, adjacency, nodes.keys())
-                self._validate_loops(adjacency)
+                self._validate_loops(start_node, adjacency)
 
                 if guardrail_handle:
                     guardrail_handle.success(output={"adjacency": dict(adjacency)})
@@ -136,7 +134,7 @@ class GraphCompiler:
             if guardrail_handle:
                 guardrail_handle.success(output={"visited": list(visited)})
 
-    def _validate_loops(self, adjacency: dict[str, list[CompiledEdge]]) -> None:
+    def _validate_loops(self, start_node: str, adjacency: dict[str, list[CompiledEdge]]) -> None:
         with self.tracer.observe(
             as_type="guardrail",
             name="domain.execution.graph_compiler.validate_loops",
@@ -157,9 +155,7 @@ class GraphCompiler:
                 visiting.remove(node_id)
                 visited_loops.add(node_id)
 
-            for node in adjacency.keys():
-                if node not in visited_loops:
-                    dfs(node)
+            dfs(start_node)
 
             if guardrail_handle:
                 guardrail_handle.success(output={"visited_loops": list(visited_loops)})

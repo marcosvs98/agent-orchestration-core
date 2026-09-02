@@ -12,7 +12,7 @@
 | `CostEngine` | Computes `cost_usd` from `token_usage` and `llm_pricing` |
 | `LLMProviderSelector` + `provider_factory` | Resolve tenant model alias → `provider_model` and concrete provider instance |
 | `GuardrailEngine` | Pre-call checks and post-call cost recording when `policy_llm` is present |
-| `RuntimeTracerPort` | Langfuse-style spans (chain, generation, evaluator, guardrail) |
+| `RuntimeTracerPort` | OpenTelemetry spans (chain, generation, evaluator, guardrail) |
 
 `provider_factory` is typically `LLMProviderFactory.build` (see [Providers and selection](providers-and-selection.md)).
 
@@ -51,7 +51,7 @@ After a successful schema-validated result:
 
 - **`max_tokens`** — Compares completion token count from `token_usage` (`completion_tokens`, `output_tokens`, or `total_tokens` fallback) to `request.max_tokens`; raises `llm_policy_max_tokens_exceeded` if exceeded.
 - **`max_cost_usd`** — Raises `llm_policy_cost_exceeded` when `result.cost_usd` exceeds the cap.
-- **`max_latency_ms`** — The comparison exists in code, but the **exception is commented out**; latency is **not** enforced as a hard failure in the current branch. Do not rely on this field for SLO enforcement until the code path is restored.
+- **`max_latency_ms`** — Raises `llm_policy_latency_exceeded` when `result.latency_ms` exceeds the cap. Enforcement is live; it had previously been disabled with the `raise` commented out behind a debug `print`, so treat older notes saying otherwise as stale.
 
 ## Cost accounting
 

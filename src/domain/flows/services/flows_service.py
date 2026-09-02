@@ -668,7 +668,7 @@ class FlowsService(FlowsServicePort):
         await self._assert_flow_version_at_most_one_memory_write(
             flow_version_id=payload.flow_version_id,
         )
-        snapshot_payload, graph_hash = self.compiler.compile(definition)
+        _, graph_hash = self.compiler.compile(definition)
         fr_hash = (
             await self._resolve_frozen_rag_for_flow_version(
                 tenant_id=tenant_id,

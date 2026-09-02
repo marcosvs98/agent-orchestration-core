@@ -192,7 +192,7 @@ def test_mcp_named_tool_invoke(mcp_server_id, tenant_id) -> None:
     ctr.tools.tools_repository.override(providers.Factory(lambda: tools_repo))
     ctr.execution.tool_executor.override(providers.Object(mock_exec))
     with TestClient(app) as client:
-        r1 = client.post(
+        client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
                 "jsonrpc": "2.0",
@@ -523,7 +523,7 @@ def test_mcp_tool_input_schema_from_binding(mcp_server_id, tenant_id) -> None:
     ctr = app.state.container
     ctr.mcp_registry.mcp_registry_repository.override(providers.Object(repo))
     with TestClient(app) as client:
-        r1 = client.post(
+        client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
                 "jsonrpc": "2.0",
@@ -580,9 +580,7 @@ def test_mcp_search_knowledge_query_only(mcp_server_id, tenant_id) -> None:
         )
     )
     rag_repo = MagicMock()
-    rag_repo.get_published_rag_config_id_for_vector_store = AsyncMock(
-        return_value=rcid
-    )
+    rag_repo.get_published_rag_config_id_for_vector_store = AsyncMock(return_value=rcid)
     rag_rt = MagicMock()
     rag_rt.get_context = AsyncMock(
         return_value=RagContext(
@@ -604,7 +602,7 @@ def test_mcp_search_knowledge_query_only(mcp_server_id, tenant_id) -> None:
     ctr.rag.rag_repository.override(providers.Factory(lambda: rag_repo))
     ctr.rag.rag_runtime_service.override(providers.Factory(lambda: rag_rt))
     with TestClient(app) as client:
-        r1 = client.post(
+        client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
                 "jsonrpc": "2.0",
@@ -676,9 +674,7 @@ def test_mcp_search_knowledge_no_published_rag_config(mcp_server_id, tenant_id) 
         )
     )
     rag_repo = MagicMock()
-    rag_repo.get_published_rag_config_id_for_vector_store = AsyncMock(
-        return_value=None
-    )
+    rag_repo.get_published_rag_config_id_for_vector_store = AsyncMock(return_value=None)
     rag_rt = MagicMock()
     rag_rt.get_context = AsyncMock()
     app = create_app()
@@ -687,7 +683,7 @@ def test_mcp_search_knowledge_no_published_rag_config(mcp_server_id, tenant_id) 
     ctr.rag.rag_repository.override(providers.Factory(lambda: rag_repo))
     ctr.rag.rag_runtime_service.override(providers.Factory(lambda: rag_rt))
     with TestClient(app) as client:
-        r1 = client.post(
+        client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
                 "jsonrpc": "2.0",
@@ -730,7 +726,8 @@ def test_mcp_search_knowledge_no_published_rag_config(mcp_server_id, tenant_id) 
 
 
 def test_mcp_search_knowledge_empty_list_when_config_but_no_chunks(
-    mcp_server_id, tenant_id,
+    mcp_server_id,
+    tenant_id,
 ) -> None:
     vid = uuid4()
     rcid = uuid4()
@@ -752,9 +749,7 @@ def test_mcp_search_knowledge_empty_list_when_config_but_no_chunks(
         )
     )
     rag_repo = MagicMock()
-    rag_repo.get_published_rag_config_id_for_vector_store = AsyncMock(
-        return_value=rcid
-    )
+    rag_repo.get_published_rag_config_id_for_vector_store = AsyncMock(return_value=rcid)
     rag_rt = MagicMock()
     rag_rt.get_context = AsyncMock(
         return_value=RagContext(
@@ -769,7 +764,7 @@ def test_mcp_search_knowledge_empty_list_when_config_but_no_chunks(
     ctr.rag.rag_repository.override(providers.Factory(lambda: rag_repo))
     ctr.rag.rag_runtime_service.override(providers.Factory(lambda: rag_rt))
     with TestClient(app) as client:
-        r1 = client.post(
+        client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
                 "jsonrpc": "2.0",
@@ -834,7 +829,7 @@ def test_mcp_prompts_list(mcp_server_id, tenant_id) -> None:
     ctr = app.state.container
     ctr.mcp_registry.mcp_registry_repository.override(providers.Object(repo))
     with TestClient(app) as client:
-        r1 = client.post(
+        client.post(
             f"/core/v1/mcp-servers/{mcp_server_id}/mcp",
             json={
                 "jsonrpc": "2.0",

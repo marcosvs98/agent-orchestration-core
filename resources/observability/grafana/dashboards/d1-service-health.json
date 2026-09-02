@@ -1,0 +1,347 @@
+{
+    "uid": "aoc-d1-service-health",
+    "title": "AOC / D1 Service Health (RED)",
+    "tags": [
+        "aoc",
+        "red",
+        "otel"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "templating": {
+        "list": [
+            {
+                "name": "route",
+                "label": "HTTP route",
+                "type": "query",
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "aoc-prometheus"
+                },
+                "query": "label_values(traces_span_metrics_calls_total{aoc_observation_type=\"http\"}, http_route)",
+                "refresh": 2,
+                "includeAll": true,
+                "multi": true,
+                "current": {
+                    "text": "All",
+                    "value": "$__all"
+                },
+                "allValue": ".*"
+            }
+        ]
+    },
+    "panels": [
+        {
+            "id": 1,
+            "type": "text",
+            "title": "How to read this dashboard",
+            "gridPos": {
+                "h": 4,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "options": {
+                "mode": "markdown",
+                "content": "Every panel here is derived from spans by the Collector **spanmetrics** connector \u2014 there is no bespoke metrics instrumentation. HTTP panels carry **no tenant label** on purpose: `AuthContext` is a FastAPI dependency that is never written to `request.state`, and tenant x 170 API operations would dominate the series budget. Tenant-scoped signal lives in D2, D3 and D4.\n\n**If the *Collector health* row at the bottom is red, every other panel in every dashboard is lying.**"
+            }
+        },
+        {
+            "id": 2,
+            "type": "timeseries",
+            "title": "Request rate by route (req/s)",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 4
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum by (http_route) (rate(traces_span_metrics_calls_total{aoc_observation_type=\"http\", http_route=~\"$route\"}[$__rate_interval]))",
+                    "legendFormat": "{{http_route}}"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "timeseries",
+            "title": "Error ratio by route (5xx / all)",
+            "description": "Derived from aoc.http.status_class, which the HttpTelemetryMiddleware sets on every server span.",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 4
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percentunit",
+                    "min": 0,
+                    "max": 1
+                },
+                "overrides": []
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum by (http_route) (rate(traces_span_metrics_calls_total{aoc_observation_type=\"http\", aoc_http_status_class=\"5xx\", http_route=~\"$route\"}[$__rate_interval])) / clamp_min(sum by (http_route) (rate(traces_span_metrics_calls_total{aoc_observation_type=\"http\", http_route=~\"$route\"}[$__rate_interval])), 0.0001)",
+                    "legendFormat": "{{http_route}}"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "timeseries",
+            "title": "HTTP latency p50 / p95 / p99",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 12
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms"
+                },
+                "overrides": []
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "histogram_quantile(0.50, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{aoc_observation_type=\"http\", http_route=~\"$route\"}[$__rate_interval])))",
+                    "legendFormat": "p50"
+                },
+                {
+                    "refId": "B",
+                    "expr": "histogram_quantile(0.95, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{aoc_observation_type=\"http\", http_route=~\"$route\"}[$__rate_interval])))",
+                    "legendFormat": "p95"
+                },
+                {
+                    "refId": "C",
+                    "expr": "histogram_quantile(0.99, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{aoc_observation_type=\"http\", http_route=~\"$route\"}[$__rate_interval])))",
+                    "legendFormat": "p99"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "timeseries",
+            "title": "Slowest routes (p95)",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 12
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms"
+                },
+                "overrides": []
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "topk(10, histogram_quantile(0.95, sum by (le, http_route) (rate(traces_span_metrics_duration_milliseconds_bucket{aoc_observation_type=\"http\"}[$__rate_interval]))))",
+                    "legendFormat": "{{http_route}}"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "timeseries",
+            "title": "Span error rate by observation type",
+            "description": "Spans ending StatusCode.ERROR. Under the previous Langfuse adapter successful spans ended UNSET, so this split was impossible.",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 20
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum by (aoc_observation_type) (rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval]))",
+                    "legendFormat": "{{aoc_observation_type}}"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "timeseries",
+            "title": "Span throughput by observation type",
+            "description": "Use this to confirm the repository sampling ratio is behaving. Repository spans are 176 of 300 instrumentation sites and are thinned by OTEL_SAMPLE_RATIO_REPOSITORY; event.* spans are dropped entirely at the Collector because they duplicate the execution_event table.",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 20
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum by (aoc_observation_type) (rate(traces_span_metrics_calls_total[$__rate_interval]))",
+                    "legendFormat": "{{aoc_observation_type}}"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "row",
+            "title": "Collector health (meta-observability)",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 28
+            },
+            "collapsed": false,
+            "panels": []
+        },
+        {
+            "id": 9,
+            "type": "timeseries",
+            "title": "Spans failed to export (0 is healthy)",
+            "description": "Non-zero means traces are being dropped and every other panel understates reality. Uses 'or vector(0)' so a healthy pipeline renders 0 rather than 'No data', which is ambiguous on the panel whose whole job is to tell you the others are lying.",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 8,
+                "x": 0,
+                "y": 29
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum(rate(otelcol_exporter_send_failed_spans[$__rate_interval])) or vector(0)",
+                    "legendFormat": "failed spans/s"
+                }
+            ]
+        },
+        {
+            "id": 10,
+            "type": "timeseries",
+            "title": "Exporter queue size",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 8,
+                "x": 8,
+                "y": 29
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum by (exporter) (otelcol_exporter_queue_size) or vector(0)",
+                    "legendFormat": "{{exporter}}"
+                }
+            ]
+        },
+        {
+            "id": 11,
+            "type": "timeseries",
+            "title": "Spans refused by the receiver (0 is healthy)",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "aoc-prometheus"
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 8,
+                "x": 16,
+                "y": 29
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "sum(rate(otelcol_receiver_refused_spans[$__rate_interval])) or vector(0)",
+                    "legendFormat": "refused spans/s"
+                }
+            ]
+        },
+        {
+            "id": 12,
+            "type": "row",
+            "title": "Silent cost loss (Loki)",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 36
+            },
+            "collapsed": false,
+            "panels": []
+        },
+        {
+            "id": 13,
+            "type": "logs",
+            "title": "Cost and rate-limit blind-spot events",
+            "description": "These four named events are the only signal that spend or enforcement was silently lost. llm_usage_not_recorded and agent_run_turn_usage_not_recorded mean a paid model call produced no ledger row. 'Cache silent exception' means Redis failed and the rate limiter FAILED OPEN, which is a security condition, not just an observability one.",
+            "datasource": {
+                "type": "loki",
+                "uid": "aoc-loki"
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 37
+            },
+            "options": {
+                "showTime": true,
+                "wrapLogMessage": true,
+                "sortOrder": "Descending"
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "expr": "{service_name=~\"agent-orchestration-core.*\"} |~ \"llm_usage_not_recorded|agent_run_turn_usage_not_recorded|agent_run_llm_turn_failed|Cache silent exception\""
+                }
+            ]
+        }
+    ]
+}

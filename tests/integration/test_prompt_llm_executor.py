@@ -69,9 +69,7 @@ async def test_llm_executor_emits_node_prompt_event_when_prompt_metadata_present
         prompt_version=1,
         prompt_frozen_hash="hash123",
     )
-    trace = TraceContext(
-        trace_id=uuid.uuid4(), flow_run_id=uuid.uuid4(), tenant_id=uuid.uuid4()
-    )
+    trace = TraceContext(trace_id=uuid.uuid4(), flow_run_id=uuid.uuid4(), tenant_id=uuid.uuid4())
 
     await executor.execute_llm(
         request=request,
@@ -104,12 +102,14 @@ async def test_llm_executor_skips_node_prompt_event_without_prompt_metadata():
         task_type=LLMTaskType.INTENT_SELECTION,
         input_payload={"test": "data"},
         input_schema={"type": "object"},
-        output_schema={"type": "object", "properties": {"result": {"type": "string"}}, "required": ["result"]},
+        output_schema={
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "required": ["result"],
+        },
         model_alias="fake-model",
     )
-    trace = TraceContext(
-        trace_id=uuid.uuid4(), flow_run_id=uuid.uuid4(), tenant_id=uuid.uuid4()
-    )
+    trace = TraceContext(trace_id=uuid.uuid4(), flow_run_id=uuid.uuid4(), tenant_id=uuid.uuid4())
 
     await executor.execute_llm(
         request=request,

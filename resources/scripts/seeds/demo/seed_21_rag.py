@@ -49,7 +49,7 @@ from seeds.demo.ids import (
     TENANT_DEMO_ID,
     VECTOR_STORE_DEMO_ID,
 )
-from seeds.demo.rag_payloads import demo_assistente_bolso_kb_documents
+from seeds.demo.rag_payloads import demo_knowledge_base_documents
 
 
 class _SeedObservationHandle:
@@ -169,7 +169,7 @@ async def seed_rag() -> None:
             vector_store = VectorStore(
                 vector_store_id=VECTOR_STORE_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Uora - Conhecimento",
+                name="Demo - Knowledge",
                 embedding_model="text-embedding-3-large",
                 embedding_dimension=3072,
                 metric="cosine",
@@ -248,11 +248,9 @@ async def seed_rag() -> None:
             await session.commit()
 
     if not OPENAI_API_KEY:
-        print(
-            "Skipping RAG document ingestion: OPENAI_API_KEY is not set",
-            file=sys.stderr,
+        raise RuntimeError(
+            "OPENAI_API_KEY is required to seed the tenant knowledge RAG corpus."
         )
-        return
 
     cache_adapter = RedisAdapter()
     database_connection = DatabaseConnection(engine=engine, sessionmaker=async_session)
@@ -299,7 +297,7 @@ async def seed_rag() -> None:
         ai_repository=ai_repository,
         embedding_executor=embedding_executor,
     )
-    for document in demo_assistente_bolso_kb_documents():
+    for document in demo_knowledge_base_documents():
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,
             rag_config_id=RAG_CONFIG_DEMO_ID,

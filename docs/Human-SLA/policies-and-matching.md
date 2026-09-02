@@ -12,6 +12,30 @@ At human handoff, the service receives:
 
 The database stores **`node`** and **`fallback_reason`** as plain strings. They must match **exactly** (with the repository’s equality semantics) what the graph passes in, or **no policy** is found and the case is still created **without** `human_sla_policy_id` (see service).
 
+## How `fallback_reason` is derived
+
+Both metadata keys are stamped by **`node_step_runner`** at the moment an edge routes into `HumanFallback` — before the node runs. The reason comes from `resolve_fallback_reason` (`src/domain/execution/services/graph_runtime/fallback_reason_resolver.py`), which maps the **escalating node's type** and its output:
+
+| Source node type | Resolved `fallback_reason` |
+|------------------|----------------------------|
+| `ContentModeration` | `POLICY_BLOCK` |
+| `ToolErrorHandlerNode` | `TOOL_FAILURE` |
+| `ToolExecutor` | `TOOL_FAILURE` |
+| `IntentClassifier` — no `intent_type` in the first result | `UNKNOWN_INTENT` |
+| `IntentClassifier` — intent present | `LOW_CONFIDENCE` |
+| anything else | `LOW_CONFIDENCE` (default) |
+
+```mermaid
+flowchart LR
+  A[Edge routes into HumanFallback] --> B[node_step_runner]
+  B --> C[fallback_source_node = escalating node id]
+  B --> D[resolve_fallback_reason source type + output]
+  C --> E[resolve_policy tenant, node, reason]
+  D --> E
+```
+
+> **Historical note.** Before this resolver existed, nothing in the runtime wrote `fallback_reason`, so `HumanFallback`'s default fired 100% of the time and **every case resolved as `LOW_CONFIDENCE`**. Policies keyed on `POLICY_BLOCK`, `TOOL_FAILURE` or `UNKNOWN_INTENT` could never match. If you authored policies during that period, re-check that their `fallback_reason` values are the ones you actually want now that the other three are reachable.
+
 ## Schema: `HumanSLAPolicy`
 
 `src/domain/human_sla/schemas/human_sla_policy.py`

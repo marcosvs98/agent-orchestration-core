@@ -3,10 +3,12 @@ import logging
 from enum import Enum, StrEnum
 from typing import Any
 from fastapi.responses import Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
 from structlog.contextvars import bound_contextvars
 import structlog
 from decouple import config
+from opentelemetry.trace import get_current_span
 from exceptions.service_exceptions import DomainValidationException
 
 
@@ -38,7 +40,15 @@ class LogLevel(Enum):
             raise DomainValidationException(message=f"{value} is not a valid LogLevel") from e
 
 
-LOG_LEVEL = config("LOG_LEVEL", default="CRITICAL", cast=LogLevel.cast_log_level)
+LOG_LEVEL = config("LOG_LEVEL", default="INFO", cast=LogLevel.cast_log_level)
+
+
+def add_trace_correlation(_logger: Any, _method_name: str, event_dict: dict) -> dict:
+    span_context = get_current_span().get_span_context()
+    if span_context.is_valid:
+        event_dict["trace_id"] = format(span_context.trace_id, "032x")
+        event_dict["span_id"] = format(span_context.span_id, "016x")
+    return event_dict
 
 
 def configure_logger(is_async: bool = False) -> None:
@@ -46,6 +56,7 @@ def configure_logger(is_async: bool = False) -> None:
 
     shared_processors = [
         structlog.contextvars.merge_contextvars,
+        add_trace_correlation,
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
@@ -120,7 +131,7 @@ def get_logger(
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         safe_headers = {
             key: value
             for key, value in request.headers.items()
@@ -128,11 +139,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         }
         log_attributes: dict = {
             "request.method": request.method,
-            "request.url": str(request.url),
             "request.url.path": request.url.path,
-            "request.query_params": dict(request.query_params),
-            "request.user_agent": request.headers.get("User-Agent"),
-            "request.referer": request.headers.get("Referer"),
             "request.headers": safe_headers,
         }
         with bound_contextvars(**log_attributes):

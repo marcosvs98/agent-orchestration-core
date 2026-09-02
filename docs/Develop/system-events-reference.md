@@ -12,7 +12,10 @@ This page lists **canonical event names** you can rely on when integrating with 
 | Authoring events | Design-time audit: who changed which versioned resource and why | Postgres `authoring_event` | `AuthoringEventType` — `src/domain/governance/schemas/authoring_events.py` |
 | Conversation SSE | Live stream to clients during a conversation session | HTTP SSE (not the same row shape as `execution_event`) | `SSEEventType` — `src/domain/conversation/schemas/conversation.py` |
 
-**Note:** execution events and SSE event names **differ in casing and naming** (`FlowStarted` vs `flow_started`). They are related concepts but not identical strings—map by semantics when building UIs.
+**Note:** the two catalogues are **not** parallel. Execution events are `PascalCase` and cover the
+whole graph lifecycle; the SSE stream is `snake_case` and carries only six transport-level events
+(connect, deltas, tool progress, keep-alive, terminate). There is no SSE event for a node or an edge
+— do not build a UI that expects one. Map by semantics, not by name.
 
 ---
 
@@ -29,7 +32,7 @@ Events are stored with a shared envelope plus a JSON `payload` whose keys depend
 | `user_id` | End-user identifier | `varchar` |
 | `session_id` | Conversation session scope | `uuid` |
 | `flow_run_id` | Run identifier | `uuid` |
-| `correlation_id` | Correlates with logs and traces (e.g. Langfuse) | `uuid` |
+| `correlation_id` | Correlates with logs and traces (Loki, Tempo) | `uuid` |
 | `causation_id` | Optional upstream event correlation | `uuid` or null |
 | `event_sequence` | Monotonic ordering within the run | `bigint` |
 | `occurred_at` | Timestamp | `timestamptz` |
@@ -61,7 +64,11 @@ See [Persistence tables](../Glossary/persistence-tables.md) and [Execution event
 | `AgentRunFailed` | An agent invocation failed. |
 | `AgentRunRetried` | A retried agent attempt. |
 | `AgentRunAborted` | An agent run was aborted before completion. |
+| `AgentDelegationRequested` | An agent asked to delegate work to another agent over A2A. |
+| `AgentDelegationCompleted` | The delegated A2A task reached a terminal successful state. |
+| `AgentDelegationFailed` | The delegated A2A task failed or was rejected. |
 | `ToolInvocationRequested` | A tool call was scheduled or dispatched. |
+| `ToolInvocationDenied` | A tool call was refused before execution — typically outside the run's `tool_grant`. |
 | `ToolInvocationSucceeded` | Tool call returned success. |
 | `ToolInvocationFailed` | Tool call failed. |
 | `ToolInvocationTimedOut` | Tool call exceeded its timeout. |
@@ -144,19 +151,25 @@ See [Authoring event](../Glossary/terms/authoring-event.md) and [Governance poli
 
 These are **streamed** to clients as `ConversationEvent` with `event_type` + `payload` (see `src/domain/conversation/schemas/conversation.py`). They are **not** a 1:1 mirror of `ExecutionEventType` strings.
 
-| Event name | Description |
-|------------|-------------|
-| `connected` | Stream established. |
-| `flow_started` | Conversation associated flow execution started from the client’s perspective. |
-| `node_started` | A graph node started (streaming progress). |
-| `node_completed` | A graph node completed. |
-| `edge_evaluated` | An edge was evaluated (streaming progress). |
-| `flow_completed` | Flow finished successfully in this session. |
-| `flow_failed` | Flow failed in this session. |
-| `done` | Stream is complete; no further events for this request. |
-| `error` | An error was surfaced on the stream. |
-| `ping` | Keep-alive / heartbeat. |
-| `content_delta` | Incremental assistant content (token or chunk delta). |
+`SSEEventType` has **six** members — the full set:
+
+| Event name | Terminal | Description |
+|------------|----------|-------------|
+| `connected` | no | Stream established; carries `session_id` and `correlation_id`. |
+| `content_delta` | no | Incremental assistant content (token or chunk delta) in `delta`. |
+| `tool_progress` | no | A provider-side tool call started or completed. |
+| `ping` | no | Keep-alive / heartbeat. |
+| `done` | **yes** | Stream complete; `final_text` is the whole answer. |
+| `error` | **yes** | Carries `error_code`, `correlation_id`, `trace_id`. |
+
+!!! warning "Errors arrive inside the stream, with HTTP 200"
+
+    Do not read the status line as success. Consume events until `done` or `error`.
+
+Earlier revisions of this page also listed `flow_started`, `node_started`, `node_completed`,
+`edge_evaluated`, `flow_completed` and `flow_failed`. **Those are not SSE events and never reach a
+client.** Graph progress is observable through the persisted `execution_event` rows above, not on
+this stream.
 
 ---
 

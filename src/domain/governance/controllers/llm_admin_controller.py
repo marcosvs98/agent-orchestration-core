@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends
 
+from domain.governance.schemas.llm_admin import (
+    ModelMappingUpsertRequest,
+    PricingUpsertRequest,
+    ProviderUpsertRequest,
+)
 from domain.governance.services.llm_admin_service import LLMAdminService
-from utils.auth import AuthContext, get_auth_context
+from utils.auth import ADMIN_PRINCIPAL_ID, get_admin_auth
 
 
 class LLMAdminController:
@@ -14,7 +17,7 @@ class LLMAdminController:
         self.router = APIRouter(
             prefix="/admin/llm",
             tags=["llm-admin"],
-            dependencies=[Depends(get_auth_context)],
+            dependencies=[Depends(get_admin_auth)],
         )
         self._bind_routes()
 
@@ -36,60 +39,34 @@ class LLMAdminController:
             methods=["POST"],
         )
 
-    async def upsert_provider(
-        self,
-        tenant_id: UUID,
-        provider: str,
-        status: str,
-        base_url: str | None = None,
-        credential_secret_ref: str | None = None,
-        auth: AuthContext = Depends(get_auth_context),
-    ):
+    async def upsert_provider(self, body: ProviderUpsertRequest):
         return await self.service.upsert_provider_config(
-            tenant_id=tenant_id,
-            provider=provider,
-            base_url=base_url,
-            credential_secret_ref=credential_secret_ref,
-            status=status,
-            created_by=auth.principal_id,
+            tenant_id=body.tenant_id,
+            provider=body.provider,
+            base_url=body.base_url,
+            credential_secret_ref=body.credential_secret_ref,
+            status=body.status,
+            created_by=ADMIN_PRINCIPAL_ID,
         )
 
-    async def upsert_model_mapping(
-        self,
-        tenant_id: UUID,
-        provider: str,
-        model_alias: str,
-        provider_model: str,
-        status: str = "ACTIVE",
-        auth: AuthContext = Depends(get_auth_context),
-    ):
+    async def upsert_model_mapping(self, body: ModelMappingUpsertRequest):
         return await self.service.upsert_model_mapping(
-            tenant_id=tenant_id,
-            provider=provider,
-            model_alias=model_alias,
-            provider_model=provider_model,
-            status=status,
-            created_by=auth.principal_id,
+            tenant_id=body.tenant_id,
+            provider=body.provider,
+            model_alias=body.model_alias,
+            provider_model=body.provider_model,
+            status=body.status,
+            created_by=ADMIN_PRINCIPAL_ID,
         )
 
-    async def upsert_pricing(
-        self,
-        provider: str,
-        provider_model: str,
-        unit: str,
-        input_cost_per_1k: float,
-        output_cost_per_1k: float,
-        currency: str = "USD",
-        status: str = "ACTIVE",
-        auth: AuthContext = Depends(get_auth_context),
-    ):
+    async def upsert_pricing(self, body: PricingUpsertRequest):
         return await self.service.upsert_pricing(
-            provider=provider,
-            provider_model=provider_model,
-            unit=unit,
-            input_cost_per_1k=input_cost_per_1k,
-            output_cost_per_1k=output_cost_per_1k,
-            currency=currency,
-            status=status,
-            created_by=auth.principal_id,
+            provider=body.provider,
+            provider_model=body.provider_model,
+            unit=body.unit,
+            input_cost_per_1k=body.input_cost_per_1k,
+            output_cost_per_1k=body.output_cost_per_1k,
+            currency=body.currency,
+            status=body.status,
+            created_by=ADMIN_PRINCIPAL_ID,
         )

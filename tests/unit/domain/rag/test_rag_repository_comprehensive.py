@@ -123,9 +123,7 @@ async def test_set_vector_store_active(rag_repo: RagRepository) -> None:
     session.execute = AsyncMock()
     session.commit = AsyncMock()
     bind_rag_session(rag_repo, session)
-    await rag_repo.set_vector_store_active(
-        vector_store_id=uuid4(), tenant_id=uuid4(), active=False
-    )
+    await rag_repo.set_vector_store_active(vector_store_id=uuid4(), tenant_id=uuid4(), active=False)
 
 
 @pytest.mark.asyncio
@@ -191,9 +189,7 @@ async def test_list_rag_configs_with_status_filter(rag_repo: RagRepository) -> N
     res.scalars.return_value = scalars
     session.execute = AsyncMock(return_value=res)
     bind_rag_session(rag_repo, session)
-    out = await rag_repo.list_rag_configs(
-        tenant_id=uuid4(), status_filter=["draft"], limit=10
-    )
+    out = await rag_repo.list_rag_configs(tenant_id=uuid4(), status_filter=["draft"], limit=10)
     assert out == [c1]
 
 
@@ -206,9 +202,7 @@ async def test_list_rag_configs_no_tracer(rag_repo_no_tracer: RagRepository) -> 
     res.scalars.return_value = scalars
     session.execute = AsyncMock(return_value=res)
     bind_rag_session(rag_repo_no_tracer, session)
-    assert (
-        await rag_repo_no_tracer.list_rag_configs(tenant_id=uuid4(), limit=5) == []
-    )
+    assert await rag_repo_no_tracer.list_rag_configs(tenant_id=uuid4(), limit=5) == []
 
 
 @pytest.mark.asyncio
@@ -316,9 +310,7 @@ async def test_set_rag_config_status_not_found(
     session.execute = AsyncMock(return_value=res)
     bind_rag_session(rag_repo, session)
     with pytest.raises(NotFoundServiceException):
-        await rag_repo.set_rag_config_status(
-            rag_config_id=uuid4(), status=VersionStatus.PUBLISHED
-        )
+        await rag_repo.set_rag_config_status(rag_config_id=uuid4(), status=VersionStatus.PUBLISHED)
 
 
 @pytest.mark.asyncio
@@ -330,9 +322,7 @@ async def test_set_rag_config_status_ok(rag_repo: RagRepository) -> None:
     session.execute = AsyncMock(return_value=res)
     session.commit = AsyncMock()
     bind_rag_session(rag_repo, session)
-    await rag_repo.set_rag_config_status(
-        rag_config_id=uuid4(), status=VersionStatus.PUBLISHED
-    )
+    await rag_repo.set_rag_config_status(rag_config_id=uuid4(), status=VersionStatus.PUBLISHED)
     rag_repo.cache_adapter.delete.assert_awaited()
 
 
@@ -394,9 +384,7 @@ async def test_list_documents_no_tracer(rag_repo_no_tracer: RagRepository) -> No
     res.scalars.return_value = scalars
     session.execute = AsyncMock(return_value=res)
     bind_rag_session(rag_repo_no_tracer, session)
-    assert (
-        await rag_repo_no_tracer.list_documents(tenant_id=uuid4(), limit=10) == []
-    )
+    assert await rag_repo_no_tracer.list_documents(tenant_id=uuid4(), limit=10) == []
 
 
 @pytest.mark.asyncio
@@ -818,12 +806,7 @@ async def test_get_document_by_hash_no_tracer(
     res.scalar_one_or_none = MagicMock(return_value=row)
     session.execute = AsyncMock(return_value=res)
     bind_rag_session(rag_repo_no_tracer, session)
-    assert (
-        await rag_repo_no_tracer.get_document_by_hash(
-            tenant_id=uuid4(), content_hash="h"
-        )
-        is row
-    )
+    assert await rag_repo_no_tracer.get_document_by_hash(tenant_id=uuid4(), content_hash="h") is row
 
 
 @pytest.mark.asyncio
@@ -839,9 +822,7 @@ async def test_list_documents_tracer_with_rag_config_filter(
     session.execute = AsyncMock(return_value=res)
     bind_rag_session(rag_repo, session)
     rcid = uuid4()
-    out = await rag_repo.list_documents(
-        tenant_id=uuid4(), limit=10, rag_config_id=rcid
-    )
+    out = await rag_repo.list_documents(tenant_id=uuid4(), limit=10, rag_config_id=rcid)
     assert out == [doc]
 
 
@@ -996,9 +977,7 @@ async def test_finalize_lock_counter_still_missing_after_integrity_error_raises(
     session.begin_nested = MagicMock(return_value=nested_transaction_context())
     session.add = MagicMock()
     session.flush = AsyncMock(side_effect=IntegrityError("dup", None, None))
-    session.execute = AsyncMock(
-        side_effect=[doc_res, lock_none, lock_still_missing]
-    )
+    session.execute = AsyncMock(side_effect=[doc_res, lock_none, lock_still_missing])
     bind_rag_session(rag_repo, session)
     chunk = MagicMock()
     chunk.chunk_id = uuid4()
@@ -1038,9 +1017,7 @@ async def test_finalize_tenant_knowledge_success(rag_repo: RagRepository) -> Non
     lock_res = MagicMock()
     lock_res.scalar_one_or_none = MagicMock(return_value=tenant_row)
     session = async_session_double()
-    session.execute = AsyncMock(
-        side_effect=[doc_res, lock_res, MagicMock(), MagicMock()]
-    )
+    session.execute = AsyncMock(side_effect=[doc_res, lock_res, MagicMock(), MagicMock()])
     bind_rag_session(rag_repo, session)
     chunk = MagicMock()
     chunk.chunk_id = uuid4()
@@ -1130,9 +1107,7 @@ async def test_finalize_user_memory_success_with_tenant_quota_checks(
     tl = MagicMock()
     tl.scalar_one_or_none = MagicMock(return_value=tenant_row)
     session = async_session_double()
-    session.execute = AsyncMock(
-        side_effect=[doc_res, ul, tl, MagicMock(), MagicMock()]
-    )
+    session.execute = AsyncMock(side_effect=[doc_res, ul, tl, MagicMock(), MagicMock()])
     bind_rag_session(rag_repo, session)
     chunk = MagicMock()
     chunk.chunk_id = uuid4()
@@ -1178,9 +1153,7 @@ async def test_finalize_user_memory_user_id_non_string_coerced(
     ul = MagicMock()
     ul.scalar_one_or_none = MagicMock(return_value=user_row)
     session = async_session_double()
-    session.execute = AsyncMock(
-        side_effect=[doc_res, ul, MagicMock(), MagicMock()]
-    )
+    session.execute = AsyncMock(side_effect=[doc_res, ul, MagicMock(), MagicMock()])
     bind_rag_session(rag_repo, session)
     chunk = MagicMock()
     chunk.chunk_id = uuid4()
@@ -1237,9 +1210,7 @@ async def test_search_similar_chunks_non_tracer_full_loop(
     session = async_session_double()
     chunk = MagicMock()
     result = MagicMock()
-    result.all = MagicMock(
-        return_value=[(chunk, 0.1, datetime.now(timezone.utc), "obs")]
-    )
+    result.all = MagicMock(return_value=[(chunk, 0.1, datetime.now(timezone.utc), "obs")])
     session.execute = AsyncMock(return_value=result)
     bind_rag_session(rag_repo_no_tracer, session)
     out = await rag_repo_no_tracer.search_similar_chunks(
@@ -1313,6 +1284,4 @@ async def test_invalidate_query_cache_vector_store(rag_repo: RagRepository) -> N
     session.execute = AsyncMock()
     session.commit = AsyncMock()
     bind_rag_session(rag_repo, session)
-    await rag_repo.invalidate_query_cache_vector_store(
-        tenant_id=uuid4(), vector_store_id=uuid4()
-    )
+    await rag_repo.invalidate_query_cache_vector_store(tenant_id=uuid4(), vector_store_id=uuid4())

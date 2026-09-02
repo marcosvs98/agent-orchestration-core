@@ -1,5 +1,5 @@
 site_name: agent-orchestration-core
-site_description: Agent orchestration runtime and governance service
+site_description: "A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it."
 repo_url: https://github.com/OWNER/agent-orchestration-core
 edit_uri: edit/main/docs/
 
@@ -21,11 +21,12 @@ nav:
   - Home: index.md
   - Get Started:
       - Installation: Get-Started/installation.md
+      - 'Quickstart: tenant and the three surfaces': Get-Started/quickstart-tenant-and-resources.md
       - Full tenant configuration: Get-Started/full-tenant-configuration.md
   - Architecture:
       - Overview: Architecture/ARCHITECTURE.md
-      - Architecture (site entry): ARCHITECTURE.md
       - Runtime vs authoring: Architecture/runtime-vs-authoring.md
+      - Context and cache strategy (RAG + CAG): Architecture/context-and-cache-strategy.md
   - Models:
       - Domain overview: Models/domain-overview.md
   - Glossary:
@@ -46,20 +47,21 @@ nav:
           - Governance policy versioning: Glossary/terms/governance-policy-versioning.md
   - AI:
       - Documentation map: AI/documentation-map.md
-  - Develop:
+  - Operations:
+      - Docker deployment: Deployment/docker.md
       - Tracing and cost: Develop/tracing-and-cost.md
       - Token cost and context strategy: Develop/token-cost-and-context-strategy.md
       - System events reference: Develop/system-events-reference.md
-      - Coverage incremental loop: Develop/coverage-incremental-loop.md
-      - Dead code pipeline: Develop/dead-code-pipeline.md
-  - Deployment:
-      - Docker: Deployment/docker.md
+      - Stress testing and E2E: Develop/stress-and-e2e.md
+      - Known limitations: Develop/limitations.md
   - Communication: COMMUNICATION.md
   - Domain documentation:
       - Execution:
           - Overview: Execution/index.md
           - Flow lifecycle: Execution/flow-lifecycle.md
           - Execution service: Execution/execution-service.md
+          - Agent runtime: Execution/agent-runtime.md
+          - Durable execution (Temporal): Execution/durable-execution.md
           - State machine: Execution/state-machine.md
           - Runtime policy resolver: Execution/runtime-policy-resolver.md
           - Observability and hooks: Execution/observability-and-hooks.md
@@ -136,6 +138,7 @@ nav:
           - Persistence and data: Conversation/persistence-and-data.md
           - Integration and runtime: Conversation/integration-and-runtime.md
           - SSE and runtime: Conversation/sse-and-runtime.md
+          - Turn assembly: Conversation/turn-assembly.md
           - User input and media: Conversation/user-input-and-media.md
           - Read API: Conversation/read-api.md
       - Flows:
@@ -165,6 +168,7 @@ nav:
           - Persistence and data: Tools/persistence-and-data.md
           - Integration and runtime: Tools/integration-and-runtime.md
           - HTTP API: Tools/http-api.md
+          - OpenAPI to MCP: Tools/openapi-to-mcp.md
           - Runtime execution: Tools/runtime-execution.md
       - User prompts:
           - Overview: User-Prompts/index.md
@@ -173,6 +177,13 @@ nav:
           - HTTP API: User-Prompts/http-api.md
   - Contributing:
       - Docs hub: Contributing/README.md
+
+exclude_docs: |
+  /ARCHITECTURE.md
+  /Develop/gap-register.md
+  /Develop/coverage-incremental-loop.md
+  /Develop/dead-code-pipeline.md
+  /evolution/
 
 markdown_extensions:
   - admonition

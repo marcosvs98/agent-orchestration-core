@@ -1,400 +1,448 @@
 # agent-orchestration-core
 
-Multi-tenant cognitive orchestration platform. Interprets natural language input, determines execution paths deterministically, and invokes external integrations in a controlled, auditable, and predictable way.
+A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it.
+
+**Who it is for.** Platform and backend engineers embedding AI workflows in a multi-tenant product,
+who must be able to explain months later why a given run did what it did.
+
+**Who it is not for.** If you want the fastest path from idea to a working agent in one afternoon,
+choose [LangGraph](https://github.com/langchain-ai/langgraph) or
+[CrewAI](https://github.com/crewAIInc/crewAI) — they have the ecosystem, and this project asks you to
+model tenants, policies and versions before your first run.
+
+**The problem it solves.** AI workflows that touch real systems need to be governed and
+reconstructable, but most orchestration tools treat tenancy, admission control and run provenance as
+the adopter's problem.
+
+## What is different here
+
+Measured against seven comparable platforms — LangGraph Platform, AWS Bedrock AgentCore, Google
+Vertex AI Agent Engine, Azure AI Foundry Agent Service, Dify and Vellum — on a
+[published rubric](specs/001-market-positioning/analysis.md):
+
+| | This project | Best of the seven |
+|---|---|---|
+| Every run records content hashes of the graph, runtime policy and tool catalog that governed it | **yes** | stores version ids, not hashes |
+| Authorization, per-principal rate limit and budget enforced in-engine before the first token | **yes, non-bypassable** | enforced at the API edge |
+| Tenant identity derived from credentials and enforced across data, policy and tool registry | **yes** | tenant at the data layer only |
+| Published definitions immutable; changes require a new version, audited with a justification | **yes** | versioned, unaudited |
+
+Where it is weaker: human-in-the-loop has a persisted pause but no declarative SLA policy on it
+(Dify and n8n do this better), and the ecosystem around it is a fraction of LangGraph's. The full
+scoring, including every dimension where a competitor wins, is in the
+[analysis](specs/001-market-positioning/analysis.md).
+
+## Try it in one command
+
+```bash
+docker compose up -d && curl -s localhost:8000/health
+```
+
+Full setup, including the demo tenant and a worked flow run, is in [§6 Setup](#6-setup).
 
 ---
 
-## 1. System Context
+## 1. System context
 
-### What it does
-
-**agent-orchestration-core** is a governance and execution engine that orchestrates cognitive agents and execution flows deterministically and auditably. It is **not** a chatbot, a generic assistant, or an LLM wrapper.
-
-Core capabilities:
-
-- **Definition and versioning** of flows, agents, tools, and AI policies
-- **Deterministic execution** of flows with complete state tracking
-- **Controlled integration** with external systems via tools and MCP servers
-- **Multi-tenant governance** with structural isolation per tenant
-- **Full observability** via execution events and distributed tracing
-
-### Problems it solves
+```mermaid
+flowchart LR
+  U["Channels<br/>web · messaging · API"] --> API["agent-orchestration-core<br/>REST /core/v1"]
+  MCPC["MCP clients<br/>IDEs · external agents"] --> API
+  API --> EXT["Tenant HTTP APIs<br/>imported from openapi.json"]
+  API --> PROV["LLM / embedding providers"]
+  API --> DB[("PostgreSQL + pgvector")]
+  API --> RD[("Redis")]
+  API --> OBS["OpenTelemetry · structlog"]
+  API --> TMP["Temporal<br/>durable execution"]
+```
 
 | Problem | Approach |
 |---------|----------|
-| Uncontrolled AI side-effects | AI only classifies, extracts, decides a path, and formats — side-effects execute deterministically outside the LLM |
-| Reproducibility | Executions are deterministic and auditable; full state is traceable |
-| Version drift | Every artefact is versioned and immutable after publication; executions always reference explicit versions |
-| Multi-tenant leakage | Structural isolation by `tenant_id` from the foundation |
+| Uncontrolled AI side effects | The LLM only classifies, extracts, routes, or formats; effects execute deterministically |
+| Reproducibility | Runs are append-only and fully traceable to the exact versions they used |
+| Version drift | Every artefact is versioned and immutable once published |
+| Multi-tenant leakage | `tenant_id` is structural and always derived from the JWT |
 | Authoring vs runtime confusion | Definitions are immutable; execution never mutates definitions |
 
 ---
 
 ## 2. Architecture
 
-### Style
+Hexagonal architecture with DDD bounded contexts. Dependencies point inward: adapters and
+infrastructure implement domain contracts, never the reverse.
 
-**Hexagonal Architecture (Ports & Adapters)** with **Domain-Driven Design (DDD)**:
+```mermaid
+flowchart TB
+  subgraph edge["Adapters · src/adapters, src/infra"]
+    HTTP["FastAPI controllers"]
+    MCPGW["MCP gateway (FastMCP)"]
+    WRK["Temporal worker · ARQ jobs"]
+    PERS["SQLAlchemy · Alembic"]
+    PROV["LLM · embedding · blob · secrets"]
+  end
+  subgraph app["Application · app.py, containers.py, services/"]
+    BOUND["ExecutionBoundary<br/>ConversationBoundary"]
+  end
+  subgraph dom["Domain · src/domain/**"]
+    EXEC["Execution + graph runtime"]
+    FLOW["Flows · Agents · Prompts"]
+    KNOW["RAG · Context · LLM"]
+    GOV["Governance · AI policy · Auth · Tenants"]
+    TOOL["Tools · MCP registry · Human SLA"]
+  end
+  HTTP --> BOUND
+  MCPGW --> BOUND
+  WRK --> BOUND
+  BOUND --> EXEC
+  EXEC --> FLOW & KNOW & GOV & TOOL
+  dom -.->|ports| PERS & PROV
+```
 
-- **Domain** (`src/domain/**`): business rules, services, repositories
-- **Adapters** (`src/adapters/**`): LLM/RAG adapters, Langfuse tracer, MCP gateway
-- **Infrastructure** (`src/infra/**`): SQLAlchemy models, migrations, HTTP tool executor
-- **Application** (`src/app.py`, `src/containers.py`, `src/rest.py`): FastAPI factory, DI wiring, route registration
+### Two planes
 
-Runtime code depends inward on domain contracts; infrastructure and adapters implement those contracts at the edges.
-
-### Design-time vs execution-time
-
-| Plane | Purpose | Artefact states |
-|-------|---------|-----------------|
-| **Authoring** | Define and version flows, agents, tools, policies | `DRAFT → VALIDATED → PUBLISHED → DEPRECATED → DISABLED` |
-| **Runtime** | Execute published versions; never mutate definitions | `CREATED → RUNNING → COMPLETED / FAILED` |
-
-### High-level diagram
+| Plane | Purpose | States |
+|-------|---------|--------|
+| Authoring | Define and version flows, agents, tools, policies | `DRAFT → VALIDATED → PUBLISHED → DEPRECATED → DISABLED` |
+| Runtime | Execute published versions, never mutate them | `CREATED → RUNNING → COMPLETED / FAILED` |
 
 ```mermaid
 flowchart LR
-  subgraph Adapters
-    HTTP[HTTP / FastAPI]
-    Jobs[Workers / ARQ]
+  subgraph authoring["Authoring plane"]
+    D["Draft"] --> V["Validated"] --> P["Published"]
+    P --> DEP["Deprecated"] --> DIS["Disabled"]
   end
-  subgraph Domain
-    EX[Execution]
-    FL[Flows]
-    RAG[RAG]
-    GOV[Governance]
+  subgraph runtime["Runtime plane"]
+    FR["FlowRun"] --> NR["NodeRun"] --> AR["AgentRun / ToolRun"]
+    NR --> EV["ExecutionEvent (append-only)"]
   end
-  subgraph Infra
-    DB[(Postgres + pgvector)]
-    RD[(Redis)]
-    LF[Langfuse]
-    LLM[LLM Providers]
+  P -->|"FlowGraphSnapshot (immutable)"| FR
+```
+
+### Request path
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant B as ExecutionBoundary
+  participant S as ExecutionService
+  participant G as Graph runtime
+  participant N as Node (LLM / tool / router)
+  C->>B: POST /core/v1/executions/flow-runs + Idempotency-Key
+  B->>B: rate limit → scope authorization → idempotency
+  B->>S: ingest interaction, create FlowRun
+  S->>G: load FlowGraphSnapshot, build execution plan
+  loop until terminal node
+    G->>N: execute node with resolved runtime policy
+    N-->>G: output + events
+    G->>G: edge evaluation → next node
   end
-  HTTP --> EX
-  Jobs --> EX
-  EX --> FL & RAG & GOV
-  EX --> DB & LF
-  GOV --> RD
-  EX --> LLM
+  G-->>S: GraphState + ExecutionEvents
+  S-->>C: FlowRun result
 ```
 
 ---
 
-## 3. Bounded Contexts
+## 3. Bounded contexts
 
-All contexts map one-to-one to `src/domain/<package>/`. Shared helpers live under `src/domain/common/`.
+Each maps one-to-one to `src/domain/<package>/`; shared helpers live in `src/domain/common/`.
 
-### Core runtime and inference
-
-| Context | Responsibility |
-|---------|---------------|
-| **Execution** | Graph execution, state machine, node runtime, hooks |
-| **Flows** | Graph definition, compilation (DAG), validation, HTTP authoring |
-| **LLM** | Layered inference, executor, provider abstraction, semantic cache, moderation |
-| **RAG** | Retrieval-augmented generation, embeddings, vector stores, chunking |
-| **MCP** | Tenant MCP registry, gateway, HTTP tool bridge (`src/domain/mcp_registry/`) |
-
-### Agents, conversation, and prompts
-
-| Context | Responsibility |
-|---------|---------------|
-| **Agents** | Agent definitions, versions, node bindings |
-| **Conversation** | Sessions, interactions, SSE streaming |
-| **Context** | Layered memory, RAG activation, context retrieval |
-| **Prompts** | Dynamic prompt templates and versioning |
-| **User Prompts** | User-provided prompt variants |
-
-### Policy, identity, and operations
-
-| Context | Responsibility |
-|---------|---------------|
-| **Governance** | Access policies, rate limits, scope enforcement, authoring audit |
-| **AI Policy** | Tenant AI execution policy, model configuration, lifecycle |
-| **Human SLA** | Escalation triggers, handoff policies, case management |
-| **Auth** | JWT validation, inbound service key management |
-| **Tenants** | Multi-tenant isolation, JSONB settings |
-| **Tools** | Tool contracts, OpenAPI parsing, HTTP execution |
-| **Onboarding** | Structured step-based onboarding flows |
+| Group | Contexts |
+|-------|----------|
+| Execution stack | **Execution** (graph runtime, state machine, hooks), **Flows** (graph definition, compilation, validation) |
+| Inference and memory | **LLM** (layered inference, executor, providers, semantic cache), **RAG** (embeddings, vector stores, chunking), **Context** (layered memory, RAG activation) |
+| Integrations | **Tools** (contracts, OpenAPI import, HTTP execution), **MCP registry** (tenant MCP servers, gateway), **User prompts** |
+| Agents and conversation | **Agents**, **Conversation** (sessions, SSE), **Prompts** |
+| Policy and identity | **Governance** (scopes, rate limits, authoring audit), **AI policy**, **Auth**, **Tenants**, **Human SLA** |
+| Onboarding | **Onboarding** (structured step flows) |
 
 ---
 
-## 4. Technologies
+## 4. Engineering highlights
+
+### HTTP-to-MCP conversion from `openapi.json`
+
+Any HTTP API described by an OpenAPI document becomes tenant-scoped tool contracts and, without
+further code, MCP tools served to external clients.
+
+```mermaid
+flowchart LR
+  S["openapi.json"] --> I["POST /tools/import-tools"] --> TC[("tool_config<br/>published, versioned")]
+  TC --> GR["Graph runtime<br/>ToolOrchestrator"]
+  TC --> MB["MCP server binding"] --> GW["FastMCP gateway"] --> CL["MCP client"]
+  GR --> API["Target HTTP API"]
+  GW --> API
+```
+
+Operations are flattened into a single JSON Schema (body + path + query, `$ref` resolved), base URLs
+are resolved from `servers` or the fetch origin, and end-user credentials are late-bound per call
+through `interaction_metadata_key` headers.
+Details: [OpenAPI to MCP](docs/Tools/openapi-to-mcp.md).
+
+### RAG and CAG
+
+Retrieval decides what enters the prompt; caching decides what can be skipped.
+
+```mermaid
+flowchart TB
+  Q["Node request"] --> AC{"Semantic answer cache"}
+  AC -->|hit| R["Result · InferenceLayer=CACHE · cost 0"]
+  AC -->|miss| CTX["Layered context<br/>session · tenant knowledge · user memory"]
+  CTX --> LAD["SLM → LLM ladder"] --> R
+  CTX --> QC["Query-embedding cache"]
+  LAD -->|persist| AC
+```
+
+Governed activation, metadata-filtered vector search, chunking strategies, query-embedding cache,
+answer cache, and definition caches are documented in
+[Context and cache strategy](docs/Architecture/context-and-cache-strategy.md).
+
+### Deterministic output budgeting
+
+`CompletionBudgetPolicy` derives `max_tokens` for structured outputs from the serialized output JSON
+Schema (tiktoken `cl100k_base`, schema factor, safety margin, floor), capped by policy. Structured
+outputs are further composed with tool request schemas for strict slot filling.
+Details: [Structured output and budget](docs/LLM/structured-output-and-budget.md).
+
+### Durability and observability
+
+Flow runs and scheduled tool runs can execute under Temporal; every step emits append-only execution
+events plus OpenTelemetry spans with token and cost attribution.
+Details: [Durable execution](docs/Execution/durable-execution.md) · [Tracing and cost](docs/Develop/tracing-and-cost.md).
+
+---
+
+## 5. Technology
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Python 3.12+, FastAPI ≥0.135.0, uvicorn |
-| Validation | Pydantic v2 ≥2.12.5 |
-| ORM | SQLAlchemy 2.0 (async), asyncpg |
-| Database | PostgreSQL + pgvector |
-| Cache / rate-limit | Redis 5.0 |
-| Graph execution | LangGraph ≥1.0.0 |
-| LLM providers | OpenAI SDK ≥1.54.0, llama-cpp-python (local SLM) |
-| Structured LLM output | instructor ≥1.14.5 |
-| MCP | fastmcp ≥3.1.1 |
-| Async jobs | ARQ (embedding queue) |
-| Observability | Langfuse ≥3.12.0, structlog |
-| Migrations | Alembic ≥1.14.0 |
-| DI | dependency-injector ≥4.41.0 |
-| HTTP client | httpx ≥0.28.0 |
-| Auth | PyJWT ≥2.8.0, python-jose |
-| Token counting | tiktoken ≥0.7.0 |
-| Templates | Jinja2 ≥3.1.0 |
-| Package manager | [uv](https://docs.astral.sh/uv/) |
-| Containers | Docker / Docker Compose |
+| Runtime | Python 3.14, FastAPI, uvicorn |
+| Validation | Pydantic v2 |
+| Persistence | SQLAlchemy 2.0 async, asyncpg, PostgreSQL + pgvector, Alembic |
+| Cache and limits | Redis |
+| Graph execution | LangGraph |
+| Durable execution | Temporal (`temporalio`) |
+| Inference | OpenAI SDK, llama-cpp-python (local SLM), instructor, tiktoken |
+| MCP | fastmcp |
+| Async jobs | ARQ |
+| Observability | OpenTelemetry (Collector, Tempo, Prometheus, Loki, Grafana), structlog |
+| DI | dependency-injector |
+| Tooling | uv, Docker Compose, pytest, ruff, vulture |
 
 ---
 
-## 5. Setup and Execution
+## 6. Setup
 
-### 5.1 Via Docker Compose
+### Docker Compose
 
 ```bash
-# Start all services (PostgreSQL, Redis, App)
-docker compose up -d
-
-# Stream application logs
+docker compose up -d          # postgres, redis, temporal, app, worker
 docker compose logs -f app
-
-# Stop
+docker compose --profile docs up -d docs   # documentation site on http://localhost:8001
 docker compose down
 ```
 
-> **Data persistence:** The compose file binds Postgres data to `./docker-volumes/postgres`. `docker compose down -v` only removes named/anonymous volumes declared in the `volumes:` section — it does **not** delete that directory. To reset the database, stop services and remove the bind-mount directory manually:
->
-> ```bash
-> rm -rf docker-volumes/postgres docker-volumes/redis
-> ```
+Postgres and Redis data are bind-mounted to `./docker-volumes/`; `docker compose down -v` does not
+remove them. Reset with `rm -rf docker-volumes/postgres docker-volumes/redis`.
 
-### 5.2 Database migrations and seed
-
-Run migrations against a reachable Postgres instance (e.g., after `docker compose up -d postgres`):
+### Local
 
 ```bash
+uv sync --all-extras --all-groups
+source .venv/bin/activate
+cp env.example .env
+docker compose up -d postgres redis
+
 export DATABASE_URL='postgresql+asyncpg://postgres:password@127.0.0.1:5432/agent_router'
 make migrate
-# equivalent: PYTHONPATH=src uv run python -m alembic upgrade head
+PYTHONPATH=src uvicorn src.app:app --reload --port 8000
 ```
 
-Load the demo seed (also requires `REDIS_URL` and relevant env vars from `.env`):
+`PYTHONPATH=src` is required — the application uses absolute imports rooted at `src/`.
 
-```bash
-make seed-demo
-# equivalent: PYTHONPATH=src uv run python resources/scripts/seeds/demo/run.py
-```
-
-### 5.3 Local development (without Docker app container)
-
-```bash
-# Install all dependencies including dev and docs groups
-uv sync --all-extras --all-groups
-
-# Activate the virtual environment
-source .venv/bin/activate
-
-# Copy and configure environment variables
-cp env.example .env
-# Edit .env with your values
-
-# Run the app
-uvicorn src.app:app --reload
-```
-
-### 5.4 Environment variables
-
-Copy `.env.example` and adjust:
+### Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string (`postgresql+asyncpg://user:pass@host:5432/db`) |
-| `REDIS_URL` | Redis connection string (`redis://localhost:6379/3`) |
-| `JWT_SECRET` | Secret key for JWT validation |
-| `JWT_ISSUER` | Expected JWT issuer claim |
-| `JWT_AUDIENCE` | Expected JWT audience claim |
-| `LANGFUSE_PUBLIC_KEY` | Langfuse public key (optional, for LLM tracing) |
-| `LANGFUSE_SECRET_KEY` | Langfuse secret key (optional) |
-| `LANGFUSE_HOST` | Langfuse host (optional) |
-| `CACHE_SILENT_MODE` | `true` (default) — cache failures are silent; set `false` to fail hard |
+| `DATABASE_URL` | `postgresql+asyncpg://user:pass@host:5432/db` |
+| `REDIS_URL` | `redis://localhost:6379/0`; falls back to `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` |
+| `JWT_SECRET` / `JWT_ISSUER` / `JWT_AUDIENCE` | JWT validation |
+| `ADMIN_API_KEY` | Platform-operator credential for `/admin/llm/*` (`X-Admin-Key`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP collector endpoint (default `http://localhost:4318`) |
+| `TOOL_IMPORT_DEFAULT_BASE_URL` | Fallback base URL for imported OpenAPI tools |
+| `EXPOSE_API_DOCS` | Serves `/docs`, `/redoc` and `/openapi.json`; true only when `ENVIRONMENT=development` |
+| `TEMPORAL_ENABLED` / `TEMPORAL_HOST` | Durable execution |
+| `CACHE_SILENT_MODE` | `true` (default) absorbs Redis failures; `false` fails hard |
 
-### 5.5 Makefile targets
+`env.example` documents every setting the service reads, with its real default.
+
+### Make targets
 
 ```bash
-make pc-config      # Install pre-commit hooks
-make pc-run         # Run pre-commit on staged files
-make pc-run-all     # Run pre-commit on all files
-make migrate        # Run Alembic migrations
-make seed-demo      # Load demo seed data
-make validate-test  # Run validation suite (requires docker compose)
-make test-flow-demo # Exercise demo flow via REST API
+make migrate            # alembic upgrade head
+make seed-demo          # load the demo tenant from committed SQL
+make seed-demo-python   # regenerate it from the Python seeds (needs an OpenAI key for RAG)
+make seed-demo-export   # capture the result back into resources/sql/demo_seed.sql
+make temporal-up        # Temporal dev server
+make worker             # Temporal workers + flow-run reconciler
+make test-temporal      # workflow and activity tests
+make docs-up            # documentation site on :8001
+make pc-config          # install pre-commit hooks
+make pc-run-all         # run pre-commit on all files
+```
+
+`make seed-demo` applies [`resources/sql/demo_seed.sql`](resources/sql/README.md) — 51 tables
+including the RAG corpus with its embedding vectors. It needs a migrated database and nothing else:
+no OpenAI key, no second service. The Python seeds remain the generator behind it, because the
+graph hash and the embeddings have to be computed before they can be captured.
+
+For an API-driven walkthrough instead, use [`examples/`](examples/README.md):
+
+```bash
+PYTHONPATH=src uv run python -m examples.full_tenant_setup
+PYTHONPATH=src uv run python -m examples.scenarios.run_conversation
 ```
 
 ---
 
-## 6. API Surface
+## 7. API surface
 
-All endpoints require a **JWT Bearer Token** with claims: `tenant_id`, `principal_type`, `principal_id`, `scopes`.
+Every endpoint requires a JWT Bearer token carrying `tenant_id`, `principal_type`, `principal_id`,
+and `scopes`. POST operations on the execution plane require an `Idempotency-Key` header.
 
-POST operations on the execution plane require an **`Idempotency-Key`** header.
+### Control plane — `/core/v1/*`
 
-### Control plane (`/core/v1/*`)
+| Group | Key endpoints |
+|-------|--------------|
+| Tenants | `GET /tenants/current`, `GET /tenants/current/settings` |
+| Flows | `GET/POST /flows`, `POST /flows/{id}/versions` |
+| Nodes and routing | `POST /nodes`, `POST /routers`, `POST /routing-rules` |
+| Agents | `GET/POST /agents`, `POST /agents/{id}/versions` |
+| Tools | `POST /tools/import-tools`, `GET /tools`, `POST /tool-configs` |
+| MCP | `POST /tenants/mcp-servers`, `GET /tenants/mcp-servers` |
+| AI policy | `POST /ai-execution-policies`, `GET /models` |
+| RAG | `GET/POST /rag-configs`, `GET /vector-stores` |
+| Governance | `POST /{resource}/{id}:{publish,deprecate,disable,activate,rollback}` |
+| Onboarding | `GET/POST /onboardings`, `POST /onboarding-runs` |
 
-| Resource group | Key endpoints |
-|----------------|--------------|
-| Tenants | `GET /core/v1/tenants/current`, `GET /core/v1/tenants/current/settings` |
-| Flows | `GET/POST /core/v1/flows`, `POST /core/v1/flows/{id}/versions` |
-| Nodes & Routing | `POST /core/v1/nodes`, `POST /core/v1/routers`, `POST /core/v1/routing-rules` |
-| Agents | `GET/POST /core/v1/agents`, `POST /core/v1/agents/{id}/versions` |
-| Tools | `POST /core/v1/tools/import-tools`, `GET /core/v1/tools`, `POST /core/v1/tool-configs` |
-| AI Policy | `POST /core/v1/ai-execution-policies`, `GET /core/v1/models` |
-| RAG | `GET/POST /core/v1/rag-configs`, `GET /core/v1/vector-stores` |
-| Governance | `POST /core/v1/{resource}/{id}:{publish,deprecate,disable,activate,rollback}` |
-| Onboarding | `GET/POST /core/v1/onboardings`, `POST /core/v1/onboarding-runs` |
-
-### Execution plane (`/core/v1/executions/*`)
+### Execution plane — `/core/v1/executions/*`
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /core/v1/executions/flow-runs` | Create and execute a FlowRun |
-| `GET /core/v1/executions/flow-runs/{id}` | Fetch FlowRun state |
-| `GET /core/v1/executions/flow-runs/{id}/graph-state` | Consolidated node output state |
-| `POST /core/v1/executions/tool-runs` | Create a ToolRun |
-| `POST /core/v1/executions/tool-runs/{id}:execute` | Execute a ToolRun |
-| `GET /core/v1/executions/execution-events` | Query append-only execution events |
-| `GET /core/v1/executions/node-runs` | List NodeRuns |
-| `GET /core/v1/executions/agent-runs` | List AgentRuns |
+| `POST /flow-runs` | Create and execute a FlowRun |
+| `GET /flow-runs/{id}` | FlowRun state |
+| `GET /flow-runs/{id}/graph-state` | Consolidated node output state |
+| `POST /tool-runs`, `POST /tool-runs/{id}:execute` | Create and execute a ToolRun |
+| `GET /execution-events` | Append-only execution events |
+| `GET /node-runs`, `GET /agent-runs` | Run inspection |
 
-### Observability
+### MCP plane
 
-- `GET /health` — liveness check
-- `GET /openapi.json` — OpenAPI 3.0 spec
+`/core/v1/mcp-servers/{id}/mcp` — Streamable HTTP, authenticated with `X-Api-Key` or
+`Authorization: Bearer`.
+
+### Operations
+
+`GET /health` · `GET /openapi.json`
 
 ---
 
-## 7. Testing
-
-### Install dev dependencies
+## 8. Testing
 
 ```bash
-uv sync --all-extras --all-groups
+uv run python -m pytest                                              # full suite with coverage gate
+uv run python -m pytest tests/unit --cov=src --cov-fail-under=0 -q   # local iteration
+make test-temporal
 ```
 
-### Run tests
+Suites: `tests/unit/`, `tests/integration/`, `tests/bdd/`. External dependencies are mocked through
+ports; integration tests use real Postgres and Redis. No test file is suppressed — `addopts` carries
+no `--ignore` entries.
+
+| Scope | Statements | Coverage |
+|-------|-----------:|---------:|
+| Measured surface (CI gate ≥ 90%) | ~13,456 | ~90.7% |
+| Whole codebase | ~20,712 | ~74% |
+
+The gap is the `[tool.coverage.run] omit` list, which is being retired in tranches — security- and
+execution-adjacent modules came out first and are now measured. To see the unfiltered number:
 
 ```bash
-# All tests (unit + integration + bdd)
-uv run python -m pytest
-
-# Specific test file
-uv run python -m pytest tests/unit/execution/test_execution_service.py
-
-# Verbose output
-uv run python -m pytest -vv
-
-# Skip coverage gate (useful during local iteration)
-uv run python -m pytest tests/unit --cov=src --cov-fail-under=0 -q
+uv run python -m pytest --cov-config=/dev/null --cov=src --cov-fail-under=0
 ```
-
-### Coverage policy
-
-| Item | Value |
-|------|-------|
-| Minimum enforced by CI | **95%** on measured surface |
-| Pattern | AAA (Arrange, Act, Assert) |
-| Test isolation | Each test is independent; fixtures in `conftest.py` |
-| External deps | Mocked via ports/protocols |
-| Excluded | Migrations, `__init__.py`, some low-ROI adapters (see `pyproject.toml` `[tool.coverage.run] omit`) |
-
-Test suites: `tests/unit/`, `tests/integration/`, `tests/bdd/`.
 
 ---
 
-## 8. Versioning and Governance
+## 9. Governance model
 
-### Semantic versioning of artefacts
+Artefacts use `major.minor.patch`. With `source_version_id` the new version derives from that source;
+without it, the patch of the latest version in scope is incremented. Versioned artefacts:
+`FlowVersion`, `AgentVersion`, `OnboardingVersion`, `AIExecutionPolicyVersion`, `RagConfig`,
+`ToolConfig`.
 
-All versioned artefacts use `major.minor.patch` with hybrid logic:
-
-- **With `source_version_id`**: derives version from the source version (increments patch)
-- **Without `source_version_id`**: auto-increments patch of the latest version in scope
-
-Versioned artefacts: `FlowVersion`, `AgentVersion`, `OnboardingVersion`, `AIExecutionPolicyVersion`, `RagConfig`, `ToolConfig`.
-
-### Version lifecycle events
-
-All authoring events require a `justification` field and are persisted in `authoring_event` for audit:
-
-```
-CREATE → PUBLISH → ACTIVATE
-                ↘ DEPRECATE → DISABLE
-                ↘ ROLLBACK
+```mermaid
+stateDiagram-v2
+  [*] --> Draft: create
+  Draft --> Published: publish
+  Published --> Active: activate
+  Published --> Deprecated: deprecate
+  Deprecated --> Disabled: disable
+  Published --> Published: rollback (new version)
 ```
 
-### Scope-based authorization
-
-Scopes are defined in `src/domain/governance/schemas/scopes.py` and enforced by `AccessPolicyService` inside `ExecutionBoundary`. Rate limiting uses Redis via `RateLimitService`.
-
-Example scopes: `execution:flow_run:create`, `flows:flow:list`, `agents:agent_version:publish`, `rag:rag_config:create`.
+Every transition requires a `justification` and is persisted in `authoring_event`. Scopes are declared
+in `src/domain/governance/schemas/scopes.py` and enforced by `AccessPolicyService` inside
+`ExecutionBoundary`; rate limits are Redis-backed.
 
 ---
 
-## 9. Data Dictionary
+## 10. Data dictionary
 
 | Entity | Description | Scope |
 |--------|-------------|-------|
-| **Tenant** | Structural isolation root | Isolation root for all entities |
-| **Flow** | Process definition (DAG of nodes) | `Tenant 1:N Flows` |
-| **FlowVersion** | Immutable published flow version | `Flow 1:N FlowVersions` |
-| **FlowGraphSnapshot** | Compiled immutable DAG; used by runtime | `FlowVersion 1:1` |
-| **FlowRun** | Concrete execution of a flow version | `FlowVersion 1:N FlowRuns` |
-| **Node** | Executable unit inside a flow (optional in current phase) | `FlowVersion 1:N Nodes` |
-| **NodeRun** | Single node execution record | `FlowRun 1:N NodeRuns` |
-| **Agent** | Cognitive agent definition | `Tenant 1:N Agents` |
-| **AgentVersion** | Immutable published agent version | `Agent 1:N AgentVersions` |
-| **AgentRun** | Effective agent execution | `AgentVersion 1:N AgentRuns` |
-| **Tool** | Abstract external integration contract | Global |
-| **ToolConfig** | Concrete tool configuration for a tenant | `Tenant 1:N ToolConfigs` |
-| **ToolRun** | Tool invocation record | `ToolConfig 1:N ToolRuns` |
-| **AIExecutionPolicy** | AI execution policy | Global |
-| **RagConfig** | RAG strategy per tenant | `Tenant 1:N RagConfigs` |
-| **VectorStore** | Vector similarity search store | `Tenant 1:N VectorStores` |
+| **Tenant** | Isolation root | Root of every entity |
+| **Flow** / **FlowVersion** | Process definition and its immutable versions | `Tenant 1:N`, `Flow 1:N` |
+| **FlowGraphSnapshot** | Compiled immutable DAG used by the runtime | `FlowVersion 1:1` |
+| **FlowRun** / **NodeRun** | Execution records | `FlowVersion 1:N`, `FlowRun 1:N` |
+| **Agent** / **AgentVersion** / **AgentRun** | Cognitive agent definition, versions, executions | `Tenant 1:N` |
+| **Tool** / **ToolConfig** / **ToolRun** | Integration contract, tenant configuration, invocation | Global / `Tenant 1:N` |
+| **AIExecutionPolicy** | Model and inference policy | Global |
+| **RagConfig** / **VectorStore** | Retrieval strategy and vector index | `Tenant 1:N` |
 | **GraphState** | Consolidated node output state | `FlowRun 1:1` |
-| **ExecutionEvent** | Append-only execution event log | `FlowRun 1:N` |
-| **AuthoringEvent** | Governance audit trail for version changes | `Resource 1:N` |
-| **Session** | Technical interaction context | `Tenant 1:N Sessions` |
-| **Interaction** | Persisted input event | `Session 1:N Interactions` |
+| **ExecutionEvent** / **AuthoringEvent** | Append-only runtime and governance audit | `FlowRun 1:N` / `Resource 1:N` |
+| **Session** / **Interaction** | Interaction context and persisted input | `Tenant 1:N` / `Session 1:N` |
 
-ORM models: `src/infra/database/models/`
-Pydantic schemas: `src/domain/<context>/schemas/`
-Repositories: `src/domain/<context>/repositories/`
+ORM models: `src/infra/database/models/` · schemas: `src/domain/<context>/schemas/` ·
+repositories: `src/domain/<context>/repositories/`
 
 ---
 
-## 10. Core Invariants
+## 11. Invariants
 
-1. **Tenant isolation is structural**: every datum, decision, and execution belongs to a tenant. `tenant_id` comes from the security context — never from the request body.
-2. **Definition is separate from execution**: flows and agents are defined and versioned; executions are traceable and auditable, and never mutate definitions.
-3. **AI does not execute side-effects**: the LLM only classifies, extracts, decides a path, or formats — side-effects are deterministic code outside the LLM.
-4. **Everything is explicit and versioned**: flows, agents, prompts, policies, tools, and decisions all have a version.
-5. **The channel is an input/output detail**: the core is agnostic to the interaction medium.
+1. `tenant_id` always comes from the security context, never from a request body.
+2. Definitions are versioned and immutable after publication; execution never mutates them.
+3. The LLM performs no side effects.
+4. Everything material — flows, agents, prompts, policies, tools, decisions — is versioned.
+5. The channel is an I/O detail; the core is medium-agnostic.
+6. Domain code never imports from `src/infra/` or `src/adapters/`.
 
 ---
 
-## 11. References
+## 12. Documentation
 
-### Internal documentation
+Full documentation site (MkDocs Material):
 
-- [Architecture overview](docs/Architecture/ARCHITECTURE.md)
-- [Runtime vs authoring](docs/Architecture/runtime-vs-authoring.md)
-- [Domain model overview](docs/Models/domain-overview.md)
-- [Glossary](docs/Glossary/index.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [DEVELOPMENT.md](DEVELOPMENT.md)
-- [SECURITY.md](SECURITY.md)
-- [MkDocs site](docs/index.md) — full domain documentation
+```bash
+docker compose --profile docs up -d docs   # http://localhost:8001
+# or: uv run mkdocs serve
+```
 
-### External references
-
-- [Hexagonal Architecture](https://herbertograca.com/2017/11/16/explicit-architecture-01-ddd-hexagonal-onion-clean-cqrs-how-i-put-it-all-together/)
-- [Domain-Driven Design](https://lyz-code.github.io/blue-book/architecture/domain_driven_design/)
-- [FastAPI](https://fastapi.tiangolo.com/) · [Pydantic v2](https://docs.pydantic.dev/) · [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/)
-- [uv package manager](https://docs.astral.sh/uv/)
-- [LangGraph](https://langchain-ai.github.io/langgraph/)
+| Topic | Document |
+|-------|----------|
+| Architecture | [Overview](docs/Architecture/ARCHITECTURE.md) · [Runtime vs authoring](docs/Architecture/runtime-vs-authoring.md) |
+| Context, RAG, CAG | [Context and cache strategy](docs/Architecture/context-and-cache-strategy.md) · [RAG](docs/RAG/index.md) · [LLM](docs/LLM/index.md) |
+| Integrations | [OpenAPI to MCP](docs/Tools/openapi-to-mcp.md) · [MCP registry](docs/MCP/index.md) · [Tools](docs/Tools/index.md) |
+| Execution | [Graph runtime](docs/Execution/graph-runtime/index.md) · [Durable execution](docs/Execution/durable-execution.md) |
+| Operations | [Installation](docs/Get-Started/installation.md) · [Full tenant configuration](docs/Get-Started/full-tenant-configuration.md) · [Tracing and cost](docs/Develop/tracing-and-cost.md) |
+| Model and terms | [Domain overview](docs/Models/domain-overview.md) · [Glossary](docs/Glossary/index.md) |
+| Known limitations | [Known limitations](docs/Develop/limitations.md) |
+| Repository | [CONTRIBUTING](CONTRIBUTING.md) · [DEVELOPMENT](DEVELOPMENT.md) · [SECURITY](SECURITY.md) · [examples](examples/README.md) |

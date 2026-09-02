@@ -15,11 +15,14 @@ from exceptions.service_exceptions import (
     RouterValidationException,
 )
 from adapters.observability.logging import get_logger, RequestLoggingMiddleware
+from adapters.observability.http_telemetry_middleware import HttpTelemetryMiddleware
+from adapters.temporal.client import build_temporal_client
 from settings import (
     APPLICATION_NAME,
     APPLICATION_VERSION,
     APPLICATION_DESCRIPTION,
     ENVIRONMENT,
+    TEMPORAL_ENABLED,
 )
 
 logger = get_logger()
@@ -29,6 +32,7 @@ _APP_START_TIME = datetime.now(timezone.utc)
 
 def init_middlewares(app: FastAPI) -> None:
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(HttpTelemetryMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -127,6 +131,32 @@ def init_routes(app: FastAPI, controllers: list[Any]) -> None:
             components["redis"]["error"] = redis_error
         if not redis_available:
             overall_healthy = False
+
+        if TEMPORAL_ENABLED:
+            temporal_start = time.time()
+            temporal_available = False
+            temporal_error: str | None = None
+            try:
+                client = await build_temporal_client()
+                await client.service_client.check_health()
+                temporal_available = True
+            except Exception as e:
+                temporal_error = str(e)
+                logger.warning(
+                    "Temporal health check failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+            temporal_duration = (time.time() - temporal_start) * 1000
+
+            components["temporal"] = {
+                "status": "ok" if temporal_available else "unavailable",
+                "response_time_ms": round(temporal_duration, 2),
+            }
+            if temporal_error:
+                components["temporal"]["error"] = temporal_error
+            if not temporal_available:
+                overall_healthy = False
 
         total_duration = (time.time() - start_time) * 1000
 

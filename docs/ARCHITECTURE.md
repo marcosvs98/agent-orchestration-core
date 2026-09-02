@@ -19,7 +19,7 @@ flowchart LR
   subgraph Infra
     DB[(Postgres)]
     RD[(Redis)]
-    LF[Langfuse]
+    LF[OpenTelemetry Collector]
   end
   HTTP --> EX
   Jobs --> EX

@@ -10,7 +10,7 @@ The runtime balances:
 - **Latency** — SLM path, caches, and caps (`max_latency_ms`) where configured.
 - **Quality / safety** — Escalation from SLM to full LLM when structured output does not validate; policy enforcement after calls.
 
-Observability uses **Langfuse** (see [Tracing and cost](tracing-and-cost.md)) so operators can **inspect** token usage and estimated cost on traces.
+Observability uses **OpenTelemetry** (see [Tracing and cost](tracing-and-cost.md)) so operators can **inspect** token usage and estimated cost on traces and in Grafana.
 
 ## Layered inference (decision order)
 
@@ -50,7 +50,7 @@ This avoids requesting the model maximum when only a small JSON payload is expec
 
 ## Hard caps on `LLMRequest`
 
-`LLMRequest` (`src/domain/llm/schemas/llm.py`) includes `max_tokens`, `max_cost_usd`, `max_latency_ms`, and optional `prompt_cache_key`. After each completion, `LLMExecutor._enforce_policy` (`src/domain/llm/services/llm_executor.py`) validates usage vs `max_tokens` and `max_cost_usd` (latency enforcement is present but may be relaxed in code paths — verify the current branch when auditing).
+`LLMRequest` (`src/domain/llm/schemas/llm.py`) includes `max_tokens`, `max_cost_usd`, `max_latency_ms`, and optional `prompt_cache_key`. After each completion, `LLMExecutor._enforce_policy` (`src/domain/llm/services/llm_executor.py`) validates usage against all three, raising `llm_policy_max_tokens_exceeded`, `llm_policy_cost_exceeded`, or `llm_policy_latency_exceeded`.
 
 ## Accounting (USD)
 
@@ -63,8 +63,65 @@ This avoids requesting the model maximum when only a small JSON payload is expec
 | **RAG activation** | Skips retrieval/embed work when RAG should not run for the task | `src/domain/context/services/rag_activation_service.py` |
 | **Layered memory context** | Composes session, tenant, and user memory; optional temporal rerank on RAG items | `src/domain/context/services/memory_retrieval.py` |
 | **Chunking / ingest** | Token windows, overlap, max chunks, truncation flags on ingest | `src/domain/rag/services/rag_runtime_service.py` |
+| **`ContextSummarizer` node** | Compacts a named node's output in **graph state** once it exceeds a byte threshold | `src/domain/execution/services/graph_runtime/nodes/context_summarizer.py` |
 
 Chunking parameters come from `rag_chunking_rule` / `rag_config` (see [Chunking strategies](../RAG/chunking-strategies.md), [RAG overview](../RAG/index.md), and [Persistence tables](../Glossary/persistence-tables.md)).
+
+### What is and is not bounded
+
+`ContextSummarizer` bounds payloads travelling **in graph state** between nodes. It is size-gated
+(`min_payload_bytes_to_run`) so it costs nothing below the threshold, and reports how much it
+saved. Configuration: [Non-LLM nodes → ContextSummarizer](../Execution/graph-runtime/nodes/llm-nodes.md#contextsummarizer).
+
+Two growth surfaces it does **not** bound, and one that is now bounded elsewhere:
+
+1. **Retrieved memory and knowledge.** There is no context or token budget on the system context;
+   retrieved items are concatenated unbounded. *(Open.)*
+2. **Structured-memory retention.** `retention_ttl` is advisory metadata — there is no eviction
+   or purge job, so structured memory never expires. *(Open.)*
+3. **Provider-side conversation history** — now bounded by conversation rollover, below.
+
+## Provider-side conversation rollover
+
+With the OpenAI provider, history lives in the Conversations API keyed by `conversation_key` with
+`previous_response_id` chaining. `ContextSummarizer` cannot reach it: the transcript is not in graph
+state, it is with the provider. Two things were therefore true at once — the conversation grew
+without limit, and when the 24h Redis mapping expired the whole thread vanished silently.
+
+The chosen strategy is to **roll the provider conversation**, not to own history locally. That keeps
+provider-side caching and the `previous_response_id` chain, at the cost of bounding by an
+**estimate** rather than the provider's authoritative token count.
+
+```mermaid
+flowchart TB
+  T["turn"] --> G["ConversationContinuityService.record_turn<br/>turns + estimated tokens"]
+  G -->|below threshold| K["keep conversation A"]
+  G -->|threshold crossed| S["build carry-forward summary"]
+  S --> P[("conversation_summary<br/>Postgres")]
+  S --> N["create conversation B seeded with summary"]
+  N --> M["repoint Redis mapping, clear previous_response_id"]
+  X["Redis mapping expired"] --> P
+  P --> R["reseed a new conversation from the summary"]
+```
+
+| Piece | Where |
+|-------|-------|
+| Growth counters (turns, estimated tokens) | Redis, 30-day TTL, reset on rollover |
+| Token estimate | tiktoken `cl100k_base`, falling back to `len/4` |
+| Durable carry-forward | `conversation_summary` table — Postgres, because Redis is allowed to fail silently |
+| Thresholds | `ConversationContinuityPolicy`: `max_turns` (40), `max_estimated_tokens` (60k), `summary_max_chars` (4k) |
+| Boundary | `ConversationContinuityPort` lives in `domain/llm/ports/` so the provider adapter never imports `domain/conversation` — an architectural rule with a test enforcing it |
+
+Two behaviours worth stating plainly:
+
+- **A mapping miss no longer loses history.** If `conversation_summary` has a row, the replacement
+  conversation is seeded with it. Only a conversation that has never rolled over starts empty.
+- **Failures never break a turn.** If counters are unreadable the decision is "do not roll over"
+  (rather than rolling on every turn), and a failed rollover is logged, not raised.
+
+The bound is an estimate maintained on our side. That is the honest limitation of keeping the
+transcript with the provider; owning history locally would make it exact and is the alternative that
+was weighed and not taken.
 
 ## Caches (what each saves)
 
@@ -77,15 +134,23 @@ These are **not** interchangeable: one is **answer-level**, the other **retrieva
 
 ## How to consult costs
 
-### 1. Langfuse (primary runtime view)
+### 1. Grafana (primary runtime view)
 
 1. Configure environment variables in `settings` (see `src/settings.py`):
-   - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` (default `https://cloud.langfuse.com`)
-   - `TRACING_ENABLED`, `TRACING_LEVEL`
-2. Ensure the Langfuse project receives traces from `LangfuseRuntimeTracer` (`src/adapters/observability/langfuse_runtime_tracer.py`).
-3. In the **Langfuse UI**, open **Traces** / **Generations** for your project and filter by session, time, or metadata. Generations created from `llm_executor` include **usage** and **cost** metadata where the provider returns token counts and `CostEngine` has computed USD.
+   - `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`), `OTEL_SERVICE_NAME`
+   - `TRACING_ENABLED`, `METRICS_ENABLED`
+2. Start the stack: `docker compose up -d`.
+3. Open **D3 LLM Cost and Tokens** on `http://localhost:3000`. Spend and tokens come from
+   `llm_usage_ledger` in Postgres; live call rate and latency come from spans via the Collector's
+   spanmetrics connector.
+4. To inspect a single call, open **D2 Graph Execution**, find the run, and follow the `trace_id`
+   link into Tempo. Generation spans carry `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`
+   and `aoc.gen_ai.cost.usd` as typed numbers wherever the provider returned token counts and
+   `CostEngine` computed USD.
 
-This is the main place to **see per-call token usage and estimated cost** in production-like setups.
+> **Every currency figure is currently 1000x too high** (gap G-02): `CostEngine` divides by 1000
+> against per-1M prices. Relative rankings are correct; absolute USD is not. Token counts are
+> unaffected and are the trustworthy quantity until that is fixed.
 
 ### 2. Tariffs in Postgres (`llm_pricing`)
 
@@ -103,16 +168,16 @@ Adjust these in **policy configuration** (and persisted policy tables), not only
 
 ### 4. Structured logs (debugging)
 
-`structlog` (`src/adapters/observability/logging.py`) context often includes identifiers such as `flow_run_id` / correlation IDs. Use logs alongside Langfuse to **correlate** a failing request with a trace. See repository **`DEVELOPMENT.md`** for local run and log level.
+`structlog` (`src/adapters/observability/logging.py`) context often includes identifiers such as `flow_run_id` / correlation IDs. Every log record now carries `trace_id` and `span_id`, so Loki and Tempo cross-link in both directions. See repository **`DEVELOPMENT.md`** for local run and log level.
 
 ### 5. What this repo does *not* ship
 
-There is **no** single built-in “cost dashboard” web UI inside this repository. Aggregated billing analytics typically require **Langfuse export**, a **data warehouse**, or downstream finance tools. Any such pipeline is **outside** this service unless explicitly integrated.
+The provisioned Grafana dashboards cover operational cost inspection. Long-horizon billing analytics (multi-month rollups, invoicing, chargeback) still require a **data warehouse** or downstream finance tooling; `llm_usage_ledger` is the export surface. Any such pipeline is **outside** this service unless explicitly integrated.
 
 ## Product limitations
 
 - **SLM local** provider may be incomplete or stubbed in some environments (`SLMLocalProvider`, `src/domain/llm/adapters/slm_local_provider.py`); cost savings depend on deployment.
-- **Latency** enforcement in `_enforce_policy` may be disabled in parts of the codebase — confirm before relying on it for SLOs.
+- **Retrieved memory and knowledge** carry no token budget of their own — see [What is and is not bounded](#what-is-and-is-not-bounded).
 
 ## Related
 

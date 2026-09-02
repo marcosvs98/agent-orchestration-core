@@ -39,9 +39,7 @@ async def test_merge_flow_run_runtime_contract_no_row(exec_repo: ExecutionReposi
     session = AsyncMock()
     session.get = AsyncMock(return_value=None)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.merge_flow_run_runtime_contract(
-        flow_run_id=uuid4(), patch={"k": "v"}
-    )
+    await exec_repo.merge_flow_run_runtime_contract(flow_run_id=uuid4(), patch={"k": "v"})
     session.commit.assert_not_awaited()
 
 
@@ -53,9 +51,7 @@ async def test_merge_flow_run_runtime_contract_updates(exec_repo: ExecutionRepos
     session.get = AsyncMock(return_value=row)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
     fid = uuid4()
-    await exec_repo.merge_flow_run_runtime_contract(
-        flow_run_id=fid, patch={"a": 1}
-    )
+    await exec_repo.merge_flow_run_runtime_contract(flow_run_id=fid, patch={"a": 1})
     session.commit.assert_awaited_once()
     assert row.runtime_contract == {"a": 1}
 

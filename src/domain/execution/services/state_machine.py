@@ -71,6 +71,7 @@ class AgentRunStatus(StrEnum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class ToolRunStatus(StrEnum):
@@ -119,10 +120,19 @@ class RunLifecycleStateMachine:
     }
 
     agent_transitions: dict[AgentRunStatus, set[AgentRunStatus]] = {
-        AgentRunStatus.CREATED: {AgentRunStatus.RUNNING, AgentRunStatus.FAILED},
-        AgentRunStatus.RUNNING: {AgentRunStatus.COMPLETED, AgentRunStatus.FAILED},
+        AgentRunStatus.CREATED: {
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.FAILED,
+            AgentRunStatus.CANCELLED,
+        },
+        AgentRunStatus.RUNNING: {
+            AgentRunStatus.COMPLETED,
+            AgentRunStatus.FAILED,
+            AgentRunStatus.CANCELLED,
+        },
         AgentRunStatus.COMPLETED: set(),
         AgentRunStatus.FAILED: set(),
+        AgentRunStatus.CANCELLED: set(),
     }
 
     tool_transitions: dict[ToolRunStatus, set[ToolRunStatus]] = {

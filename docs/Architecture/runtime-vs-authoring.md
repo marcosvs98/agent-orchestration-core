@@ -41,7 +41,7 @@ flowchart LR
 
 - Authoring controllers under `src/domain/*/controllers/` (HTTP) mutate drafts through application services.
 - Runtime execution enters via `src/domain/execution/` and `graph_runtime/`.
-- Cross-cutting tracing: `src/adapters/observability/langfuse_runtime_tracer.py`.
+- Cross-cutting tracing: `src/adapters/observability/otel_runtime_tracer.py`.
 
 ## Related
 

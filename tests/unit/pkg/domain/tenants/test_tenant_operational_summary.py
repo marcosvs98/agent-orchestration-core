@@ -87,6 +87,12 @@ async def test_get_current_summary_structure() -> None:
         ai_task_id=None,
         node_type="llm",
         source_node_template_id=None,
+        allow_rag_tenant=True,
+        allow_user_memory_structured=False,
+        allow_user_memory_vector=False,
+        rag_config_id=None,
+        allow_session_context=False,
+        allow_memory_write=False,
     )
     av = SimpleNamespace(
         agent_version_id=av_id,
@@ -148,9 +154,7 @@ async def test_get_current_summary_structure() -> None:
     summary_repo = AsyncMock()
     summary_repo.load_operational_snapshot = AsyncMock(return_value=snap)
     summary_repo.load_operational_metrics = AsyncMock(return_value=metrics)
-    summary_repo.load_policy_activation_sets = AsyncMock(
-        return_value=_POLICY_ACTIVATION_EMPTY
-    )
+    summary_repo.load_policy_activation_sets = AsyncMock(return_value=_POLICY_ACTIVATION_EMPTY)
     gov = AsyncMock()
     gov.list_runtime_policies = AsyncMock(return_value=[])
     gov.list_access_policies = AsyncMock(return_value=[])
@@ -166,9 +170,7 @@ async def test_get_current_summary_structure() -> None:
 
     service = TenantSummaryService(
         tenants_repository=tenants_repo,
-        agents_repository=AsyncMock(
-            count_active_agent_versions=AsyncMock(return_value=1)
-        ),
+        agents_repository=AsyncMock(count_active_agent_versions=AsyncMock(return_value=1)),
         governance_policies_service=gov,
         tenant_summary_repository=summary_repo,
         tools_repository=None,
@@ -251,6 +253,12 @@ async def test_node_type_fallback_from_graph_definition() -> None:
         ai_task_id=None,
         node_type=None,
         source_node_template_id=None,
+        allow_rag_tenant=False,
+        allow_user_memory_structured=False,
+        allow_user_memory_vector=False,
+        rag_config_id=None,
+        allow_session_context=False,
+        allow_memory_write=False,
     )
     snap = TenantOperationalDbSnapshot(
         flows=[flow],
@@ -263,12 +271,8 @@ async def test_node_type_fallback_from_graph_definition() -> None:
     )
     summary_repo = AsyncMock()
     summary_repo.load_operational_snapshot = AsyncMock(return_value=snap)
-    summary_repo.load_operational_metrics = AsyncMock(
-        return_value=TenantOperationalMetrics()
-    )
-    summary_repo.load_policy_activation_sets = AsyncMock(
-        return_value=_POLICY_ACTIVATION_EMPTY
-    )
+    summary_repo.load_operational_metrics = AsyncMock(return_value=TenantOperationalMetrics())
+    summary_repo.load_policy_activation_sets = AsyncMock(return_value=_POLICY_ACTIVATION_EMPTY)
     gov = AsyncMock()
     for m in (
         "list_runtime_policies",
@@ -282,9 +286,7 @@ async def test_node_type_fallback_from_graph_definition() -> None:
 
     service = TenantSummaryService(
         tenants_repository=AsyncMock(get_tenant=AsyncMock(return_value=tenant_row)),
-        agents_repository=AsyncMock(
-            count_active_agent_versions=AsyncMock(return_value=0)
-        ),
+        agents_repository=AsyncMock(count_active_agent_versions=AsyncMock(return_value=0)),
         governance_policies_service=gov,
         tenant_summary_repository=summary_repo,
         ai_repository=AsyncMock(list_ai_execution_policies=AsyncMock(return_value=[])),
@@ -347,6 +349,12 @@ async def test_draft_edges_when_no_snapshot() -> None:
         ai_task_id=None,
         node_type="x",
         source_node_template_id=None,
+        allow_rag_tenant=False,
+        allow_user_memory_structured=False,
+        allow_user_memory_vector=False,
+        rag_config_id=None,
+        allow_session_context=False,
+        allow_memory_write=False,
     )
     snap = TenantOperationalDbSnapshot(
         flows=[flow],
@@ -360,12 +368,8 @@ async def test_draft_edges_when_no_snapshot() -> None:
     )
     summary_repo = AsyncMock()
     summary_repo.load_operational_snapshot = AsyncMock(return_value=snap)
-    summary_repo.load_operational_metrics = AsyncMock(
-        return_value=TenantOperationalMetrics()
-    )
-    summary_repo.load_policy_activation_sets = AsyncMock(
-        return_value=_POLICY_ACTIVATION_EMPTY
-    )
+    summary_repo.load_operational_metrics = AsyncMock(return_value=TenantOperationalMetrics())
+    summary_repo.load_policy_activation_sets = AsyncMock(return_value=_POLICY_ACTIVATION_EMPTY)
     gov = AsyncMock()
     for m in (
         "list_runtime_policies",
@@ -379,9 +383,7 @@ async def test_draft_edges_when_no_snapshot() -> None:
 
     service = TenantSummaryService(
         tenants_repository=AsyncMock(get_tenant=AsyncMock(return_value=tenant_row)),
-        agents_repository=AsyncMock(
-            count_active_agent_versions=AsyncMock(return_value=0)
-        ),
+        agents_repository=AsyncMock(count_active_agent_versions=AsyncMock(return_value=0)),
         governance_policies_service=gov,
         tenant_summary_repository=summary_repo,
         ai_repository=AsyncMock(list_ai_execution_policies=AsyncMock(return_value=[])),

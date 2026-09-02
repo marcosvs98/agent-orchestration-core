@@ -1,5 +1,4 @@
 import contextlib
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -28,9 +27,7 @@ class TestDbExecutionEventHook:
         return DbExecutionEventHook(repository, tracer)
 
     @pytest.mark.asyncio
-    async def test_on_flow_start_calls_repository_with_correct_data(
-        self, hook, repository
-    ):
+    async def test_on_flow_start_calls_repository_with_correct_data(self, hook, repository):
         tenant_id = uuid4()
         session_id = uuid4()
         flow_run_id = uuid4()
@@ -58,9 +55,7 @@ class TestDbExecutionEventHook:
         assert call_kwargs["schema_version"] == 1
 
     @pytest.mark.asyncio
-    async def test_on_node_start_calls_repository_with_node_id(
-        self, hook, repository
-    ):
+    async def test_on_node_start_calls_repository_with_node_id(self, hook, repository):
         tenant_id = uuid4()
         session_id = uuid4()
         flow_run_id = uuid4()
@@ -83,9 +78,7 @@ class TestDbExecutionEventHook:
         assert call_kwargs["event_type"] == ExecutionEventType.NodeStarted.value
 
     @pytest.mark.asyncio
-    async def test_on_node_complete_calls_repository_with_payload(
-        self, hook, repository
-    ):
+    async def test_on_node_complete_calls_repository_with_payload(self, hook, repository):
         tenant_id = uuid4()
         session_id = uuid4()
         flow_run_id = uuid4()
@@ -109,9 +102,7 @@ class TestDbExecutionEventHook:
         assert call_kwargs["node_id"] == node_id
 
     @pytest.mark.asyncio
-    async def test_on_edge_evaluated_calls_repository_with_edge_id(
-        self, hook, repository
-    ):
+    async def test_on_edge_evaluated_calls_repository_with_edge_id(self, hook, repository):
         tenant_id = uuid4()
         session_id = uuid4()
         flow_run_id = uuid4()
@@ -137,9 +128,7 @@ class TestDbExecutionEventHook:
         assert call_kwargs["event_type"] == ExecutionEventType.EdgeEvaluated.value
 
     @pytest.mark.asyncio
-    async def test_on_flow_complete_calls_repository_with_payload(
-        self, hook, repository
-    ):
+    async def test_on_flow_complete_calls_repository_with_payload(self, hook, repository):
         tenant_id = uuid4()
         session_id = uuid4()
         flow_run_id = uuid4()
@@ -162,9 +151,7 @@ class TestDbExecutionEventHook:
         assert call_kwargs["edge_id"] is None
 
     @pytest.mark.asyncio
-    async def test_on_flow_failed_calls_repository_with_reason(
-        self, hook, repository
-    ):
+    async def test_on_flow_failed_calls_repository_with_reason(self, hook, repository):
         tenant_id = uuid4()
         session_id = uuid4()
         flow_run_id = uuid4()

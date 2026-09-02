@@ -13,8 +13,8 @@ import os
 import sys
 from pathlib import Path
 
-# Disable Langfuse before application settings import (TRACING_ENABLED defaults to true).
 os.environ.setdefault("TRACING_ENABLED", "false")
+os.environ.setdefault("METRICS_ENABLED", "false")
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = str(_ROOT / "src")

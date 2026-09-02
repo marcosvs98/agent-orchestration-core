@@ -16,6 +16,10 @@ from pydantic import Field, ValidationError
 from starlette.responses import JSONResponse
 
 from adapters.observability.logging import get_logger
+from domain.common.interaction_metadata import (
+    END_USER_AUTHORIZATION_METADATA_KEY,
+    resolve_metadata_value,
+)
 from domain.mcp_registry.schemas.mcp_registry import McpServerBuildSpec
 from domain.tools.schemas.http_result import HttpToolResult
 from domain.tools.services.tool_orchestrator import effective_tool_http_url
@@ -55,7 +59,7 @@ def _mcp_interaction_metadata_for_http_tools() -> dict[str, str]:
     inbound = _MCP_INBOUND_INTERACTION_METADATA.get()
     if isinstance(inbound, dict):
         out.update({str(k): str(v) for k, v in inbound.items() if v is not None})
-    if out.get("uora_end_user_authorization"):
+    if out.get(END_USER_AUTHORIZATION_METADATA_KEY):
         return out
     try:
         from fastmcp.server.dependencies import get_http_request
@@ -66,7 +70,7 @@ def _mcp_interaction_metadata_for_http_tools() -> dict[str, str]:
             bearer_body = auth_in[7:].strip()
             xk = (req.headers.get("x-api-key") or "").strip()
             if bearer_body and bearer_body != xk:
-                out["uora_end_user_authorization"] = auth_in.strip()
+                out[END_USER_AUTHORIZATION_METADATA_KEY] = auth_in.strip()
     except RuntimeError:
         pass
     return out
@@ -99,7 +103,7 @@ def _spec_cache_key(spec: McpServerBuildSpec) -> tuple:
     )
 
 
-class _McpHttpProxyTool(Tool):
+class _McpHttpProxyTool(Tool):  # pylint: disable=abstract-method
     KEY_PREFIX = "tool"
     exec_tool_config_id: UUID = Field(exclude=True)
     exec_tenant_id: UUID = Field(exclude=True)
@@ -148,7 +152,7 @@ class _McpHttpProxyTool(Tool):
         headers: dict[str, str] = {}
         meta = dict(_mcp_interaction_metadata_for_http_tools())
         ob_ref = _MCP_OUTBOUND_AUTH_SECRET_REF.get()
-        cur_auth = (meta.get("uora_end_user_authorization") or "").strip()
+        cur_auth = (meta.get(END_USER_AUTHORIZATION_METADATA_KEY) or "").strip()
         if ob_ref and not cur_auth:
             with tracer.observe(
                 as_type="tool",
@@ -163,7 +167,7 @@ class _McpHttpProxyTool(Tool):
                 v = str(resolved).strip()
                 if not v.lower().startswith("bearer "):
                     v = f"Bearer {v}"
-                meta["uora_end_user_authorization"] = v
+                meta[END_USER_AUTHORIZATION_METADATA_KEY] = v
         for key, value in (config.get("headers") or {}).items():
             if isinstance(value, dict) and "secret_ref" in value:
                 with tracer.observe(
@@ -176,7 +180,7 @@ class _McpHttpProxyTool(Tool):
                     )
             elif isinstance(value, dict) and "interaction_metadata_key" in value:
                 mk = str(value["interaction_metadata_key"])
-                raw = meta.get(mk)
+                raw = resolve_metadata_value(meta, mk)
                 if raw is None or (isinstance(raw, str) and not raw.strip()):
                     return ToolResult(
                         content=json.dumps(
@@ -456,7 +460,7 @@ class TenantMcpAsgiMiddleware:
         if auth_in.lower().startswith("bearer "):
             bearer_body = auth_in[7:].strip()
             if bearer_body and bearer_body != api_key:
-                inbound["uora_end_user_authorization"] = auth_in.strip()
+                inbound[END_USER_AUTHORIZATION_METADATA_KEY] = auth_in.strip()
         tok_o = _MCP_OUTBOUND_AUTH_SECRET_REF.set(spec.outbound_authorization_secret_ref)
         tok_m = _MCP_INBOUND_INTERACTION_METADATA.set(inbound)
         tok_c = _MCP_CONTAINER.set(self.container)

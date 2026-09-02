@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime as dt
 
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import Column, DateTime, MetaData, func, inspect
+from sqlalchemy import Column, DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase
 
@@ -40,7 +40,7 @@ class ORMBaseModel(DeclarativeBase):
     )
 
     def to_dict(self) -> dict:
-        mapper = inspect(self).mapper
+        mapper = sa_inspect(self).mapper
         return {c.key: getattr(self, c.key) for c in mapper.column_attrs}
 
     @classmethod
