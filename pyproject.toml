@@ -2,6 +2,9 @@
 name = "agent-orchestration-core"
 version = "1.0.0"
 description = "A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it."
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Marcos Silveira" }]
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.135.0",
