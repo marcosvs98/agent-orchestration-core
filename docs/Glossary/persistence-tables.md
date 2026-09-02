@@ -2,7 +2,7 @@
 
 **Source of truth:** Alembic migrations under `src/infra/database/migrations/versions/` (initial schema revision `861cb744f4f0` plus follow-ups such as `c8f1a2b3d4e5` for `tenant_inbound_service_key`). ORM models live under `src/infra/database/models/` when present in the checkout.
 
-Use this index to map **SQL table** → **domain area** → **typical `src/domain` owner**. New `op.create_table` additions should update this document (or file an issue) per contributing guidelines.
+Use this index to map **SQL table** → **domain area** → **typical `src/domain` owner**. New `op.create_table` additions should update this document in the same change.
 
 ## Core / tenant
 

@@ -1,29 +1,31 @@
 # Contributing
 
-Thanks for looking at agent-orchestration-core. This page covers how to propose a change. For
-setting up a working environment, see [DEVELOPMENT.md](DEVELOPMENT.md). For reporting a
-vulnerability, see [SECURITY.md](SECURITY.md) — please do not open a public issue for that.
+**This repository does not accept contributions.** Issues, projects and discussions are disabled,
+and pull requests are closed without review. That is a decision about maintenance capacity, not a
+judgement about any particular change.
 
-## Before you start
+It is published as a reference implementation and as source for anyone who wants to run or fork
+it — not as a collaborative project.
 
-**This project has no licence yet.** Until one is added, the default of copyright law applies:
-you may read the code, but redistribution and derivative works are not granted. We are not able
-to merge contributions until licensing is resolved. Issues and discussion are welcome now;
-pull requests may have to wait.
+## What you may do
 
-## Opening an issue
+The project is licensed under [Apache-2.0](LICENSE). You may run, modify, redistribute and use it
+commercially under the terms of that licence. **Forking is the supported way to build on it.**
 
-A useful bug report contains the version or commit, what you ran, what happened, and what you
-expected instead. If the behaviour involves a flow run, the `flow_run_id` and the surrounding
-log lines are worth more than a description of them.
+## Reporting a vulnerability
 
-Feature proposals are more likely to land if they name the bounded context they touch
-(`src/domain/<context>/`) and say which of the architectural invariants below they interact with.
+This is the one channel that stays open. See [SECURITY.md](SECURITY.md) and use GitHub's private
+vulnerability reporting — not a public channel.
+
+---
+
+The rest of this page documents the constraints the codebase is built on. It is written for
+whoever forks it and has to keep it coherent.
 
 ## Architectural invariants
 
-These are not style preferences. A change that breaks one will be sent back regardless of how
-well it is written.
+These are not style preferences. A change that breaks one will produce a subtly wrong system
+rather than a failing test.
 
 1. `tenant_id` is resolved from the JWT security context, never read from a request body.
 2. Domain code does not import from `infra/` or `adapters/`. Dependencies point inward: define a
@@ -35,7 +37,7 @@ well it is written.
 5. LLM calls stay inside node implementations. The model classifies, extracts, and formats; tool
    invocation and persistence happen deterministically in executor logic around it.
 
-## Making a change
+## Working on a fork
 
 ```bash
 uv sync --all-extras --all-groups
@@ -43,22 +45,20 @@ source .venv/bin/activate
 uv run pre-commit install
 ```
 
-Work in a branch. Keep the change set as small as the problem allows — a bug fix and a refactor
-in one diff is two reviews wearing one hat.
-
-Before pushing:
+Before committing:
 
 ```bash
 uv run pre-commit run --all-files
 uv run python -m pytest
 ```
 
-Both must pass. Do not skip the hooks with `--no-verify`; fix what they flag.
+Do not skip the hooks with `--no-verify`; fix what they flag.
 
 ## Tests
 
-Coverage is gated in CI. Add tests in proportion to risk — a regression test for every bug fix,
-and a contract test at every boundary you change.
+There is no CI in this repository — the workflows were removed. Coverage is therefore only
+enforced by whoever runs the suite. `pyproject.toml` still carries the threshold and the `omit`
+list, so `pytest` reproduces the gate locally.
 
 - `tests/unit/` — mocked repositories and adapters. No database, no network.
 - `tests/integration/` — real Postgres and Redis, marked `@pytest.mark.integration`.
@@ -82,14 +82,14 @@ green. A suppressed test is worse than a missing one, because it looks like cove
 
 ## Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/) with a ticket-style scope:
+The published history uses a Conventional Commits **type** as the prefix, with no scope:
 
 ```text
-feat(AOC-123): add cursor pagination to flow-run listing
+feat: Add cursor pagination to flow-run listing
 ```
 
-Use `no-ticket` as the scope when there is no ticket. Mark breaking changes with `!` after the
-scope, or a `BREAKING CHANGE:` footer.
+Types in use: `feat`, `fix`, `refactor`, `chore`, `test`, `docs`, `ci`, `build`. Sub-lines go in
+the body, below a blank line, and only when they add something the subject cannot carry.
 
 ## Database migrations
 
@@ -102,8 +102,7 @@ PYTHONPATH=src uv run alembic revision --autogenerate -m "short description"
 Read the generated file before committing — autogenerate misses server defaults, sequences, and
 some index changes. Never edit a revision that has already been applied anywhere real.
 
-## Review
+## Known limitations
 
-Expect questions about correctness first and style second. A change that adds ambiguity without
-clear value, introduces a silent fallback that hides a contract failure, or mixes a broad refactor
-into a behavioural fix will be asked to split or narrow.
+Before assuming a behaviour is a defect, read [`docs/Develop/limitations.md`](docs/Develop/limitations.md).
+Several rough edges are deliberate trade-offs and are documented there rather than hidden.

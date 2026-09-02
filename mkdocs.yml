@@ -1,6 +1,6 @@
 site_name: agent-orchestration-core
 site_description: "A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it."
-repo_url: https://github.com/OWNER/agent-orchestration-core
+repo_url: https://github.com/marcosvs98/agent-orchestration-core
 edit_uri: edit/main/docs/
 
 theme:

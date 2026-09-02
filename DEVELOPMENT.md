@@ -1,7 +1,8 @@
 # Development
 
 Getting agent-orchestration-core running locally, and what to reach for once it is.
-For how to propose a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
+This repository does not accept contributions; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+conventions and invariants to keep in mind if you fork it.
 
 ## Requirements
 

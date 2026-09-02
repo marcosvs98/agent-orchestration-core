@@ -14,6 +14,11 @@ model tenants, policies and versions before your first run.
 reconstructable, but most orchestration tools treat tenancy, admission control and run provenance as
 the adopter's problem.
 
+> **Published as a reference implementation.** Licensed under [Apache-2.0](LICENSE) — run it, fork
+> it, use it commercially. It is not a collaborative project: issues and discussions are disabled
+> and pull requests are closed without review. Security reports are the exception, see
+> [SECURITY.md](SECURITY.md).
+
 ## What is different here
 
 Measured against seven comparable platforms — LangGraph Platform, AWS Bedrock AgentCore, Google
