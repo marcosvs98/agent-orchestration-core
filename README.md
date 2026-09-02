@@ -21,9 +21,9 @@ the adopter's problem.
 
 ## What is different here
 
-Measured against seven comparable platforms — LangGraph Platform, AWS Bedrock AgentCore, Google
-Vertex AI Agent Engine, Azure AI Foundry Agent Service, Dify and Vellum — on a
-[published rubric](specs/001-market-positioning/analysis.md):
+Compared against seven platforms in the same space — LangGraph Platform, AWS Bedrock AgentCore,
+Google Vertex AI Agent Engine, Azure AI Foundry Agent Service, Dify, Vellum and n8n. This is our
+own assessment, not an independent benchmark:
 
 | | This project | Best of the seven |
 |---|---|---|
@@ -33,9 +33,8 @@ Vertex AI Agent Engine, Azure AI Foundry Agent Service, Dify and Vellum — on a
 | Published definitions immutable; changes require a new version, audited with a justification | **yes** | versioned, unaudited |
 
 Where it is weaker: human-in-the-loop has a persisted pause but no declarative SLA policy on it
-(Dify and n8n do this better), and the ecosystem around it is a fraction of LangGraph's. The full
-scoring, including every dimension where a competitor wins, is in the
-[analysis](specs/001-market-positioning/analysis.md).
+(Dify and n8n do this better), and the ecosystem around it is a fraction of LangGraph's. Further
+trade-offs that shape adoption are listed in [Known limitations](docs/Develop/limitations.md).
 
 ## Try it in one command
 

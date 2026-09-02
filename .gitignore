@@ -100,3 +100,6 @@ AGENTS.md
 .cursorignore
 .cursorindexingignore
 examples/.state/
+
+# Internal positioning and planning material, not published
+/specs/
