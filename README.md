@@ -223,14 +223,21 @@ Details: [Durable execution](docs/Execution/durable-execution.md) · [Tracing an
 | Validation | Pydantic v2 |
 | Persistence | SQLAlchemy 2.0 async, asyncpg, PostgreSQL + pgvector, Alembic |
 | Cache and limits | Redis |
-| Graph execution | LangGraph |
+| Graph execution | In-house runtime (`domain/execution/services/graph_runtime/`); edge conditions parsed with pyparsing |
 | Durable execution | Temporal (`temporalio`) |
-| Inference | OpenAI SDK, llama-cpp-python (local SLM), instructor, tiktoken |
+| Inference | OpenAI SDK, llama-cpp-python (local SLM), tiktoken |
+| Prompts and schemas | Jinja2, jsonschema |
 | MCP | fastmcp |
 | Async jobs | ARQ |
+| Auth | python-jose (JWT) |
+| Documents | Docling (optional extra) |
 | Observability | OpenTelemetry (Collector, Tempo, Prometheus, Loki, Grafana), structlog |
 | DI | dependency-injector |
 | Tooling | uv, Docker Compose, pytest, ruff, vulture |
+
+No third-party agent framework is used. The graph compiler, execution plan, edge evaluator and node
+registry are part of this repository — that is where the versioning and audit guarantees above come
+from.
 
 ---
 
@@ -364,7 +371,7 @@ no `--ignore` entries.
 
 | Scope | Statements | Coverage |
 |-------|-----------:|---------:|
-| Measured surface (CI gate ≥ 90%) | ~13,456 | ~90.7% |
+| Measured surface (threshold ≥ 90%) | ~13,456 | ~90.7% |
 | Whole codebase | ~20,712 | ~74% |
 
 The gap is the `[tool.coverage.run] omit` list, which is being retired in tranches — security- and
