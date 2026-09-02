@@ -25,6 +25,7 @@ MANIFEST
 # Virtual environments
 .env
 .venv
+.venv*/
 env/
 venv/
 ENV/
@@ -75,6 +76,9 @@ artifacts/dead-code-correlation.txt
 # Docker
 .dockerignore
 /docker-volumes/
+
+# Captured runtime traces
+/resources/local_traces/
 
 # Redis
 dump.rdb
