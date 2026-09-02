@@ -14,7 +14,6 @@ from domain.tools.schemas.tools import (
 from domain.tools.services.tools_service import ToolsService
 from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
 from exceptions.service_exceptions import (
-    DomainValidationException,
     NotFoundServiceException,
     ResourceBlockedServiceException,
 )
@@ -133,9 +132,7 @@ class TestToolsService:
         assert result.imported_count == 1
         assert result.tools[0].id == tool_id
         assert result.tools[0].name == "Test Tool"
-        repository.create_tool.assert_called_once_with(
-            name="health_check", created_by=principal_id
-        )
+        repository.create_tool.assert_called_once_with(name="health_check", created_by=principal_id)
         cc_kwargs = repository.create_tool_config.await_args.kwargs
         assert cc_kwargs["config"]["base_url"] == "https://api.example.com"
         assert "Authorization" in (cc_kwargs["config"].get("headers") or {})
@@ -224,9 +221,7 @@ class TestToolsService:
         assert authoring_events.append_event.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_list_tools_returns_empty_list_when_no_results(
-        self, tools_service, repository
-    ):
+    async def test_list_tools_returns_empty_list_when_no_results(self, tools_service, repository):
         tenant_id = uuid4()
         repository.list_tools = AsyncMock(return_value=[])
 
@@ -236,9 +231,7 @@ class TestToolsService:
         repository.list_tools.assert_called_once_with(tenant_id=tenant_id, limit=200)
 
     @pytest.mark.asyncio
-    async def test_list_tools_returns_tools_filtered_by_tenant(
-        self, tools_service, repository
-    ):
+    async def test_list_tools_returns_tools_filtered_by_tenant(self, tools_service, repository):
         tenant_id = uuid4()
         tool_id = uuid4()
         mock_tool = SimpleNamespace(tool_id=tool_id, name="Test Tool")
@@ -268,9 +261,7 @@ class TestToolsService:
         )
 
     @pytest.mark.asyncio
-    async def test_list_tool_configs_filters_by_status(
-        self, tools_service, repository
-    ):
+    async def test_list_tool_configs_filters_by_status(self, tools_service, repository):
         tenant_id = uuid4()
         config_id = uuid4()
         tool_id = uuid4()
@@ -351,25 +342,17 @@ class TestToolsService:
         tool_config_id = uuid4()
         binding_id = uuid4()
         mock_agent = SimpleNamespace(agent_id=agent_id, tenant_id=tenant_id)
-        mock_agent_version = SimpleNamespace(
-            agent_version_id=agent_version_id, agent_id=agent_id
-        )
-        mock_tool_config = SimpleNamespace(
-            tool_config_id=tool_config_id, tenant_id=tenant_id
-        )
+        mock_agent_version = SimpleNamespace(agent_version_id=agent_version_id, agent_id=agent_id)
+        mock_tool_config = SimpleNamespace(tool_config_id=tool_config_id, tenant_id=tenant_id)
         mock_binding = SimpleNamespace(
             agent_version_tool_binding_id=binding_id,
             agent_version_id=agent_version_id,
             tool_config_id=tool_config_id,
         )
-        agents_repository.get_agent_version = AsyncMock(
-            return_value=mock_agent_version
-        )
+        agents_repository.get_agent_version = AsyncMock(return_value=mock_agent_version)
         agents_repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.get_tool_config = AsyncMock(return_value=mock_tool_config)
-        repository.create_agent_version_tool_binding = AsyncMock(
-            return_value=mock_binding
-        )
+        repository.create_agent_version_tool_binding = AsyncMock(return_value=mock_binding)
         binding_create = AgentVersionToolBindingCreate(
             agent_version_id=agent_version_id, tool_config_id=tool_config_id
         )
@@ -394,15 +377,9 @@ class TestToolsService:
         agent_version_id = uuid4()
         tool_config_id = uuid4()
         mock_agent = SimpleNamespace(agent_id=agent_id, tenant_id=tenant_id)
-        mock_agent_version = SimpleNamespace(
-            agent_version_id=agent_version_id, agent_id=agent_id
-        )
-        mock_tool_config = SimpleNamespace(
-            tool_config_id=tool_config_id, tenant_id=other_tenant_id
-        )
-        agents_repository.get_agent_version = AsyncMock(
-            return_value=mock_agent_version
-        )
+        mock_agent_version = SimpleNamespace(agent_version_id=agent_version_id, agent_id=agent_id)
+        mock_tool_config = SimpleNamespace(tool_config_id=tool_config_id, tenant_id=other_tenant_id)
+        agents_repository.get_agent_version = AsyncMock(return_value=mock_agent_version)
         agents_repository.get_agent = AsyncMock(return_value=mock_agent)
         repository.get_tool_config = AsyncMock(return_value=mock_tool_config)
         binding_create = AgentVersionToolBindingCreate(
@@ -493,9 +470,7 @@ class TestToolsService:
         authoring_events.append_event.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_publish_tool_config_raises_when_not_draft(
-        self, tools_service, repository
-    ):
+    async def test_publish_tool_config_raises_when_not_draft(self, tools_service, repository):
         tenant_id = uuid4()
         tc_id = uuid4()
         tool_id = uuid4()

@@ -1,10 +1,40 @@
 # Node templates catalog
 
-All node descriptions below are **templates**: copy and adapt for your flows.
+The **node type** is a closed set. `NodeRegistry` maps exactly **eleven** strings to executors; a
+graph naming anything else compiles but fails at runtime with
+**`FlowFailureReason.UNKNOWN_NODE_TYPE`** on the step that reaches it, and `POST
+/core/v1/nodes/{node_type}/prompt` rejects it outright (`node_type must be one of …`).
+
+Source of truth: `NodeType` (`src/domain/prompts/schemas/prompt.py`) and `NodeRegistry._registry`
+(`src/domain/execution/services/graph_runtime/registry.py`). At runtime, query
+`GET /core/v1/flows/node-templates:system` for the templates your deployment actually seeded.
+
+The context blocks on this page are **prompt-shape templates** — copy and adapt them. The node
+**types** are not adaptable.
+
+## The eleven node types
+
+| Node type | Calls an LLM? | Purpose |
+|-----------|---------------|---------|
+| [`ContentModeration`](#contentmoderation) | moderation provider | Flag policy violations on user input. |
+| [`IntentClassifier`](#intentclassifier) | yes | Classify user intent. |
+| [`ToolResolver`](#toolresolver) | yes | Select tools via semantic catalog retrieval. |
+| [`ToolInputFiller`](#toolinputfiller) | yes | Fill tool parameters against the tool's `request_schema`. |
+| [`QueryClarifier`](#queryclarifier) | yes | Ask the user for a missing intent or slot. |
+| [`ToolExecutor`](#toolexecutor) | no | Execute selected tools (immediate or scheduled). |
+| [`ToolErrorHandlerNode`](#toolerrorhandlernode) | no | Retry bookkeeping; sets `fallback_required`. |
+| [`ContextSummarizer`](#contextsummarizer) | yes, size-gated | Compact a named node's output in graph state. |
+| [`MemoryCommitNode`](#memorycommitnode) | no | Persist durable user memory. |
+| [`ResponseBuilder`](#responsebuilder) | yes | Build the final user-facing response. **Terminal.** |
+| [`HumanFallback`](#humanfallback) | yes | Open an SLA case and answer with a fallback message. **Terminal.** |
+
+`ResponseBuilder` and `HumanFallback` are the **terminal** types — `GraphCompiler` rejects a graph
+containing neither (`no_terminal_nodes`).
 
 ## Context structure
 
-Context is built dynamically from the prompts available for the run. Not every prompt slot is required every time. Example message list:
+Context is built dynamically from the prompts available for the run. Not every prompt slot is
+required every time. Example message list:
 
 ```json
 [
@@ -30,20 +60,10 @@ Context is built dynamically from the prompts available for the run. Not every p
 
 ---
 
-## TenantProfile (LLM-less)
+## ContentModeration
 
-Collects and enriches tenant-level information.
-
----
-
-## UserProfileReader (LLM-less)
-
-Reads **user** information only.
-
-- Reads from **user RAG** when configured.
-- If the RAG context is too large, run **ContextSummarizer** before downstream nodes.
-
-**Minimum context:**
+Moderates content and flags policy violations. Calls `ModerationProviderPort`, not chat completion;
+returns `flagged` and `categories`.
 
 ```json
 [
@@ -54,55 +74,7 @@ Reads **user** information only.
 
 ---
 
-## UserProfileWriter (LLM)
-
-Creates or updates **user memory**.
-
-- Writes or updates user-corpus RAG documents.
-- If document count exceeds a limit (e.g. 500), use an LLM **summarization** step to shrink volume before persist.
-
-**Code mapping:** The explicit writer vertex is **`MemoryCommitNode`** (one per flow). Optionally place **`MemoryPayloadSummarizeNode`** before commit on the memory branch to compress payload (no persistence); commit uses **`data_merge`** from `IntentDetectionNode`, `ParamExtractionNode`, and the summarizer when present. There is **no** `UserContextEnrichmentNode` in the graph; USER_MEMORY read gating comes from the executor and **`runtime_policy.user_context_enrichment`** (see [RAG runtime and integration](../RAG/runtime-and-integration.md)).
-
-**Context:**
-
-```json
-[
-  {"role": "system", "content": "node_prompt"},
-  {"role": "system", "content": "user_profile.prompt"},
-  {"role": "user", "content": "user.input_message"}
-]
-```
-
----
-
-## ContentModeration (SLM → LLM)
-
-Moderates content and flags policy violations.
-
-```json
-[
-  {"role": "system", "content": "node_prompt"},
-  {"role": "user", "content": "user.input_message"}
-]
-```
-
----
-
-## HumanFallback (Hybrid)
-
-Opens human SLA / fallback paths.
-
-```json
-[
-  {"role": "system", "content": "node_prompt"},
-  {"role": "system", "content": "tenant_profile.prompt"},
-  {"role": "user", "content": "user.input_message"}
-]
-```
-
----
-
-## IntentClassifier (Hybrid)
+## IntentClassifier
 
 Classifies user intent (e.g. conversation, small_talk, execution, query).
 
@@ -115,7 +87,7 @@ Classifies user intent (e.g. conversation, small_talk, execution, query).
 
 ---
 
-## ToolResolver (RAG-focused)
+## ToolResolver
 
 Selects tools using semantic catalog retrieval without loading full unstructured context.
 
@@ -129,29 +101,10 @@ Selects tools using semantic catalog retrieval without loading full unstructured
 
 ---
 
-## DataCategorizer (Hybrid)
+## ToolInputFiller
 
-Categorizes data using patterns in storage (e.g. categorize transactions from user text).
-
-```json
-[
-  {"role": "system", "content": "node_prompt"},
-  {"role": "system", "content": "tenant_profile.prompt"},
-  {"role": "user", "content": "user.input_message"}
-]
-```
-
----
-
-## ToolExecutor (LLM-less)
-
-Loads the selected tool/API specification for execution.
-
----
-
-## ToolInputFiller (LLM)
-
-Validates required fields against the tool **input_schema** / **output_schema** and structures `input_schema` when needed.
+Validates required fields against the tool **input_schema** / **output_schema** and structures
+`input_schema` when needed.
 
 ```json
 [
@@ -163,7 +116,7 @@ Validates required fields against the tool **input_schema** / **output_schema** 
 
 ---
 
-## QueryClarifier (LLM)
+## QueryClarifier
 
 Runs when intent or required slots are missing.
 
@@ -190,9 +143,77 @@ Runs when intent or required slots are missing.
 
 ---
 
-## ResponseBuilder (LLM)
+## ToolExecutor
 
-Builds the final user-facing response.
+Loads the selected tool/API specification and executes it. No LLM call. Supports `IMMEDIATE` and
+`SCHEDULED` execution modes and selective retry — see
+[Non-LLM nodes](graph-runtime/nodes/non-llm-nodes.md#toolexecutor).
+
+---
+
+## ToolErrorHandlerNode
+
+No LLM call and no injected dependencies. Reads `ToolExecutor` output, applies retry bookkeeping,
+publishes `retry_operation_ids` and `finalized_results` into `next_state`, and sets
+`fallback_required` when retries are exhausted — which is the signal an edge uses to route into
+`HumanFallback`.
+
+---
+
+## ContextSummarizer
+
+Summarizes when context is too large. The node is **size-gated**: it reads the output of
+`source_node_id` from the graph-state snapshot and calls the LLM only when the serialized payload
+reaches `min_payload_bytes_to_run`.
+
+```json
+[
+  {"role": "system", "content": "node_prompt"},
+  {"role": "user", "content": "user.input_message"}
+]
+```
+
+Node config:
+
+```json
+{
+  "source_node_id": "<uuid of the node whose output to compact>",
+  "min_payload_bytes_to_run": 4096,
+  "replace_source_output": false
+}
+```
+
+Full contract, reason codes and the `compaction` metrics block:
+[LLM-backed nodes → ContextSummarizer](graph-runtime/nodes/llm-nodes.md#contextsummarizer).
+
+---
+
+## MemoryCommitNode
+
+The explicit durable-memory writer, one per flow. Builds its payload with **`data_merge`** rules
+against the outputs of named upstream nodes — in the demo graph, `ToolInputFiller` slots plus the
+optional `ContextSummarizer` output — then calls `MemoryWriteServicePort`.
+
+Optionally place a **`ContextSummarizer`** before it on the memory branch to compress the payload;
+that node does **not** persist anything itself.
+
+Reports `persisted` and a `reason_code` rather than assuming success — a `SUCCESS` status with
+`persisted: false` is a real and expected state. See
+[Non-LLM nodes](graph-runtime/nodes/non-llm-nodes.md#memorycommitnode).
+
+```json
+[
+  {"role": "system", "content": "node_prompt"},
+  {"role": "system", "content": "user_profile.prompt"},
+  {"role": "user", "content": "user.input_message"}
+]
+```
+
+---
+
+## ResponseBuilder
+
+Builds the final user-facing response. **Terminal.**
 
 **Maximum:**
 
@@ -229,22 +250,43 @@ Builds the final user-facing response.
 
 ---
 
-## ContextSummarizer (LLM)
+## HumanFallback
 
-Summarizes when context is too large.
+Opens human SLA / fallback paths, then answers with a fallback message. **Terminal.**
 
 ```json
 [
   {"role": "system", "content": "node_prompt"},
+  {"role": "system", "content": "tenant_profile.prompt"},
   {"role": "user", "content": "user.input_message"}
 ]
 ```
 
 ---
 
+## Capabilities that are not node types
+
+Several behaviours read like nodes but are **not** in the registry. Do not put these strings in a
+graph.
+
+| Capability | How it is actually done |
+|------------|-------------------------|
+| Tenant profile / knowledge | Retrieval layer, not a node: `allow_rag_tenant` on the node plus `agent_version.rag_config_id`, assembled by `MemoryRetrievalService` and `ContextBuilder`. |
+| Reading user memory | Layer flags `allow_user_memory_structured` / `allow_user_memory_vector`, gated by `runtime_policy.user_context_enrichment`. There is **no** `UserContextEnrichmentNode` — `FlowGraphValidator` rejects that string as a deprecated type. |
+| Writing user memory | The `MemoryCommitNode` above. |
+| Categorizing data | A tool, invoked through `ToolResolver` → `ToolInputFiller` → `ToolExecutor`. |
+
+Earlier revisions of this page listed `TenantProfile`, `UserProfileReader`, `UserProfileWriter` and
+`DataCategorizer` as node templates, and referred to `IntentDetectionNode`,
+`ParamExtractionNode` and `MemoryPayloadSummarizeNode`. **None of those exist**; the last three were
+earlier names for `IntentClassifier`, `ToolInputFiller` and `ContextSummarizer`.
+
+---
+
 ## Example DEMO flow (alternative shape)
 
-The production demo seed uses a different entry (see [Demo seed graph](demo-seed-graph.md)). The diagram below shows an **alternative** demo layout with `IntentClassifier` for illustration.
+The production demo seed uses a different entry (see [Demo seed graph](demo-seed-graph.md)). The
+diagram below shows an **alternative** demo layout with `IntentClassifier` for illustration.
 
 ```mermaid
 flowchart TD
@@ -290,6 +332,8 @@ flowchart TD
 
 ## Related
 
+- [Nodes overview](graph-runtime/nodes/index.md) — implementation classes and dependencies
+- [Node registry](graph-runtime/node-registry.md) — how a type string becomes an executor
 - [Flow lifecycle](flow-lifecycle.md)
 - [Demo seed graph](demo-seed-graph.md)
 - [RAG runtime and integration](../RAG/runtime-and-integration.md)

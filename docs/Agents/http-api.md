@@ -14,8 +14,8 @@ Router: `APIRouter(prefix="/core/v1", dependencies=[get_auth_context])` — `src
 | POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:publish` | Publish — body includes **`ChangeRequest`** |
 | POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:activate` | Activate — **`ChangeRequest`** |
 | POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:rollback` | Rollback — **`ChangeRequest`** |
-| POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:deprecate` | Currently raises **501 / placeholder** (`MethodNotAllowedPlaceholderException`) |
-| POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:disable` | Same placeholder behaviour |
+| POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:deprecate` | Reserved, not implemented — returns **405** and is hidden from the OpenAPI schema |
+| POST | `/core/v1/agents/{agent_id}/versions/{agent_version_id}:disable` | Same |
 | POST | `/core/v1/node-agent-bindings` | Create node ↔ agent version binding |
 | GET | `/core/v1/agent-versions/{agent_version_id}/nodes` | List bindings for an agent version |
 

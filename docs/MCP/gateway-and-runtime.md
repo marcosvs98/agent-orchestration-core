@@ -46,7 +46,39 @@ sequenceDiagram
   end
 ```
 
-When **`X-Api-Key`** is present and **`Authorization: Bearer …`** is a **different** string than the API key value, the middleware records **`uora_end_user_authorization`** (full `Authorization` header value) for HTTP tools whose `tool_config` maps **`Authorization`** via **`interaction_metadata_key`** (same contract as **`ToolOrchestrator._resolve_headers`**). FastMCP may run tool handlers outside that ASGI `ContextVar` visibility; **`_mcp_interaction_metadata_for_http_tools`** therefore also reads the inbound **`Authorization`** from **`get_http_request()`** when the context var has no end-user token yet.
+When **`X-Api-Key`** is present and **`Authorization: Bearer …`** is a **different** string than the API key value, the middleware records **`end_user_authorization`** (full `Authorization` header value) for HTTP tools whose `tool_config` maps **`Authorization`** via **`interaction_metadata_key`** (same contract as **`ToolOrchestrator._resolve_headers`**). FastMCP may run tool handlers outside that ASGI `ContextVar` visibility; **`_mcp_interaction_metadata_for_http_tools`** therefore also reads the inbound **`Authorization`** from **`get_http_request()`** when the context var has no end-user token yet.
+
+### Outbound authorization fallback
+
+An MCP client is not always able to present an end-user token. When the server has an
+**`outbound_authorization_secret_ref`** (set at creation or via
+[`PATCH .../outbound-authorization`](registry-and-api.md#patch-outbound-authorization)), the
+middleware puts it on the context var **`_MCP_OUTBOUND_AUTH_SECRET_REF`** for the duration of the
+request, and `_McpHttpProxyTool.run` uses it **only as a fallback**:
+
+1. Read the current `end_user_authorization` from interaction metadata (inbound header first, then
+   the `get_http_request()` fallback).
+2. **If that value is present and non-empty, the secret ref is ignored.** A caller-supplied
+   end-user token always wins.
+3. Otherwise resolve the ref through **`SecretResolverPort`** under the span
+   `adapters.mcp.resolve_mcp_outbound_auth_fallback`, and — if the resolved value does not already
+   start with `bearer ` — prefix it with `Bearer `.
+4. Write the result into the metadata map that `interaction_metadata_key` headers read from, so a
+   tool config binding `Authorization` → `end_user_authorization` resolves normally.
+
+A failed resolution is swallowed (`resolved = ""`), which leaves the metadata key absent and makes
+the tool call fail with `interaction_metadata_header_missing` rather than calling the upstream
+unauthenticated.
+
+!!! warning "This is a tenant-wide credential"
+
+    The fallback applies to **every** call through that MCP server that did not carry an end-user
+    token, so outbound requests stop being attributable to an individual end user. Use it for
+    service-to-service integrations, not as a convenience for user-facing clients that could send
+    their own token.
+
+The secret ref participates in **`_spec_cache_key`**, so changing it rebuilds the cached FastMCP app
+rather than serving the previous credential.
 
 ### Application container context
 
@@ -67,7 +99,7 @@ On **`run(arguments)`**:
 1. **Validate** `arguments` with **jsonschema** against `parameters` → on failure, return `arguments_validation_failed`.
 2. Resolve container; load **`tool_config`** by `exec_tool_config_id`; enforce **`tenant_id`** matches `exec_tenant_id`.
 3. Resolve HTTP **`url`** via `effective_tool_http_url(config)`, **method** (default `POST`), **`timeout_seconds`** (default `10`).
-4. Resolve **headers**: plain strings, **`secret_ref`** via **`SecretResolverPort`**, or **`interaction_metadata_key`** resolved from **`_mcp_interaction_metadata_for_http_tools()`** (middleware context var plus **`get_http_request()`** fallback).
+4. Resolve **headers**: plain strings, **`secret_ref`** via **`SecretResolverPort`**, or **`interaction_metadata_key`** resolved from **`_mcp_interaction_metadata_for_http_tools()`** (middleware context var plus **`get_http_request()`** fallback), after applying the [outbound authorization fallback](#outbound-authorization-fallback).
 5. Call **`tool_executor.execute_http`** with JSON body = MCP arguments (dict).
 6. Validate **`HttpToolResult`**; if `response_schema` is set and body is a dict, **jsonschema**-validate body; otherwise return a structured dump of the HTTP result.
 
@@ -127,7 +159,7 @@ For each bound user prompt, **`mcp.prompt(name=slug, ...)`** registers a templat
 
 Use **`clear_tenant_mcp_app_cache()`** / **`shutdown_tenant_mcp_lifespans()`** in tests or controlled shutdown (see module docstrings and call sites).
 
-OpenAPI **import-tools** (`ToolsService.import_tool`) sets **`config.base_url`** with **`resolve_tool_import_base_url`** (OpenAPI `servers`, else origin of the fetch URL, else **`UORA_APP_PLATFORM_HTTP_BASE`**, else **`http://host.docker.internal:8088`**) and merges default **`Authorization` → `uora_end_user_authorization`** headers for outbound app-platform calls. See **`src/domain/tools/services/tool_import_http_base.py`**.
+OpenAPI **import-tools** (`ToolsService.import_tool`) sets **`config.base_url`** with **`resolve_tool_import_base_url`** (OpenAPI `servers`, else origin of the fetch URL, else **`TOOL_IMPORT_DEFAULT_BASE_URL`**) and merges a default **`Authorization` → `end_user_authorization`** header for outbound calls. See **`src/domain/tools/services/tool_import_http_base.py`**.
 
 ## Related
 

@@ -2,7 +2,7 @@
 
 ## Definition
 
-An **execution event** is an **append-only** runtime record describing what happened during a [Flow run](flow-run.md): node transitions, tool outcomes, errors, and observability hooks. It supports auditing and tracing (e.g. alongside Langfuse spans).
+An **execution event** is an **append-only** runtime record describing what happened during a [Flow run](flow-run.md): node transitions, tool outcomes, errors, and observability hooks. It supports auditing and tracing (alongside OpenTelemetry spans).
 
 ## What it is not
 
@@ -12,7 +12,7 @@ An **execution event** is an **append-only** runtime record describing what happ
 ## Code
 
 - `src/domain/execution/` (event emission and persistence paths)
-- Tracing adapter: `src/adapters/observability/langfuse_runtime_tracer.py`
+- Tracing adapter: `src/adapters/observability/otel_runtime_tracer.py`
 
 ## Persistence
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import UTC, datetime
 from uuid import UUID
 
 from domain.agents.repositories.agents_repository import AgentsRepository
@@ -271,6 +272,7 @@ class ContextBuilder:
                 if execution_context.current_node_run_id
                 else None,
                 "current_node_type": current_node_type,
+                "current_date": datetime.now(UTC).date().isoformat(),
                 "available_tools": [],
             },
             "persona": {},

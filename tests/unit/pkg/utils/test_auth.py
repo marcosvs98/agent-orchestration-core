@@ -8,7 +8,13 @@ from exceptions.service_exceptions import (
     AuthenticationFailedException,
     AuthorizationDeniedException,
 )
+from starlette.requests import Request
+
 from utils import auth as auth_module
+
+
+def _make_request() -> Request:
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": [], "state": {}})
 
 
 def _make_token(*, secret: str, algorithm: str, claims: dict) -> str:
@@ -38,7 +44,7 @@ class TestAuth:
             },
         )
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        ctx = auth_module.get_auth_context(credentials=credentials)
+        ctx = auth_module.get_auth_context(_make_request(), credentials=credentials)
         assert ctx.tenant_id is not None
         assert ctx.principal_type == "machine"
         assert ctx.principal_id == "integration-1"
@@ -59,7 +65,7 @@ class TestAuth:
         )
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         with pytest.raises(AuthenticationFailedException):
-            auth_module.get_auth_context(credentials=credentials)
+            auth_module.get_auth_context(_make_request(), credentials=credentials)
 
     def test_get_auth_context_missing_tenant_id_raises(self):
         token = _make_token(
@@ -76,7 +82,7 @@ class TestAuth:
         )
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         with pytest.raises(AuthorizationDeniedException):
-            auth_module.get_auth_context(credentials=credentials)
+            auth_module.get_auth_context(_make_request(), credentials=credentials)
 
     def test_get_auth_context_allows_tenant_id_none_with_tenants_create_scope(self):
         token = _make_token(
@@ -92,7 +98,7 @@ class TestAuth:
             },
         )
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        ctx = auth_module.get_auth_context(credentials=credentials)
+        ctx = auth_module.get_auth_context(_make_request(), credentials=credentials)
         assert ctx.tenant_id is None
         assert ctx.principal_type == "human"
         assert ctx.principal_id == "admin-123"
@@ -114,7 +120,7 @@ class TestAuth:
             },
         )
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        ctx = auth_module.get_auth_context(credentials=credentials)
+        ctx = auth_module.get_auth_context(_make_request(), credentials=credentials)
         assert ctx.tenant_id == tenant_id
         assert ctx.principal_type == "human"
         assert ctx.principal_id == "admin-123"

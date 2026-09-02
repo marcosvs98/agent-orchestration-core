@@ -74,7 +74,7 @@ artifacts/dead-code-correlation.txt
 
 # Docker
 .dockerignore
-docker-volumes/
+/docker-volumes/
 
 # Redis
 dump.rdb
@@ -95,3 +95,4 @@ AGENTS.md
 /data/models/
 .cursorignore
 .cursorindexingignore
+examples/.state/

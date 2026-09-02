@@ -7,6 +7,7 @@ This section documents runtime **flow execution** in `src/domain/execution/servi
 | Area | Role | Path |
 |------|------|------|
 | **ExecutionService** | Application entry: create/resume runs, compile/cache plan, invoke graph runtime, agent/tool runs | `src/domain/execution/services/execution_service.py` |
+| **Agent runtime** | Direct agent executions: context, tool grant, LLM ↔ tool loop, A2A delegation | `src/domain/execution/services/agent_runtime/` |
 | **State machines** | Legacy `RunStatus` transitions vs Planning-10 canonical statuses | `src/domain/execution/services/state_machine.py` |
 | **Runtime policy** | FLOW / TENANT / DEFAULT resolution (legacy graph path) | `src/domain/execution/services/runtime_policy_resolver.py` |
 | **Graph runtime** | Compiler, plan, executor, edges, node registry | `src/domain/execution/services/graph_runtime/` |
@@ -19,11 +20,12 @@ Ports and repositories live under `src/domain/execution/ports/` and `src/domain/
 
 1. [Flow lifecycle](flow-lifecycle.md) — high-level run states (existing page).
 2. [Execution service](execution-service.md) — `create_flow_run`, `resume_flow_run`, wiring.
-3. [State machine](state-machine.md) — `ExecutionStateMachine` and `RunLifecycleStateMachine`.
-4. [Runtime policy resolver](runtime-policy-resolver.md) — policy precedence.
-5. [Observability and hooks](observability-and-hooks.md) — hook pipeline and DB events.
-6. [Guardrail engine](guardrail-engine.md) — limits vs `LLMExecutor`.
-7. [Graph runtime overview](graph-runtime/index.md) — compiler → plan → executor → nodes.
+3. [Agent runtime](agent-runtime.md) — agent runs, execution-scoped context and tools, A2A.
+4. [State machine](state-machine.md) — `ExecutionStateMachine` and `RunLifecycleStateMachine`.
+5. [Runtime policy resolver](runtime-policy-resolver.md) — policy precedence.
+6. [Observability and hooks](observability-and-hooks.md) — hook pipeline and DB events.
+7. [Guardrail engine](guardrail-engine.md) — limits vs `LLMExecutor`.
+8. [Graph runtime overview](graph-runtime/index.md) — compiler → plan → executor → nodes.
 
 ## Glossary and related docs
 

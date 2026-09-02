@@ -23,10 +23,11 @@ from domain.tools.schemas.tool_config_types import ToolConfigConfig
 from domain.tools.services.openapi_parser import OpenAPIParser
 from domain.tools.services.tool_catalog_indexer import ToolCatalogIndexer
 from domain.tools.services.tool_import_http_base import (
-    DEFAULT_UORA_IMPORT_TOOL_HEADERS,
+    DEFAULT_IMPORT_TOOL_HEADERS,
     resolve_tool_import_base_url,
 )
 from domain.governance.schemas.authoring_events import AuthoringEventType, ChangeType
+from settings import TOOL_IMPORT_DEFAULT_BASE_URL
 from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
@@ -71,6 +72,7 @@ class ToolsService(ToolsServicePort):
         base_url = resolve_tool_import_base_url(
             openapi_servers=parsed_spec.get("servers"),
             openapi_fetch_url=tool_import_request.openapi_url,
+            default_base_url=TOOL_IMPORT_DEFAULT_BASE_URL,
         )
         imported_tools: list[Tool] = []
         for op in operations:
@@ -103,7 +105,7 @@ class ToolsService(ToolsServicePort):
                 summary=op.get("summary"),
                 description=op.get("description"),
                 examples=op.get("examples"),
-                headers=dict(DEFAULT_UORA_IMPORT_TOOL_HEADERS),
+                headers=dict(DEFAULT_IMPORT_TOOL_HEADERS),
             )
 
             created_tool_config = await self.repository.create_tool_config(

@@ -11,13 +11,10 @@ def normalize_json_for_rag_hash(value: Any) -> Any:
     if value is None:
         return None
     if type(value) is dict:
-        return {
-            k: normalize_json_for_rag_hash(value[k])
-            for k in sorted(value.keys(), key=lambda x: str(x))
-        }
+        return {k: normalize_json_for_rag_hash(value[k]) for k in sorted(value.keys(), key=str)}
     if type(value) is list:
         return [normalize_json_for_rag_hash(v) for v in value]
-    if type(value) is UUID:
+    if isinstance(value, UUID):
         return str(value).lower()
     if type(value) is bool or type(value) is int:
         return value

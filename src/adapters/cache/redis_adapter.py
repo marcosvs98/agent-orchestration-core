@@ -6,10 +6,25 @@ from typing import Any, ParamSpec, TypeVar
 
 from redis import asyncio as aioredis
 
-from settings import REDIS_HOST, REDIS_PASSWORD, REDIS_PORT, REDIS_SSL
+from settings import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT, REDIS_SSL, REDIS_URL
 from adapters.observability.logging import get_logger
 
 logger = get_logger()
+
+
+def build_redis_url() -> str:
+    """Connection URL for the shared client.
+
+    ``REDIS_URL`` wins when set — docker-compose and the deploy scripts publish one, and it
+    carries the database index. Otherwise the discrete host/port/db settings are composed.
+    """
+
+    if REDIS_URL:
+        return REDIS_URL
+    scheme = "rediss" if REDIS_SSL else "redis"
+    auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
+    return f"{scheme}://{auth}{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -51,10 +66,7 @@ class RedisAdapter:
 
     @staticmethod
     def __open_connection() -> aioredis.client.Redis:
-        scheme = "rediss" if REDIS_SSL else "redis"
-        auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
-        redis_url = f"{scheme}://{auth}{REDIS_HOST}:{REDIS_PORT}/0"
-        return aioredis.from_url(redis_url, decode_responses=True, encoding="utf-8")
+        return aioredis.from_url(build_redis_url(), decode_responses=True, encoding="utf-8")
 
     @silent_mode_wrapper
     async def get(self, key: str) -> dict[str, Any] | None:
@@ -80,3 +92,20 @@ class RedisAdapter:
         if int(value) == 1:
             await self.client.expire(key, ttl)
         return int(value)
+
+    async def incrbyfloat_with_ttl(self, key: str, amount: float, ttl: int) -> float:
+        """Atomically add to a counter and return the new total.
+
+        Deliberately not wrapped in silent mode: callers are spend and quota reservations, where
+        a value that cannot be read must block rather than read as zero.
+        """
+
+        value = await self.client.incrbyfloat(key, amount)
+        total = float(value)
+        if ttl > 0 and abs(total - amount) < 1e-12:
+            await self.client.expire(key, ttl)
+        return total
+
+    async def get_float(self, key: str) -> float:
+        raw = await self.client.get(key)
+        return float(raw) if raw is not None else 0.0

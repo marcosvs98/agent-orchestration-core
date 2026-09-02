@@ -73,7 +73,7 @@ class ConversationController:
             try:
                 trace_uuid = UUID(trace_id_header)
             except ValueError:
-                trace_uuid = UUID(hex=trace_id_header) if len(trace_id_header) == 32 else uuid4()
+                trace_uuid = uuid4()
         else:
             trace_uuid = uuid4()
 

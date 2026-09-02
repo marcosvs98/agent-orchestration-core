@@ -20,13 +20,19 @@ class TestExecutionBoundary:
         rate_limit_service.enforce = AsyncMock()
         boundary = ExecutionBoundary(
             execution_service=execution_service,
+            agent_run_service=MagicMock(),
             tool_orchestrator=orchestrator,
             access_policy_service=access_policy_service,
             rate_limit_service=rate_limit_service,
         )
 
         await boundary.ingest_interaction_and_create_flow_run(
-            auth=MagicMock(tenant_id=uuid4(), principal_type="machine", principal_id="p", scopes={"execution:flow_run:create"}),
+            auth=MagicMock(
+                tenant_id=uuid4(),
+                principal_type="machine",
+                principal_id="p",
+                scopes={"execution:flow_run:create"},
+            ),
             endpoint="/core/v1/executions/flow-runs",
             idempotency_key="k",
             flow_run=FlowRunCreate(
@@ -67,9 +73,7 @@ class TestExecutionBoundary:
             )
         )
         execution_service.repository = MagicMock()
-        execution_service.repository.get_flow_context = AsyncMock(
-            return_value=(uuid4(), uuid4())
-        )
+        execution_service.repository.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
 
         orchestrator = MagicMock()
         access_policy_service = MagicMock()
@@ -79,6 +83,7 @@ class TestExecutionBoundary:
 
         boundary = ExecutionBoundary(
             execution_service=execution_service,
+            agent_run_service=MagicMock(),
             tool_orchestrator=orchestrator,
             access_policy_service=access_policy_service,
             rate_limit_service=rate_limit_service,
@@ -114,9 +119,7 @@ class TestExecutionBoundary:
             )
         )
         execution_service.repository = MagicMock()
-        execution_service.repository.get_flow_context = AsyncMock(
-            return_value=(uuid4(), uuid4())
-        )
+        execution_service.repository.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
 
         orchestrator = MagicMock()
         access_policy_service = MagicMock()
@@ -126,6 +129,7 @@ class TestExecutionBoundary:
 
         boundary = ExecutionBoundary(
             execution_service=execution_service,
+            agent_run_service=MagicMock(),
             tool_orchestrator=orchestrator,
             access_policy_service=access_policy_service,
             rate_limit_service=rate_limit_service,
@@ -151,7 +155,6 @@ class TestExecutionBoundary:
 
     @pytest.mark.asyncio
     async def test_list_node_runs_applies_authorization_and_rate_limiting(self):
-        from domain.execution.schemas.execution import NodeRun
         from domain.governance.schemas.scopes import Scope
 
         execution_service = MagicMock()
@@ -165,6 +168,7 @@ class TestExecutionBoundary:
 
         boundary = ExecutionBoundary(
             execution_service=execution_service,
+            agent_run_service=MagicMock(),
             tool_orchestrator=orchestrator,
             access_policy_service=access_policy_service,
             rate_limit_service=rate_limit_service,
@@ -189,7 +193,6 @@ class TestExecutionBoundary:
 
     @pytest.mark.asyncio
     async def test_list_agent_runs_applies_authorization_and_rate_limiting(self):
-        from domain.execution.schemas.execution import AgentRun
         from domain.governance.schemas.scopes import Scope
 
         execution_service = MagicMock()
@@ -203,6 +206,7 @@ class TestExecutionBoundary:
 
         boundary = ExecutionBoundary(
             execution_service=execution_service,
+            agent_run_service=MagicMock(),
             tool_orchestrator=orchestrator,
             access_policy_service=access_policy_service,
             rate_limit_service=rate_limit_service,

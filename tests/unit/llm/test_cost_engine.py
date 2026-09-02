@@ -1,5 +1,4 @@
 import contextlib
-import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -61,7 +60,7 @@ async def test_compute_cost_raises_when_no_pricing():
 
 def test_tokens_helper():
     repo = MagicMock()
-    engine = CostEngine(repo, tracer=_fake_tracer())
+    CostEngine(repo, tracer=_fake_tracer())
     assert CostEngine._tokens(None, "input_tokens") == 0
     assert CostEngine._tokens({}, "input_tokens") == 0
     assert CostEngine._tokens({"input_tokens": "10"}, "input_tokens") == 10

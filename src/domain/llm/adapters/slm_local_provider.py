@@ -1,17 +1,21 @@
 import asyncio
 import orjson
 import time
+from functools import lru_cache
 from collections.abc import Awaitable, Callable
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from llama_cpp import Llama, CreateChatCompletionResponse
 
+from adapters.observability.logging import get_logger
 from domain.llm.ports.llm_provider import LLMProviderPort
 from domain.llm.schemas.llm import LLMRequest, LLMResult
-from domain.llm.utils.model_path import resolve_slm_model_path
+from domain.llm.utils.model_path import find_slm_model_path, resolve_slm_model_path
 from domain.llm.exceptions.llm_exceptions import SLMInferenceTimeoutException
 from exceptions.service_exceptions import DomainValidationException
 from settings import SLM_INFERENCE_TIMEOUT_MS, SLM_MODEL_PATH
+
+logger = get_logger(__name__)
 
 
 class SLMLocalProvider(LLMProviderPort):
@@ -23,16 +27,11 @@ class SLMLocalProvider(LLMProviderPort):
         timeout_s: int | None = SLM_INFERENCE_TIMEOUT_MS,
     ) -> None:
         self.credential_secret_ref = credential_secret_ref
-        self._engine: Optional[Llama] = None
         self.model_name = model_name
         self.timeout_s = timeout_s
-        self._engine_instance()
+        self._engine: Llama = self._build_engine()
 
-    def _engine_instance(self) -> Llama:
-        return None  # Todo: Lembrar disso depois
-        if self._engine:
-            return self._engine
-
+    def _build_engine(self) -> Llama:
         if not self.model_name:
             raise DomainValidationException("llm_provider_missing_model_path")
 
@@ -49,7 +48,7 @@ class SLMLocalProvider(LLMProviderPort):
                 ) from exc
 
         try:
-            self._engine = Llama(
+            return Llama(
                 model_path=resolved_path,
                 n_ctx=engine_config.get("n_ctx", 2048),
                 n_threads=engine_config.get("n_threads", 4),
@@ -66,8 +65,6 @@ class SLMLocalProvider(LLMProviderPort):
                 "llm_provider_invalid_model_path",
                 errors=[str(exc)],
             ) from exc
-
-        return self._engine
 
     async def infer(
         self,
@@ -160,3 +157,13 @@ class SLMLocalProvider(LLMProviderPort):
             model_alias=request.model_alias,
             raw_output=completion,
         )
+
+
+@lru_cache(maxsize=1)
+def build_slm_local_provider(
+    *, credential_secret_ref: str | None = None
+) -> SLMLocalProvider | None:
+    if find_slm_model_path(SLM_MODEL_PATH) is None:
+        logger.info("slm_local_provider_unavailable", model_path=SLM_MODEL_PATH)
+        return None
+    return SLMLocalProvider(credential_secret_ref=credential_secret_ref)

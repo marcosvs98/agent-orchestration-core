@@ -224,9 +224,7 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(
-            side_effect=[mock_config, mock_published_config]
-        )
+        repository.get_rag_config = AsyncMock(side_effect=[mock_config, mock_published_config])
         repository.set_rag_config_status = AsyncMock()
 
         result = await rag_service.publish_rag_config(
@@ -245,9 +243,7 @@ class TestRagService:
         assert call_args["event_type"] == "RAG_CONFIG_PUBLISHED"
 
     @pytest.mark.asyncio
-    async def test_publish_rag_config_raises_when_not_validated(
-        self, rag_service, repository
-    ):
+    async def test_publish_rag_config_raises_when_not_validated(self, rag_service, repository):
         tenant_id = uuid4()
         config_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Ready")
@@ -304,9 +300,7 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(
-            side_effect=[mock_draft, mock_validated]
-        )
+        repository.get_rag_config = AsyncMock(side_effect=[mock_draft, mock_validated])
         repository.set_rag_config_status = AsyncMock()
 
         result = await rag_service.validate_rag_config(
@@ -320,15 +314,10 @@ class TestRagService:
             rag_config_id=config_id, status=VersionStatus.VALIDATED
         )
         authoring_events.append_event.assert_called_once()
-        assert (
-            authoring_events.append_event.call_args[1]["event_type"]
-            == "RAG_CONFIG_VALIDATED"
-        )
+        assert authoring_events.append_event.call_args[1]["event_type"] == "RAG_CONFIG_VALIDATED"
 
     @pytest.mark.asyncio
-    async def test_validate_rag_config_raises_when_not_draft(
-        self, rag_service, repository
-    ):
+    async def test_validate_rag_config_raises_when_not_draft(self, rag_service, repository):
         tenant_id = uuid4()
         config_id = uuid4()
         mock_config = SimpleNamespace(
@@ -349,9 +338,7 @@ class TestRagService:
             )
 
     @pytest.mark.asyncio
-    async def test_validate_rag_config_raises_when_not_found(
-        self, rag_service, repository
-    ):
+    async def test_validate_rag_config_raises_when_not_found(self, rag_service, repository):
         tenant_id = uuid4()
         config_id = uuid4()
         repository.get_rag_config = AsyncMock(return_value=None)
@@ -364,9 +351,7 @@ class TestRagService:
             )
 
     @pytest.mark.asyncio
-    async def test_validate_rag_config_raises_when_wrong_tenant(
-        self, rag_service, repository
-    ):
+    async def test_validate_rag_config_raises_when_wrong_tenant(self, rag_service, repository):
         tenant_id = uuid4()
         other_tenant = uuid4()
         config_id = uuid4()
@@ -420,9 +405,7 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(
-            side_effect=[mock_config, mock_deprecated_config]
-        )
+        repository.get_rag_config = AsyncMock(side_effect=[mock_config, mock_deprecated_config])
         repository.set_rag_config_status = AsyncMock()
 
         result = await rag_service.deprecate_rag_config(
@@ -441,9 +424,7 @@ class TestRagService:
         assert call_args["event_type"] == "RAG_CONFIG_DEPRECATED"
 
     @pytest.mark.asyncio
-    async def test_deprecate_rag_config_raises_when_not_published(
-        self, rag_service, repository
-    ):
+    async def test_deprecate_rag_config_raises_when_not_published(self, rag_service, repository):
         tenant_id = uuid4()
         config_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Replace")
@@ -502,9 +483,7 @@ class TestRagService:
             version_patch=0,
             config_hash=None,
         )
-        repository.get_rag_config = AsyncMock(
-            side_effect=[mock_config, mock_disabled_config]
-        )
+        repository.get_rag_config = AsyncMock(side_effect=[mock_config, mock_disabled_config])
         repository.set_rag_config_status = AsyncMock()
 
         result = await rag_service.disable_rag_config(
@@ -523,9 +502,7 @@ class TestRagService:
         assert call_args["event_type"] == "RAG_CONFIG_DISABLED"
 
     @pytest.mark.asyncio
-    async def test_disable_rag_config_raises_when_invalid_status(
-        self, rag_service, repository
-    ):
+    async def test_disable_rag_config_raises_when_invalid_status(self, rag_service, repository):
         tenant_id = uuid4()
         config_id = uuid4()
         change_request = ChangeRequest(change_type="UPDATE", justification="Disable")

@@ -22,7 +22,12 @@ class ExecutionEventType(StrEnum):
     AgentRunRetried = "AgentRunRetried"
     AgentRunAborted = "AgentRunAborted"
 
+    AgentDelegationRequested = "AgentDelegationRequested"
+    AgentDelegationCompleted = "AgentDelegationCompleted"
+    AgentDelegationFailed = "AgentDelegationFailed"
+
     ToolInvocationRequested = "ToolInvocationRequested"
+    ToolInvocationDenied = "ToolInvocationDenied"
     ToolInvocationSucceeded = "ToolInvocationSucceeded"
     ToolInvocationFailed = "ToolInvocationFailed"
     ToolInvocationTimedOut = "ToolInvocationTimedOut"

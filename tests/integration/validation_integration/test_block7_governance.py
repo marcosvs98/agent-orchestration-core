@@ -7,7 +7,6 @@ from infra.database.models.flow.flow_version import FlowVersion
 from resources.scripts.validation_seed import (
     AGENT_ID,
     AGENT_VERSION_ID,
-    DRAFT_FLOW_ID,
     DRAFT_FLOW_VERSION_ID,
     FLOW_ID,
     FLOW_VERSION_ID,
@@ -21,9 +20,7 @@ async def test_publish_activate_and_pointer_governance(db_session) -> None:
     from sqlalchemy import select
 
     flow_result = await db_session.execute(
-        select(FlowVersion).where(
-            FlowVersion.flow_id == FLOW_ID, FlowVersion.is_active.is_(True)
-        )
+        select(FlowVersion).where(FlowVersion.flow_id == FLOW_ID, FlowVersion.is_active.is_(True))
     )
     active_flow_version = flow_result.scalar_one_or_none()
     published_version = await db_session.get(FlowVersion, FLOW_VERSION_ID)

@@ -5,12 +5,16 @@ PC_PYTHON ?= $(CURDIR)/.venv/bin/python
 # migrate / seed-demo usam uv run para usar o Alembic e deps do projeto (ver README §4.1–4.2).
 # Postgres do compose usa bind mount em ./docker-volumes/postgres; docker compose down -v não apaga esse diretório.
 
-.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-admin-token run-seed seed-demo seed-demo2 test-flow-demo test-trace-hierarchy serve-conversation-test ci ci-mypy
+.PHONY: validate-setup pc-config pc-after-commit pc-run-all pc-run gen-token run-seed seed-demo seed-demo-python seed-demo-export ci ci-mypy migrate temporal-up temporal-down temporal-ui worker test-temporal docs-up docs-down
 
 # Mirror GitHub Actions CI (see .github/workflows/ci.yml).
+check-links:
+	@uv run python resources/scripts/check_markdown_links.py
+
 ci:
 	@TRACING_ENABLED=false uv sync --all-extras --all-groups
 	@TRACING_ENABLED=false uv run ruff check src
+	@TRACING_ENABLED=false uv run python resources/scripts/check_markdown_links.py
 	@TRACING_ENABLED=false uv run python -m pytest tests/unit tests/integration -m "not validation_integration"
 
 # Optional: mypy is informational in CI (continue-on-error) but useful locally.
@@ -39,24 +43,35 @@ run-seed:
 	@PYTHONPATH=src python3 resources/scripts/seeds/seed_main.py
 
 seed-demo:
+	@PYTHONPATH=src uv run python resources/scripts/seeds/demo/apply_sql.py
+
+seed-demo-python:
 	@PYTHONPATH=src uv run python resources/scripts/seeds/demo/run.py
 
-seed-demo2:
-	@PYTHONPATH=src uv run python resources/scripts/seeds/demo_2/run.py
-
-test-flow-demo:
-	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo.py
-
-test-flow-demo-2:
-	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/examples/execute_flow_demo_direct.py
-
-test-trace-hierarchy:
-	@cd $(shell pwd) && PYTHONPATH=.:src:resources python3 resources/scripts/test_trace_hierarchy.py
+seed-demo-export:
+	@PYTHONPATH=src uv run python resources/scripts/seeds/demo/export_sql.py
 
 migrate:
 	@PYTHONPATH=src uv run python -m alembic upgrade head
 
-serve-conversation-test:
-	@echo "Serving conversation test frontend at http://localhost:9000"
-	@echo "Ensure the API is running (e.g. uv run uvicorn src.app:create_app --factory --host 0.0.0.0 --port 8000)"
-	@cd resources/conversation-test && python3 -m http.server 9000
+temporal-up:
+	@docker compose up -d temporal
+
+temporal-down:
+	@docker compose stop temporal
+
+temporal-ui:
+	@echo "Temporal Web UI: http://localhost:8233"
+
+worker:
+	@PYTHONPATH=src TEMPORAL_ENABLED=true uv run python -m adapters.temporal.worker
+
+test-temporal:
+	@TRACING_ENABLED=false uv run python -m pytest tests/unit/temporal --cov-fail-under=0
+
+docs-up:
+	@docker compose --profile docs up -d docs
+	@echo "Docs: http://localhost:8001"
+
+docs-down:
+	@docker compose --profile docs stop docs

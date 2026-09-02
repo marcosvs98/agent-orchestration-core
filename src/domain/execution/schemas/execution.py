@@ -61,6 +61,8 @@ class FlowRun(BaseModel):
     runtime_policy_hash: str | None = None
     tool_catalog_hash: str | None = None
     llm_provider_config_hash: str | None = None
+    temporal_workflow_id: str | None = None
+    temporal_run_id: str | None = None
 
     @classmethod
     def from_model(
@@ -96,6 +98,8 @@ class FlowRun(BaseModel):
             runtime_policy_hash=model.runtime_policy_hash,
             tool_catalog_hash=model.tool_catalog_hash,
             llm_provider_config_hash=model.llm_provider_config_hash,
+            temporal_workflow_id=model.temporal_workflow_id,
+            temporal_run_id=model.temporal_run_id,
         )
 
 

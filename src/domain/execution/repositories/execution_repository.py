@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 
+from domain.execution.schemas.agent_run import AgentRunOrigin
 from domain.execution.schemas.execution import (
     FlowRunInput,
     UserPreferenceUpsertResult,
@@ -26,6 +28,7 @@ from exceptions.service_exceptions import (
 from infra.database import DatabaseConnection
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.state_machine import (
+    AgentRunStatus,
     FlowRunStatus,
     RunStatus,
     ToolRunStatus,
@@ -34,6 +37,9 @@ from utils.query_compiler import compile_query
 from infra.database.models.execution.flow_run import FlowRun as FlowRunModel
 from infra.database.models.execution.tool_run import ToolRun as ToolRunModel
 from infra.database.models.execution.agent_run import AgentRun as AgentRunModel
+from infra.database.models.llm.llm_usage_ledger import (
+    LLMUsageLedger as LLMUsageLedgerModel,
+)
 from infra.database.models.execution.flow_run_lock import (
     FlowRunLock as FlowRunLockModel,
 )
@@ -402,6 +408,82 @@ class ExecutionRepository:
                     sa.update(FlowRunModel)
                     .where(FlowRunModel.flow_run_id == flow_run_id)
                     .values(
+                        status=status,
+                        canonical_status=canonical_status,
+                    )
+                )
+                await session.commit()
+
+    async def set_flow_run_input(self, *, flow_run_id: UUID, input_payload: dict) -> None:
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.repository.set_flow_run_input",
+            input={"flow_run_id": str(flow_run_id)},
+        ):
+            async with self.db.get_session() as session:
+                await session.execute(
+                    sa.update(FlowRunModel)
+                    .where(FlowRunModel.flow_run_id == flow_run_id)
+                    .values(input=input_payload)
+                )
+                await session.commit()
+
+    async def next_flow_run_turn_index(self, *, flow_run_id: UUID) -> int:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                sa.update(FlowRunModel)
+                .where(FlowRunModel.flow_run_id == flow_run_id)
+                .values(turn_index=FlowRunModel.turn_index + 1)
+                .returning(FlowRunModel.turn_index)
+            )
+            turn_index = result.scalar_one_or_none()
+            await session.commit()
+            if turn_index is None:
+                raise NotFoundServiceException(message="flow_run_not_found")
+            return int(turn_index)
+
+    async def list_stale_running_flow_runs(
+        self, *, older_than: datetime, limit: int
+    ) -> list[FlowRunModel]:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(FlowRunModel)
+                .where(
+                    FlowRunModel.status.in_([RunStatus.QUEUED, RunStatus.RUNNING]),
+                    FlowRunModel.updated_at < older_than,
+                )
+                .order_by(FlowRunModel.updated_at)
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def set_flow_run_dispatch(
+        self,
+        *,
+        flow_run_id: UUID,
+        temporal_workflow_id: str,
+        temporal_run_id: str,
+        status: str,
+        canonical_status: str,
+    ) -> None:
+        with self.tracer.observe(
+            as_type="tool",
+            name="domain.execution.repository.set_flow_run_dispatch",
+            input={
+                "flow_run_id": str(flow_run_id),
+                "temporal_workflow_id": temporal_workflow_id,
+                "temporal_run_id": temporal_run_id,
+                "status": status,
+            },
+        ):
+            async with self.db.get_session() as session:
+                await session.execute(
+                    sa.update(FlowRunModel)
+                    .where(FlowRunModel.flow_run_id == flow_run_id)
+                    .values(
+                        temporal_workflow_id=temporal_workflow_id,
+                        temporal_run_id=temporal_run_id,
                         status=status,
                         canonical_status=canonical_status,
                     )
@@ -1502,12 +1584,13 @@ class ExecutionRepository:
     async def list_execution_events(
         self,
         *,
+        tenant_id: UUID,
         flow_run_id: UUID | None = None,
         correlation_id: UUID | None = None,
         limit: int = 200,
     ) -> list[ExecutionEventModel]:
         async with self.db.get_session() as session:
-            stmt = select(ExecutionEventModel)
+            stmt = select(ExecutionEventModel).where(ExecutionEventModel.tenant_id == tenant_id)
             if flow_run_id is not None:
                 stmt = stmt.where(ExecutionEventModel.flow_run_id == flow_run_id)
             if correlation_id is not None:
@@ -1524,6 +1607,7 @@ class ExecutionRepository:
                 input={
                     "query": query_sql,
                     "params": {
+                        "tenant_id": str(tenant_id),
                         "flow_run_id": str(flow_run_id) if flow_run_id else None,
                         "correlation_id": (str(correlation_id) if correlation_id else None),
                         "limit": limit,
@@ -1838,6 +1922,7 @@ class ExecutionRepository:
         input_payload: dict,
         estimated_cost: float | None = None,
         billing_policy_version_id: UUID | None = None,
+        tool_call_id: str | None = None,
     ) -> UUID:
         tool_run_id = uuid4()
         async with self.db.get_session() as session:
@@ -1861,6 +1946,7 @@ class ExecutionRepository:
                         input=input_payload,
                         estimated_cost=estimated_cost,
                         billing_policy_version_id=billing_policy_version_id,
+                        tool_call_id=tool_call_id,
                     )
                 )
             await session.commit()
@@ -2523,6 +2609,7 @@ class ExecutionRepository:
     async def create_agent_run(
         self,
         *,
+        tenant_id: UUID,
         node_run_id: UUID,
         agent_version_id: UUID,
         correlation_id: UUID,
@@ -2532,9 +2619,19 @@ class ExecutionRepository:
         system_prompt_hash: str | None = None,
         runtime_snapshot: dict[str, object] | None = None,
         runtime_snapshot_hash: str | None = None,
+        ai_execution_policy_version_id: UUID | None = None,
+        status: str = AgentRunStatus.CREATED,
+        canonical_status: str = AgentRunStatus.CREATED,
     ) -> UUID:
         agent_run_id = uuid4()
         async with self.db.get_session() as session:
+            agent_id = (
+                await session.execute(
+                    select(AgentVersionModel.agent_id).where(
+                        AgentVersionModel.agent_version_id == agent_version_id
+                    )
+                )
+            ).scalar_one()
             with self.tracer.observe(
                 as_type="tool",
                 name="domain.execution.repository.create_agent_run",
@@ -2547,6 +2644,10 @@ class ExecutionRepository:
                 session.add(
                     AgentRunModel(
                         agent_run_id=agent_run_id,
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        origin=AgentRunOrigin.FLOW_NODE.value,
+                        root_agent_run_id=agent_run_id,
                         node_run_id=node_run_id,
                         agent_version_id=agent_version_id,
                         correlation_id=correlation_id,
@@ -2556,10 +2657,69 @@ class ExecutionRepository:
                         system_prompt_hash=system_prompt_hash,
                         runtime_snapshot=runtime_snapshot or {},
                         runtime_snapshot_hash=runtime_snapshot_hash,
+                        ai_execution_policy_version_id=ai_execution_policy_version_id,
+                        status=status,
+                        canonical_status=canonical_status,
                     )
                 )
             await session.commit()
         return agent_run_id
+
+    async def record_llm_usage(
+        self,
+        *,
+        tenant_id: UUID,
+        flow_run_id: UUID | None,
+        node_run_id: UUID | None,
+        agent_run_id: UUID | None,
+        session_id: UUID | None,
+        provider: str | None,
+        provider_model: str | None,
+        task_type: str | None,
+        inference_layer: str | None,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: Decimal | None,
+        latency_ms: int | None,
+    ) -> UUID:
+        """Append one provider interaction to the durable spend ledger."""
+
+        ledger_id = uuid4()
+        async with self.db.get_session() as session:
+            session.add(
+                LLMUsageLedgerModel(
+                    llm_usage_ledger_id=ledger_id,
+                    tenant_id=tenant_id,
+                    flow_run_id=flow_run_id,
+                    node_run_id=node_run_id,
+                    agent_run_id=agent_run_id,
+                    session_id=session_id,
+                    provider=provider,
+                    provider_model=provider_model,
+                    task_type=task_type,
+                    inference_layer=inference_layer,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost_usd=cost_usd,
+                    latency_ms=latency_ms,
+                    occurred_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+        return ledger_id
+
+    async def sum_llm_cost_for_tenant(
+        self, *, tenant_id: UUID, since: datetime, until: datetime | None = None
+    ) -> Decimal:
+        async with self.db.get_session() as session:
+            stmt = sa.select(sa.func.coalesce(sa.func.sum(LLMUsageLedgerModel.cost_usd), 0)).where(
+                LLMUsageLedgerModel.tenant_id == tenant_id,
+                LLMUsageLedgerModel.occurred_at >= since,
+            )
+            if until is not None:
+                stmt = stmt.where(LLMUsageLedgerModel.occurred_at < until)
+            result = await session.execute(stmt)
+            return Decimal(str(result.scalar_one()))
 
     async def update_agent_run_result(
         self,

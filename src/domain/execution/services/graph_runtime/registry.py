@@ -5,6 +5,7 @@ from typing import Any, Dict, Type
 from domain.context.ports.service import MemoryWriteServicePort
 from domain.agents.repositories.agents_repository import AgentsRepository
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
+from domain.execution.ports.tool_run_scheduler import ToolRunSchedulerPort
 from domain.execution.services.graph_runtime.nodes import (
     ContentModeration,
     ContextSummarizer,
@@ -48,7 +49,9 @@ class NodeRegistry:
         agents_repository: AgentsRepository | None = None,
         llm_moderation_provider: ModerationProviderPort | None = None,
         human_sla_service: HumanSLAService | None = None,
+        tool_run_scheduler: ToolRunSchedulerPort | None = None,
     ) -> None:
+        self.tool_run_scheduler = tool_run_scheduler
         self.llm_executor = llm_executor
         self.prompt_resolver = prompt_resolver
         self.tool_orchestrator = tool_orchestrator
@@ -187,6 +190,7 @@ class NodeRegistry:
                 tool_orchestrator = self.tool_orchestrator
                 execution_repository = self.execution_repository
                 tracer = self.tracer
+                tool_run_scheduler = self.tool_run_scheduler
 
                 class _ToolExecutor(base_cls):  # type: ignore[misc]
                     def __init__(self) -> None:
@@ -194,6 +198,7 @@ class NodeRegistry:
                             tool_orchestrator=tool_orchestrator,
                             execution_repository=execution_repository,
                             tracer=tracer,
+                            tool_run_scheduler=tool_run_scheduler,
                         )
 
                 return _ToolExecutor

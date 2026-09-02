@@ -125,6 +125,7 @@ class FlowsController:
             methods=["POST"],
             response_model=FlowVersion,
             responses=self._resp405(),
+            include_in_schema=False,
         )
         r(
             "/flows/{flow_id}/versions/{flow_version_id}:disable",
@@ -132,6 +133,7 @@ class FlowsController:
             methods=["POST"],
             response_model=FlowVersion,
             responses=self._resp405(),
+            include_in_schema=False,
         )
         r(
             "/flows/{flow_id}/versions/{flow_version_id}/nodes",

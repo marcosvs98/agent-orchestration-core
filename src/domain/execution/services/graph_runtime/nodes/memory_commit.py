@@ -25,12 +25,41 @@ class MemoryCommitMergeErrorCode(StrEnum):
     RESOLVED_DATA_EMPTY = "memory_commit_resolved_data_empty"
 
 
-class MemoryCommitPayloadState(StrEnum):
-    PENDING_PERSIST = "pending_persist"
+class MemoryCommitPersistOutcome(StrEnum):
+    PERSISTED = "persisted"
+    WRITE_NOT_ALLOWED = "write_not_allowed"
+    WRITER_UNAVAILABLE = "writer_unavailable"
+    NODE_NOT_FOUND = "node_not_found"
+    INVALID_NODE_ID = "invalid_node_id"
+    WRITE_FAILED = "write_failed"
 
 
-class MemoryCommitSuccessReason(StrEnum):
-    PAYLOAD_READY = "memory_commit_payload_ready"
+MEMORY_COMMIT_FAILED_OUTCOMES = frozenset(
+    {
+        MemoryCommitPersistOutcome.NODE_NOT_FOUND,
+        MemoryCommitPersistOutcome.INVALID_NODE_ID,
+        MemoryCommitPersistOutcome.WRITE_FAILED,
+    }
+)
+
+
+class MemoryCommitReason(StrEnum):
+    PERSISTED = "memory_commit_persisted"
+    WRITE_NOT_ALLOWED = "memory_commit_write_not_allowed"
+    WRITER_UNAVAILABLE = "memory_commit_writer_unavailable"
+    NODE_NOT_FOUND = "memory_commit_node_not_found"
+    INVALID_NODE_ID = "memory_commit_invalid_node_id"
+    WRITE_FAILED = "memory_commit_write_failed"
+
+
+MEMORY_COMMIT_REASON_BY_OUTCOME = {
+    MemoryCommitPersistOutcome.PERSISTED: MemoryCommitReason.PERSISTED,
+    MemoryCommitPersistOutcome.WRITE_NOT_ALLOWED: MemoryCommitReason.WRITE_NOT_ALLOWED,
+    MemoryCommitPersistOutcome.WRITER_UNAVAILABLE: MemoryCommitReason.WRITER_UNAVAILABLE,
+    MemoryCommitPersistOutcome.NODE_NOT_FOUND: MemoryCommitReason.NODE_NOT_FOUND,
+    MemoryCommitPersistOutcome.INVALID_NODE_ID: MemoryCommitReason.INVALID_NODE_ID,
+    MemoryCommitPersistOutcome.WRITE_FAILED: MemoryCommitReason.WRITE_FAILED,
+}
 
 
 def _get_value_at_path(obj: Any, path: str) -> Any:
@@ -111,16 +140,18 @@ class MemoryCommitNode:
         *,
         context: ExecutionContext,
         memory_item: dict[str, Any],
-    ) -> None:
+    ) -> tuple[MemoryCommitPersistOutcome, str | None]:
         if self.memory_write_service is None or self.execution_repository is None:
-            return
+            return MemoryCommitPersistOutcome.WRITER_UNAVAILABLE, None
         try:
             node_uuid = UUID(str(context.current_node_id))
         except ValueError:
-            return
+            return MemoryCommitPersistOutcome.INVALID_NODE_ID, None
         node = await self.execution_repository.get_node(node_uuid)
-        if node is None or not bool(node.allow_memory_write):
-            return
+        if node is None:
+            return MemoryCommitPersistOutcome.NODE_NOT_FOUND, None
+        if not bool(node.allow_memory_write):
+            return MemoryCommitPersistOutcome.WRITE_NOT_ALLOWED, None
         try:
             await self.memory_write_service.write_memory_item(
                 tenant_id=context.tenant_id,
@@ -134,8 +165,9 @@ class MemoryCommitNode:
                     node_id=node_uuid,
                 ),
             )
-        except BaseServiceException:
-            return
+        except BaseServiceException as exc:
+            return MemoryCommitPersistOutcome.WRITE_FAILED, exc.message
+        return MemoryCommitPersistOutcome.PERSISTED, None
 
     async def execute(
         self, context: ExecutionContext, config: dict[str, Any] | None = None
@@ -182,16 +214,25 @@ class MemoryCommitNode:
             "source": str(source_raw),
             "rag_config_id": str(rag_raw),
         }
-        await self._persist_memory_item(
+        outcome, failure_detail = await self._persist_memory_item(
             context=context,
             memory_item=memory_item,
         )
+        reason = MEMORY_COMMIT_REASON_BY_OUTCOME[outcome]
+        persisted = outcome == MemoryCommitPersistOutcome.PERSISTED
+        failed = outcome in MEMORY_COMMIT_FAILED_OUTCOMES
+        data: dict[str, Any] = {
+            "memory_commit": outcome.value,
+            "persisted": persisted,
+            "reason_code": reason.value,
+        }
+        if failed:
+            data["error"] = reason.value
+            if failure_detail is not None:
+                data["detail"] = failure_detail
         return NodeResult(
             node=self.node_type,
-            status=NodeExecutionStatus.SUCCESS,
-            data={
-                "memory_commit": MemoryCommitPayloadState.PENDING_PERSIST.value,
-                "reason_code": MemoryCommitSuccessReason.PAYLOAD_READY.value,
-            },
+            status=NodeExecutionStatus.ERROR if failed else NodeExecutionStatus.SUCCESS,
+            data=data,
             memory=[*context.memory, memory_item],
         )

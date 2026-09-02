@@ -73,12 +73,7 @@ async def test_get_max_version_patch(tools_repo: ToolsRepository) -> None:
     res.one.return_value = row
     session.execute = AsyncMock(return_value=res)
     tools_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    assert (
-        await tools_repo.get_max_version_patch(
-            tool_id=uuid4(), tenant_id=uuid4()
-        )
-        == 3
-    )
+    assert await tools_repo.get_max_version_patch(tool_id=uuid4(), tenant_id=uuid4()) == 3
 
 
 @pytest.mark.asyncio

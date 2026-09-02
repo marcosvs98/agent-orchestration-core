@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from domain.llm.schemas.llm import LLMResult
+
 from adapters.mcp.conversation_mcp_context import (
     _CONVERSATION_MCP_CONFIG,
     set_conversation_mcp_config,
@@ -909,3 +911,89 @@ async def test_direct_path_skips_llm_executor() -> None:
 
     openai_provider.infer_streaming_request.assert_awaited_once()
     openai_provider.infer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_turn_is_written_to_the_usage_ledger():
+    """The direct endpoint bypasses LLMExecutor, so it records its own spend (gap register §3)."""
+
+    from decimal import Decimal
+
+    service = ConversationService(
+        openai_provider=AsyncMock(),
+        idempotency=AsyncMock(),
+        execution_repository=AsyncMock(),
+        agents_repository=AsyncMock(),
+        user_prompts_repository=AsyncMock(),
+        tracer=AsyncMock(),
+        cost_engine=SimpleNamespace(compute_cost=AsyncMock(return_value=0.0123)),
+    )
+    tenant_id, session_id = uuid4(), uuid4()
+
+    await service._record_turn_usage(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        model="gpt-4.1",
+        llm_result=LLMResult(
+            output={},
+            token_usage={"input_tokens": 90, "output_tokens": 20},
+            latency_ms=640,
+        ),
+    )
+
+    kwargs = service.execution_repository.record_llm_usage.await_args.kwargs
+    assert kwargs["tenant_id"] == tenant_id
+    assert kwargs["session_id"] == session_id
+    assert kwargs["provider_model"] == "gpt-4.1"
+    assert kwargs["task_type"] == "conversation_turn"
+    assert kwargs["input_tokens"] == 90
+    assert kwargs["output_tokens"] == 20
+    assert kwargs["cost_usd"] == Decimal("0.0123")
+    assert kwargs["flow_run_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_absent_token_usage_records_zeroes_rather_than_failing():
+    service = ConversationService(
+        openai_provider=AsyncMock(),
+        idempotency=AsyncMock(),
+        execution_repository=AsyncMock(),
+        agents_repository=AsyncMock(),
+        user_prompts_repository=AsyncMock(),
+        tracer=AsyncMock(),
+    )
+
+    await service._record_turn_usage(
+        tenant_id=uuid4(),
+        session_id=uuid4(),
+        model="gpt-4.1",
+        llm_result=LLMResult(output={}),
+    )
+
+    kwargs = service.execution_repository.record_llm_usage.await_args.kwargs
+    assert kwargs["input_tokens"] == 0
+    assert kwargs["output_tokens"] == 0
+    assert kwargs["cost_usd"] is None
+
+
+@pytest.mark.asyncio
+async def test_ledger_write_failure_never_breaks_a_streamed_turn():
+    """Accounting is best-effort; the turn has already been delivered to the client."""
+
+    execution_repository = AsyncMock()
+    execution_repository.record_llm_usage = AsyncMock(side_effect=RuntimeError("db down"))
+    service = ConversationService(
+        openai_provider=AsyncMock(),
+        idempotency=AsyncMock(),
+        execution_repository=execution_repository,
+        agents_repository=AsyncMock(),
+        user_prompts_repository=AsyncMock(),
+        tracer=AsyncMock(),
+    )
+
+    await service._record_turn_usage(
+        tenant_id=uuid4(),
+        session_id=uuid4(),
+        model="gpt-4.1",
+        llm_result=LLMResult(output={}, token_usage={"input_tokens": 5, "output_tokens": 1}),
+    )

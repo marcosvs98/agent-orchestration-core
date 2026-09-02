@@ -63,9 +63,7 @@ class TestMcpRegistryController:
         req = MagicMock()
         req.base_url = "http://localhost:8010/"
 
-        result = await controller.create_mcp_server(
-            body=body_req, request=req, auth=auth
-        )
+        result = await controller.create_mcp_server(body=body_req, request=req, auth=auth)
         assert isinstance(result, McpServerCreateResponse)
         assert result.api_key == "secret-key-value"
         assert result.mcp_server_id == server_id
@@ -92,9 +90,7 @@ class TestMcpRegistryController:
         req = MagicMock()
         req.base_url = "http://localhost/"
         with pytest.raises(AuthorizationDeniedException, match="insufficient_scope"):
-            await controller.create_mcp_server(
-                body=body_req, request=req, auth=auth
-            )
+            await controller.create_mcp_server(body=body_req, request=req, auth=auth)
         service.create_server.assert_not_called()
 
     @pytest.mark.asyncio
@@ -118,9 +114,7 @@ class TestMcpRegistryController:
         req = MagicMock()
         req.base_url = "http://localhost/"
         with pytest.raises(AuthorizationDeniedException, match="tenant_id_required"):
-            await controller.create_mcp_server(
-                body=body_req, request=req, auth=auth
-            )
+            await controller.create_mcp_server(body=body_req, request=req, auth=auth)
         service.create_server.assert_not_called()
 
     @pytest.mark.asyncio
@@ -171,24 +165,22 @@ class TestMcpRegistryController:
             expires_at=9999999999,
         )
         service.get_server = AsyncMock(
-            return_value=                McpServerDetail(
-                    mcp_server_id=server_id,
-                    name="srv",
-                    status="ACTIVE",
-                    endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
-                    flow_snapshot_id=None,
-                    flow_deployment_id=None,
-                    tool_config_ids=[],
-                    vector_store_ids=[],
-                    user_prompt_ids=[],
-                    outbound_authorization_fallback_configured=False,
-                )
+            return_value=McpServerDetail(
+                mcp_server_id=server_id,
+                name="srv",
+                status="ACTIVE",
+                endpoint="https://api.example/core/v1/mcp-servers/x/mcp",
+                flow_snapshot_id=None,
+                flow_deployment_id=None,
+                tool_config_ids=[],
+                vector_store_ids=[],
+                user_prompt_ids=[],
+                outbound_authorization_fallback_configured=False,
+            )
         )
         result = await controller.get_mcp_server(mcp_server_id=server_id, auth=auth)
         assert result.mcp_server_id == server_id
-        service.get_server.assert_called_once_with(
-            tenant_id=tenant_id, mcp_server_id=server_id
-        )
+        service.get_server.assert_called_once_with(tenant_id=tenant_id, mcp_server_id=server_id)
 
     @pytest.mark.asyncio
     async def test_patch_outbound_auth_calls_service(

@@ -24,9 +24,7 @@ class TestFlowsController:
         return FlowsController(service=service)
 
     @pytest.mark.asyncio
-    async def test_create_flow_returns_flow_when_name_valid(
-        self, controller, service
-    ):
+    async def test_create_flow_returns_flow_when_name_valid(self, controller, service):
         tenant_id = uuid4()
         flow_id = uuid4()
         flow_create = FlowCreate(name="New Flow")
@@ -43,11 +41,7 @@ class TestFlowsController:
         )
 
         expected_response = Flow(
-            id=flow_id,
-            name="New Flow",
-            description=None,
-            tags=None,
-            created_by=principal_id
+            id=flow_id, name="New Flow", description=None, tags=None, created_by=principal_id
         )
         service.create_flow = AsyncMock(return_value=expected_response)
 
@@ -63,15 +57,11 @@ class TestFlowsController:
         )
 
     @pytest.mark.asyncio
-    async def test_create_flow_with_description_and_tags(
-        self, controller, service
-    ):
+    async def test_create_flow_with_description_and_tags(self, controller, service):
         tenant_id = uuid4()
         flow_id = uuid4()
         flow_create = FlowCreate(
-            name="New Flow",
-            description="Flow description",
-            tags=["tag1", "tag2"]
+            name="New Flow", description="Flow description", tags=["tag1", "tag2"]
         )
         principal_id = "user-123"
 
@@ -90,7 +80,7 @@ class TestFlowsController:
             name="New Flow",
             description="Flow description",
             tags=["tag1", "tag2"],
-            created_by=principal_id
+            created_by=principal_id,
         )
         service.create_flow = AsyncMock(return_value=expected_response)
 
@@ -106,9 +96,7 @@ class TestFlowsController:
         )
 
     @pytest.mark.asyncio
-    async def test_create_flow_raises_when_name_empty(
-        self, controller, service
-    ):
+    async def test_create_flow_raises_when_name_empty(self, controller, service):
         tenant_id = uuid4()
         flow_create = FlowCreate(name="")
         principal_id = "user-123"
@@ -135,9 +123,7 @@ class TestFlowsController:
         )
 
     @pytest.mark.asyncio
-    async def test_create_flow_raises_when_name_only_whitespace(
-        self, controller, service
-    ):
+    async def test_create_flow_raises_when_name_only_whitespace(self, controller, service):
         tenant_id = uuid4()
         flow_create = FlowCreate(name="   ")
         principal_id = "user-123"

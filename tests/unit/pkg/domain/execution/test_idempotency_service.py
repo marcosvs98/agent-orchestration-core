@@ -26,7 +26,7 @@ class TestIdempotencyService:
     @pytest.mark.asyncio
     async def test_build_key_includes_tenant_endpoint_and_key(self, service):
         tenant_id = uuid4()
-        endpoint = "/core/v1/flow-runs"
+        endpoint = "/core/v1/executions/flow-runs"
         idempotency_key = "test-key-123"
         key = service.build_key(
             tenant_id=tenant_id, endpoint=endpoint, idempotency_key=idempotency_key

@@ -12,7 +12,7 @@ class ReloaderThread(threading.Thread):
 
     def __init__(self, worker: UvicornWorker, sleep_interval: float = 1.0):
         super().__init__()
-        self.setDaemon(True)
+        self.daemon = True
         self._worker = worker
         self._interval = sleep_interval
 

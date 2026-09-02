@@ -71,6 +71,46 @@ async def test_resolve_tenant_policy_when_no_flow_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_falls_back_to_tenant_when_flow_policy_missing() -> None:
+    tid, fid = uuid4(), uuid4()
+    repo = MagicMock(spec=RuntimePolicyRepository)
+    row = MagicMock()
+    row.runtime_policy_id = uuid4()
+    row.version = "4"
+    row.policy_definition = {}
+    row.flow_id = None
+    repo.get_active_flow_policy = AsyncMock(return_value=None)
+    repo.get_active_tenant_policy = AsyncMock(return_value=row)
+
+    resolver = RuntimePolicyResolver(
+        repository=repo,
+        default_policy={"version": "1", "policy_definition": {}},
+        tracer=_tracer(),
+    )
+    out = await resolver.resolve(tenant_id=tid, flow_id=fid)
+    assert out.source == RuntimePolicySource.TENANT
+    assert out.version == "4"
+    repo.get_active_tenant_policy.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_falls_back_to_default_when_flow_and_tenant_missing() -> None:
+    tid, fid = uuid4(), uuid4()
+    repo = MagicMock(spec=RuntimePolicyRepository)
+    repo.get_active_flow_policy = AsyncMock(return_value=None)
+    repo.get_active_tenant_policy = AsyncMock(return_value=None)
+
+    resolver = RuntimePolicyResolver(
+        repository=repo,
+        default_policy={"version": "7", "policy_definition": {}},
+        tracer=_tracer(),
+    )
+    out = await resolver.resolve(tenant_id=tid, flow_id=fid)
+    assert out.source == RuntimePolicySource.DEFAULT
+    assert out.version == "7"
+
+
+@pytest.mark.asyncio
 async def test_resolve_default_when_no_flow_and_no_tenant() -> None:
     tid = uuid4()
     repo = MagicMock(spec=RuntimePolicyRepository)

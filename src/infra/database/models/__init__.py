@@ -65,7 +65,11 @@ from infra.database.models.rag import (
 )
 from infra.database.models.llm import SemanticAnswerCache
 from infra.database.models.execution import (
+    AgentDelegation,
     AgentRun,
+    AgentRunArtifact,
+    AgentRunEvent,
+    AgentRunMessage,
     FlowRun,
     GraphState,
     NodeRun,
@@ -154,6 +158,10 @@ __all__ = [
     "FlowRun",
     "NodeRun",
     "AgentRun",
+    "AgentRunMessage",
+    "AgentRunEvent",
+    "AgentRunArtifact",
+    "AgentDelegation",
     "ToolRun",
     "GraphState",
     "RunFailure",

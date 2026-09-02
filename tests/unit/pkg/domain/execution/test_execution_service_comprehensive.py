@@ -14,6 +14,7 @@ from domain.common.schemas.versioning import VersionStatus
 from domain.execution.adapters.idempotency_service import IdempotencyService
 from domain.execution.schemas.execution import (
     AgentRunCreate,
+    FlowFailureReason,
     FlowRunCreate,
     FlowRunInput,
     FlowRunResumeInput,
@@ -157,6 +158,8 @@ def _flow_run_orm_like(
         error={},
         trace_id=trace_id,
         root_observation_id=None,
+        temporal_workflow_id=None,
+        temporal_run_id=None,
         flow_graph_snapshot_id=None,
         flow_snapshot_id=None,
         flow_deployment_id=None,
@@ -225,15 +228,11 @@ def _base_repository() -> MagicMock:
     repo.update_agent_run_result = AsyncMock()
     repo.create_interaction = AsyncMock(return_value=uuid4())
     repo.link_interaction_to_flow_run = AsyncMock()
-    repo.get_flow_version = AsyncMock(
-        return_value=SimpleNamespace(status="PUBLISHED")
-    )
+    repo.get_flow_version = AsyncMock(return_value=SimpleNamespace(status="PUBLISHED"))
     repo.get_flow = AsyncMock(return_value=SimpleNamespace(tenant_id=uuid4(), name="f"))
     repo.get_active_flow_version_id = AsyncMock(return_value=uuid4())
     repo.get_tool_config = AsyncMock(
-        return_value=SimpleNamespace(
-            status="PUBLISHED", schema_version=None, config_hash=None
-        )
+        return_value=SimpleNamespace(status="PUBLISHED", schema_version=None, config_hash=None)
     )
     repo.get_agent_run = AsyncMock(return_value=None)
     repo.get_agent_version = AsyncMock(return_value=None)
@@ -255,6 +254,8 @@ def _base_repository() -> MagicMock:
             started_at=None,
             finished_at=None,
             root_observation_id=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
         )
     )
     repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
@@ -278,9 +279,7 @@ def _wire_service_defaults(svc: ExecutionService) -> None:
         source=RuntimePolicySource.DEFAULT,
         runtime_policy_id=None,
         version="1",
-        definition=RuntimePolicyDefinition.model_validate(
-            svc.default_policy["policy_definition"]
-        ),
+        definition=RuntimePolicyDefinition.model_validate(svc.default_policy["policy_definition"]),
         scope=RuntimePolicyScope.TENANT,
         flow_id=None,
     )
@@ -573,6 +572,8 @@ async def test_create_flow_run_with_deployment_and_nested_graph_snapshot() -> No
             runtime_policy={},
             tool_catalog={},
             llm_provider_config_hash=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
             to_dict=lambda: {},
         )
     )
@@ -623,10 +624,9 @@ async def test_create_flow_run_legacy_graph_contract_branch() -> None:
 
     svc = _make_service(repo)
     svc.cache_adapter.get = AsyncMock(return_value=None)
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -701,6 +701,8 @@ async def test_create_flow_run_runtime_marks_flow_error() -> None:
             started_at=None,
             finished_at=None,
             root_observation_id=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
         )
     )
     svc = _make_service(repo)
@@ -802,9 +804,7 @@ async def test_resume_flow_run_compiles_plan_when_cache_miss() -> None:
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     g = SimpleNamespace(
         graph_hash="gh",
         flow_graph_snapshot_id=uuid4(),
@@ -839,9 +839,7 @@ async def test_resume_flow_run_invalid_graph_state_snapshot() -> None:
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": []})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": []}))
     g = SimpleNamespace(
         graph_hash="gh",
         flow_graph_snapshot_id=uuid4(),
@@ -866,9 +864,7 @@ async def test_resume_flow_run_invalid_graph_state_snapshot() -> None:
 async def test_create_agent_run_limit_exceeded_emits_event() -> None:
     repo = _base_repository()
     frid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_flow_run.return_value = SimpleNamespace(session_id=uuid4())
     svc = _make_service(repo)
 
@@ -921,9 +917,7 @@ async def test_create_agent_run_rag_tenant_denied() -> None:
     tenant_id = uuid4()
     frid = uuid4()
     rcid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -1002,9 +996,7 @@ async def test_complete_agent_run_validation_error_path() -> None:
 async def test_create_tool_run_via_agent_limit_exceeded() -> None:
     repo = _base_repository()
     ar_id = uuid4()
-    repo.get_agent_run.return_value = SimpleNamespace(
-        agent_version_id=uuid4(), node_run_id=uuid4()
-    )
+    repo.get_agent_run.return_value = SimpleNamespace(agent_version_id=uuid4(), node_run_id=uuid4())
     repo.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
     svc = _make_service(repo)
 
@@ -1034,9 +1026,7 @@ async def test_create_tool_run_via_agent_limit_exceeded() -> None:
 async def test_create_tool_run_hash_prefix_mismatch() -> None:
     repo = _base_repository()
     ar_id = uuid4()
-    repo.get_agent_run.return_value = SimpleNamespace(
-        agent_version_id=uuid4(), node_run_id=uuid4()
-    )
+    repo.get_agent_run.return_value = SimpleNamespace(agent_version_id=uuid4(), node_run_id=uuid4())
     repo.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
     repo.get_tool_config.return_value = SimpleNamespace(
         status=VersionStatus.PUBLISHED, schema_version=1, config_hash="zzz"
@@ -1072,13 +1062,12 @@ async def test_get_flow_run_failure_reason_from_event() -> None:
     )
     ev = SimpleNamespace(
         type=ExecutionEventType.FlowFailed,
-        payload={"x": 1},
+        payload={"reason": "POLICY_VIOLATION"},
     )
-    ev.tool_run = {"reason": "POLICY_VIOLATION"}
     repo.list_execution_events = AsyncMock(return_value=[ev])
     svc = _make_service(repo)
     out = await svc.get_flow_run(str(frid))
-    assert out.failure_reason is not None
+    assert out.failure_reason is FlowFailureReason.POLICY_VIOLATION
 
 
 @pytest.mark.asyncio
@@ -1104,7 +1093,7 @@ async def test_list_execution_events_maps_rows() -> None:
         ]
     )
     svc = _make_service(repo)
-    out = await svc.list_execution_events(flow_run_id=uuid4(), limit=5)
+    out = await svc.list_execution_events(tenant_id=uuid4(), flow_run_id=uuid4(), limit=5)
     assert len(out) == 1
     assert str(out[0].id) == str(eid)
 
@@ -1128,10 +1117,9 @@ async def test_create_flow_run_agent_observe_success_called() -> None:
     tr = _TracerObserveWithHandles()
     svc = _make_service(repo, tracer=tr)
     svc.cache_adapter.get = AsyncMock(return_value=_execution_plan_json())
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -1147,11 +1135,7 @@ async def test_create_flow_run_agent_observe_success_called() -> None:
             ),
         )
     select = next(
-        (
-            h
-            for n, h in tr.observe_calls
-            if "select_flow_version_and_path" in n
-        ),
+        (h for n, h in tr.observe_calls if "select_flow_version_and_path" in n),
         None,
     )
     assert select is not None
@@ -1189,10 +1173,9 @@ async def test_create_flow_run_get_latest_waiting_when_correlation_only() -> Non
     repo.get_latest_waiting_flow_run_id = AsyncMock(return_value=(None, []))
     svc = _make_service(repo)
     svc.cache_adapter.get = AsyncMock(return_value=_execution_plan_json())
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -1236,19 +1219,18 @@ async def test_create_flow_run_origin_waiting_invalid_graph_state() -> None:
                 started_at=None,
                 finished_at=None,
                 root_observation_id=None,
+                temporal_workflow_id=None,
+                temporal_run_id=None,
             )
         return _flow_run_orm_like(flow_run_id=rid, flow_version_id=fvid)
 
     repo.get_flow_run = AsyncMock(side_effect=_gf)
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": []})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": []}))
     svc = _make_service(repo)
     svc.cache_adapter.get = AsyncMock(return_value=_execution_plan_json())
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -1292,6 +1274,8 @@ async def test_create_flow_run_origin_waiting_no_graph_state_clears_origin() -> 
                 started_at=None,
                 finished_at=None,
                 root_observation_id=None,
+                temporal_workflow_id=None,
+                temporal_run_id=None,
             )
         return _flow_run_orm_like(flow_run_id=rid, flow_version_id=fvid)
 
@@ -1299,10 +1283,9 @@ async def test_create_flow_run_origin_waiting_no_graph_state_clears_origin() -> 
     repo.get_graph_state = AsyncMock(return_value=None)
     svc = _make_service(repo)
     svc.cache_adapter.get = AsyncMock(return_value=_execution_plan_json())
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -1345,16 +1328,17 @@ async def test_create_flow_run_origin_not_waiting_clears_origin() -> None:
                 started_at=None,
                 finished_at=None,
                 root_observation_id=None,
+                temporal_workflow_id=None,
+                temporal_run_id=None,
             )
         return _flow_run_orm_like(flow_run_id=rid, flow_version_id=fvid)
 
     repo.get_flow_run = AsyncMock(side_effect=_gf)
     svc = _make_service(repo)
     svc.cache_adapter.get = AsyncMock(return_value=_execution_plan_json())
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -1379,13 +1363,10 @@ async def test_create_flow_run_flow_snapshot_required_when_legacy_off() -> None:
     repo.get_flow_snapshot_by_flow_version = AsyncMock(return_value=None)
     svc = _make_service(repo)
     svc.cache_adapter.get = AsyncMock(return_value=_execution_plan_json())
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = False
-        with pytest.raises(
-            ResourceBlockedServiceException, match="flow_snapshot_required"
-        ):
+        mock_settings.TEMPORAL_ENABLED = False
+        with pytest.raises(ResourceBlockedServiceException, match="flow_snapshot_required"):
             await svc.create_flow_run(
                 tenant_id=tid,
                 endpoint="/e",
@@ -1405,16 +1386,13 @@ async def test_create_flow_run_legacy_missing_graph_snapshot() -> None:
     repo = _repo_happy_create_flow(tid, fvid, fid)
     repo.get_flow_graph_snapshot_by_flow_version = AsyncMock(return_value=None)
     svc = _make_service(repo)
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
-        with pytest.raises(
-            ResourceBlockedServiceException, match="flow_graph_snapshot_missing"
-        ):
+        with pytest.raises(ResourceBlockedServiceException, match="flow_graph_snapshot_missing"):
             await svc.create_flow_run(
                 tenant_id=tid,
                 endpoint="/e",
@@ -1444,14 +1422,15 @@ async def test_create_flow_run_cache_handles_and_runtime_success_paths() -> None
             started_at=None,
             finished_at=None,
             root_observation_id=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
         )
     )
     svc = _make_service(repo, tracer=_TracerObserveWithHandles())
     svc.cache_adapter.get = AsyncMock(return_value=None)
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = True
+        mock_settings.TEMPORAL_ENABLED = False
         mock_settings.CACHE_SILENT_MODE = True
         mock_settings.EMBEDDING_DIMENSION = 1536
         mock_settings.OPENAI_API_KEY = "k"
@@ -1490,9 +1469,7 @@ async def test_resume_flow_run_graph_state_not_found() -> None:
     repo = _base_repository()
     frid = uuid4()
     repo.get_flow_run = AsyncMock(
-        return_value=_flow_run_orm_like(
-            flow_run_id=frid, flow_version_id=uuid4(), user_id="u"
-        )
+        return_value=_flow_run_orm_like(flow_run_id=frid, flow_version_id=uuid4(), user_id="u")
     )
     repo.get_graph_state = AsyncMock(return_value=None)
     svc = _make_service(repo)
@@ -1516,9 +1493,7 @@ async def test_resume_flow_run_flow_version_not_found() -> None:
     repo.get_flow_run = AsyncMock(
         return_value=_flow_run_orm_like(flow_run_id=frid, flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     repo.get_flow_version = AsyncMock(return_value=None)
     svc = _make_service(repo)
     with pytest.raises(NotFoundServiceException, match="flow_version_not_found"):
@@ -1534,9 +1509,7 @@ async def test_resume_flow_run_flow_version_not_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resume_flow_run_snapshot_branch_policy_resolve_when_snapshot_missing() -> (
-    None
-):
+async def test_resume_flow_run_snapshot_branch_policy_resolve_when_snapshot_missing() -> None:
     repo = _base_repository()
     frid = uuid4()
     fvid = uuid4()
@@ -1551,9 +1524,7 @@ async def test_resume_flow_run_snapshot_branch_policy_resolve_when_snapshot_miss
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     repo.get_flow_snapshot_by_id = AsyncMock(return_value=None)
     g = SimpleNamespace(
         graph_hash="gh",
@@ -1592,9 +1563,7 @@ async def test_resume_flow_run_flow_snapshot_loads_nested_graph() -> None:
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     nested = SimpleNamespace(
         graph_hash="nested",
         flow_graph_snapshot_id=uuid4(),
@@ -1635,14 +1604,10 @@ async def test_resume_flow_run_graph_snapshot_not_found() -> None:
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     repo.get_flow_graph_snapshot_by_flow_version = AsyncMock(return_value=None)
     svc = _make_service(repo)
-    with pytest.raises(
-        NotFoundServiceException, match="flow_graph_snapshot_not_found"
-    ):
+    with pytest.raises(NotFoundServiceException, match="flow_graph_snapshot_not_found"):
         await svc.resume_flow_run(
             flow_run_id=frid,
             input_payload=FlowRunResumeInput(user_id="u"),
@@ -1665,9 +1630,7 @@ async def test_resume_flow_run_sets_root_observation_when_trace_has_it() -> None
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     g = SimpleNamespace(
         graph_hash="gh",
         flow_graph_snapshot_id=uuid4(),
@@ -1702,9 +1665,7 @@ async def test_resume_flow_run_missing_after_runtime_raises() -> None:
     repo.get_flow_version = AsyncMock(
         return_value=SimpleNamespace(flow_id=uuid4(), flow_version_id=fvid)
     )
-    repo.get_graph_state = AsyncMock(
-        return_value=SimpleNamespace(state={"current_node_id": "a"})
-    )
+    repo.get_graph_state = AsyncMock(return_value=SimpleNamespace(state={"current_node_id": "a"}))
     g = SimpleNamespace(
         graph_hash="gh",
         flow_graph_snapshot_id=uuid4(),
@@ -1747,9 +1708,7 @@ async def test_create_agent_run_node_run_not_found() -> None:
 async def test_create_agent_run_limit_re_raises_when_flow_run_missing() -> None:
     repo = _base_repository()
     nrid, frid = uuid4(), uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
 
     async def _lim(**_k):
         raise LimitExceededException(message="cap")
@@ -1774,9 +1733,7 @@ async def test_create_agent_run_limit_re_raises_when_flow_run_missing() -> None:
 async def test_create_agent_run_node_not_found() -> None:
     repo = _base_repository()
     frid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node = AsyncMock(return_value=None)
     svc = _make_service(repo)
     with pytest.raises(NotFoundServiceException, match="node_not_found"):
@@ -1796,9 +1753,7 @@ async def test_create_agent_run_node_not_found() -> None:
 async def test_create_agent_run_agent_version_not_found() -> None:
     repo = _base_repository()
     frid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -1828,9 +1783,7 @@ async def test_create_agent_run_agent_version_not_found() -> None:
 async def test_create_agent_run_agent_version_blocked() -> None:
     repo = _base_repository()
     frid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -1849,9 +1802,7 @@ async def test_create_agent_run_agent_version_blocked() -> None:
         system_prompt="",
     )
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="agent_version_blocked"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="agent_version_blocked"):
         await svc.create_agent_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -1869,9 +1820,7 @@ async def test_create_agent_run_agent_version_not_active() -> None:
     repo = _base_repository()
     frid = uuid4()
     av_id = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -1891,9 +1840,7 @@ async def test_create_agent_run_agent_version_not_active() -> None:
     )
     repo.get_active_agent_version_id = AsyncMock(return_value=uuid4())
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="agent_version_not_active"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="agent_version_not_active"):
         await svc.create_agent_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -1911,9 +1858,7 @@ async def test_create_agent_run_no_ai_policy_on_agent_version() -> None:
     repo = _base_repository()
     frid = uuid4()
     av_id = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -1933,9 +1878,7 @@ async def test_create_agent_run_no_ai_policy_on_agent_version() -> None:
     )
     repo.get_active_agent_version_id = AsyncMock(return_value=av_id)
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="ai_execution_policy_not_active"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="ai_execution_policy_not_active"):
         await svc.create_agent_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -1954,9 +1897,7 @@ async def test_create_agent_run_policy_version_not_found() -> None:
     frid = uuid4()
     av_id = uuid4()
     pol_id = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -1977,9 +1918,7 @@ async def test_create_agent_run_policy_version_not_found() -> None:
     repo.get_active_agent_version_id = AsyncMock(return_value=av_id)
     repo.get_ai_execution_policy_version = AsyncMock(return_value=None)
     svc = _make_service(repo)
-    with pytest.raises(
-        NotFoundServiceException, match="ai_execution_policy_version_not_found"
-    ):
+    with pytest.raises(NotFoundServiceException, match="ai_execution_policy_version_not_found"):
         await svc.create_agent_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -1999,9 +1938,7 @@ async def test_create_agent_run_policy_version_blocked() -> None:
     av_id = uuid4()
     pol_id = uuid4()
     mid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2024,9 +1961,7 @@ async def test_create_agent_run_policy_version_blocked() -> None:
         status=VersionStatus.DRAFT, model_id=mid
     )
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="ai_execution_policy_blocked"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="ai_execution_policy_blocked"):
         await svc.create_agent_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -2048,9 +1983,7 @@ async def test_create_agent_run_rag_user_memory_denied() -> None:
     pol_id = uuid4()
     mid = uuid4()
     rcid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2075,9 +2008,7 @@ async def test_create_agent_run_rag_user_memory_denied() -> None:
     repo.get_model.return_value = SimpleNamespace(name="m")
     svc = _make_service(repo)
     svc._rag_repository.get_rag_config = AsyncMock(
-        return_value=SimpleNamespace(
-            tenant_id=tenant_id, corpus_kind=RagCorpusKind.USER_MEMORY
-        )
+        return_value=SimpleNamespace(tenant_id=tenant_id, corpus_kind=RagCorpusKind.USER_MEMORY)
     )
     with pytest.raises(RagNotAllowedException):
         await svc.create_agent_run(
@@ -2099,9 +2030,7 @@ async def test_create_agent_run_billing_policy_not_active() -> None:
     av_id = uuid4()
     pol_id = uuid4()
     mid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2126,9 +2055,7 @@ async def test_create_agent_run_billing_policy_not_active() -> None:
     repo.get_model.return_value = SimpleNamespace(name="m")
     repo.get_active_billing_policy_version_id = AsyncMock(return_value=None)
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="billing_policy_not_active"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="billing_policy_not_active"):
         await svc.create_agent_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -2152,9 +2079,7 @@ async def test_create_agent_run_idempotency_returns_cached() -> None:
     cid = uuid4()
     ar_id = uuid4()
     nrid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2222,9 +2147,7 @@ async def test_create_agent_run_flow_run_missing_after_create() -> None:
     av_id = uuid4()
     pol_id = uuid4()
     mid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2340,9 +2263,7 @@ async def test_create_tool_run_billing_policy_not_active() -> None:
     repo = _base_repository()
     repo.get_active_billing_policy_version_id = AsyncMock(return_value=None)
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="billing_policy_not_active"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="billing_policy_not_active"):
         await svc.create_tool_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -2361,9 +2282,7 @@ async def test_create_tool_run_via_node_limit_raises_when_no_flow_run() -> None:
     repo = _base_repository()
     nrid = uuid4()
     frid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
 
     async def _lim(**_k):
         raise LimitExceededException(message="x")
@@ -2389,12 +2308,8 @@ async def test_create_tool_run_via_node_limit_raises_when_no_flow_run() -> None:
 async def test_create_tool_run_via_agent_limit_raises_when_no_flow_run() -> None:
     repo = _base_repository()
     ar_id = uuid4()
-    repo.get_agent_run.return_value = SimpleNamespace(
-        agent_version_id=uuid4(), node_run_id=uuid4()
-    )
-    repo.get_node_run.return_value = SimpleNamespace(
-        flow_run_id=uuid4(), node_id=uuid4()
-    )
+    repo.get_agent_run.return_value = SimpleNamespace(agent_version_id=uuid4(), node_run_id=uuid4())
+    repo.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
 
     async def _lim(**_k):
         raise LimitExceededException(message="x")
@@ -2439,9 +2354,7 @@ async def test_create_tool_run_via_agent_agent_run_not_found() -> None:
 async def test_create_tool_run_via_agent_node_run_not_found() -> None:
     repo = _base_repository()
     ar_id = uuid4()
-    repo.get_agent_run.return_value = SimpleNamespace(
-        agent_version_id=uuid4(), node_run_id=uuid4()
-    )
+    repo.get_agent_run.return_value = SimpleNamespace(agent_version_id=uuid4(), node_run_id=uuid4())
     repo.get_node_run = AsyncMock(return_value=None)
     svc = _make_service(repo)
     with pytest.raises(NotFoundServiceException, match="node_run_not_found"):
@@ -2461,9 +2374,7 @@ async def test_create_tool_run_via_agent_node_run_not_found() -> None:
 @pytest.mark.asyncio
 async def test_create_tool_run_tool_config_not_found() -> None:
     repo = _base_repository()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=uuid4()
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
     repo.get_tool_config = AsyncMock(return_value=None)
     svc = _make_service(repo)
     with pytest.raises(NotFoundServiceException, match="tool_config_not_found"):
@@ -2483,16 +2394,12 @@ async def test_create_tool_run_tool_config_not_found() -> None:
 @pytest.mark.asyncio
 async def test_create_tool_run_tool_config_blocked() -> None:
     repo = _base_repository()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=uuid4()
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
     repo.get_tool_config.return_value = SimpleNamespace(
         status=VersionStatus.DRAFT, schema_version=None, config_hash=None
     )
     svc = _make_service(repo)
-    with pytest.raises(
-        ResourceBlockedServiceException, match="tool_config_blocked"
-    ):
+    with pytest.raises(ResourceBlockedServiceException, match="tool_config_blocked"):
         await svc.create_tool_run(
             tenant_id=uuid4(),
             endpoint="/e",
@@ -2510,12 +2417,8 @@ async def test_create_tool_run_tool_config_blocked() -> None:
 async def test_create_tool_run_agent_path_agent_version_not_found() -> None:
     repo = _base_repository()
     ar_id = uuid4()
-    repo.get_agent_run.return_value = SimpleNamespace(
-        agent_version_id=uuid4(), node_run_id=uuid4()
-    )
-    repo.get_node_run.return_value = SimpleNamespace(
-        flow_run_id=uuid4(), node_id=uuid4()
-    )
+    repo.get_agent_run.return_value = SimpleNamespace(agent_version_id=uuid4(), node_run_id=uuid4())
+    repo.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
     repo.get_tool_config.return_value = SimpleNamespace(
         status=VersionStatus.PUBLISHED, schema_version=1, config_hash="abc"
     )
@@ -2539,12 +2442,8 @@ async def test_create_tool_run_agent_path_agent_version_not_found() -> None:
 async def test_create_tool_run_schema_mismatch() -> None:
     repo = _base_repository()
     ar_id = uuid4()
-    repo.get_agent_run.return_value = SimpleNamespace(
-        agent_version_id=uuid4(), node_run_id=uuid4()
-    )
-    repo.get_node_run.return_value = SimpleNamespace(
-        flow_run_id=uuid4(), node_id=uuid4()
-    )
+    repo.get_agent_run.return_value = SimpleNamespace(agent_version_id=uuid4(), node_run_id=uuid4())
+    repo.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
     repo.get_tool_config.return_value = SimpleNamespace(
         status=VersionStatus.PUBLISHED, schema_version=2, config_hash="abc"
     )
@@ -2592,9 +2491,7 @@ async def test_create_tool_run_idempotency_returns_cached() -> None:
         "estimated_cost": None,
         "billing_policy_version_id": str(uuid4()),
     }
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=uuid4()
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
     svc = _make_service(repo)
     svc.idempotency.try_acquire = AsyncMock(return_value=False)
     svc.idempotency.get = AsyncMock(return_value={"response": cached})
@@ -2615,9 +2512,7 @@ async def test_create_tool_run_idempotency_returns_cached() -> None:
 @pytest.mark.asyncio
 async def test_create_tool_run_flow_run_missing_after_create() -> None:
     repo = _base_repository()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=uuid4()
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
     repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=uuid4())
     repo.get_flow_run = AsyncMock(return_value=None)
     svc = _make_service(repo)
@@ -2641,9 +2536,7 @@ async def test_create_flow_run_flow_snapshot_present_but_graph_snapshot_missing(
     tid, fvid, fid, dep_id, fs_id = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     repo = _repo_happy_create_flow(tid, fvid, fid)
     repo.get_active_flow_deployment = AsyncMock(
-        return_value=SimpleNamespace(
-            flow_snapshot_id=fs_id, flow_deployment_id=dep_id
-        )
+        return_value=SimpleNamespace(flow_snapshot_id=fs_id, flow_deployment_id=dep_id)
     )
     repo.get_flow_snapshot_by_id = AsyncMock(
         return_value=SimpleNamespace(
@@ -2652,18 +2545,17 @@ async def test_create_flow_run_flow_snapshot_present_but_graph_snapshot_missing(
             runtime_policy={},
             tool_catalog={},
             llm_provider_config_hash=None,
+            temporal_workflow_id=None,
+            temporal_run_id=None,
             to_dict=lambda: {},
         )
     )
     repo.get_flow_graph_snapshot_by_flow_version = AsyncMock(return_value=None)
     svc = _make_service(repo)
-    with patch(
-        "domain.execution.services.execution_service.settings"
-    ) as mock_settings:
+    with patch("domain.execution.services.execution_service.settings") as mock_settings:
         mock_settings.RUNTIME_LEGACY_GRAPH_CONTRACT_ENABLED = False
-        with pytest.raises(
-            ResourceBlockedServiceException, match="flow_graph_snapshot_missing"
-        ):
+        mock_settings.TEMPORAL_ENABLED = False
+        with pytest.raises(ResourceBlockedServiceException, match="flow_graph_snapshot_missing"):
             await svc.create_flow_run(
                 tenant_id=tid,
                 endpoint="/e",
@@ -2686,9 +2578,7 @@ async def test_create_agent_run_rag_rejected_wrong_tenant() -> None:
     pol_id = uuid4()
     mid = uuid4()
     rcid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2738,9 +2628,7 @@ async def test_create_agent_run_system_prompt_hash_non_empty() -> None:
     av_id = uuid4()
     pol_id = uuid4()
     mid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2786,9 +2674,7 @@ async def test_create_agent_run_idempotency_in_progress() -> None:
     av_id = uuid4()
     pol_id = uuid4()
     mid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
     repo.get_node.return_value = SimpleNamespace(
         node_id=uuid4(),
         node_prompt_id=uuid4(),
@@ -2851,9 +2737,7 @@ async def test_create_tool_run_via_node_limit_exceeded_emits_event() -> None:
     repo = _base_repository()
     nrid = uuid4()
     frid = uuid4()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=frid
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=frid)
 
     async def _lim(**_k):
         raise LimitExceededException(message="cap")
@@ -2886,9 +2770,7 @@ async def test_create_tool_run_agent_lookup_none_after_config() -> None:
             None,
         ]
     )
-    repo.get_node_run.return_value = SimpleNamespace(
-        flow_run_id=uuid4(), node_id=uuid4()
-    )
+    repo.get_node_run.return_value = SimpleNamespace(flow_run_id=uuid4(), node_id=uuid4())
     repo.get_tool_config.return_value = SimpleNamespace(
         status=VersionStatus.PUBLISHED, schema_version=None, config_hash=None
     )
@@ -2910,9 +2792,7 @@ async def test_create_tool_run_agent_lookup_none_after_config() -> None:
 @pytest.mark.asyncio
 async def test_create_tool_run_idempotency_in_progress() -> None:
     repo = _base_repository()
-    repo.get_node_run.return_value = SimpleNamespace(
-        node_id=uuid4(), flow_run_id=uuid4()
-    )
+    repo.get_node_run.return_value = SimpleNamespace(node_id=uuid4(), flow_run_id=uuid4())
     svc = _make_service(repo)
     svc.idempotency.try_acquire = AsyncMock(return_value=False)
     svc.idempotency.get = AsyncMock(return_value={})
@@ -2942,9 +2822,8 @@ async def test_get_flow_run_failure_reason_invalid_enum_ignored() -> None:
     )
     ev = SimpleNamespace(
         type=ExecutionEventType.FlowFailed,
-        payload={"x": 1},
+        payload={"reason": "NOT_A_REAL_REASON"},
     )
-    ev.tool_run = {"reason": "NOT_A_REAL_REASON"}
     repo.list_execution_events = AsyncMock(return_value=[ev])
     svc = _make_service(repo)
     out = await svc.get_flow_run(str(frid))

@@ -20,6 +20,8 @@ from exceptions.service_exceptions import (
     DomainValidationException,
     NotFoundServiceException,
 )
+
+
 def _tracer() -> MagicMock:
     t = MagicMock()
     t.observe.side_effect = lambda **_: contextlib.nullcontext(MagicMock())
@@ -254,9 +256,7 @@ async def test_set_root_observation_id(exec_repo: ExecutionRepository) -> None:
     session = AsyncMock()
     session.execute = AsyncMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.set_root_observation_id(
-        flow_run_id=uuid4(), root_observation_id="obs"
-    )
+    await exec_repo.set_root_observation_id(flow_run_id=uuid4(), root_observation_id="obs")
     session.commit.assert_awaited_once()
 
 
@@ -265,9 +265,7 @@ async def test_complete_flow_run(exec_repo: ExecutionRepository) -> None:
     session = AsyncMock()
     session.execute = AsyncMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.complete_flow_run(
-        flow_run_id=uuid4(), status="DONE", output={"a": 1}
-    )
+    await exec_repo.complete_flow_run(flow_run_id=uuid4(), status="DONE", output={"a": 1})
     session.commit.assert_awaited_once()
 
 
@@ -276,9 +274,7 @@ async def test_fail_flow_run(exec_repo: ExecutionRepository) -> None:
     session = AsyncMock()
     session.execute = AsyncMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.fail_flow_run(
-        flow_run_id=uuid4(), failure_reason="x", error={"e": 1}
-    )
+    await exec_repo.fail_flow_run(flow_run_id=uuid4(), failure_reason="x", error={"e": 1})
     session.commit.assert_awaited_once()
 
 
@@ -324,9 +320,7 @@ async def test_create_session_new_user_and_session(exec_repo: ExecutionRepositor
     session.execute = AsyncMock(side_effect=[ures, sres])
     session.add = MagicMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.create_session(
-        session_id=uuid4(), tenant_id=uuid4(), user_id="u1"
-    )
+    await exec_repo.create_session(session_id=uuid4(), tenant_id=uuid4(), user_id="u1")
     assert session.add.call_count >= 2
     session.commit.assert_awaited_once()
 
@@ -344,9 +338,7 @@ async def test_create_session_conflict(exec_repo: ExecutionRepository) -> None:
     session.execute = AsyncMock(side_effect=[ures, sres])
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
     with pytest.raises(DomainConflictException, match="session_user_mismatch"):
-        await exec_repo.create_session(
-            session_id=uuid4(), tenant_id=uuid4(), user_id="u1"
-        )
+        await exec_repo.create_session(session_id=uuid4(), tenant_id=uuid4(), user_id="u1")
 
 
 @pytest.mark.asyncio
@@ -403,9 +395,7 @@ async def test_get_user_memory_preferences_and_profile(exec_repo: ExecutionRepos
 
 @pytest.mark.asyncio
 async def test_upsert_user_preference_delegates(exec_repo: ExecutionRepository) -> None:
-    exec_repo.upsert_user_preference_deterministic = AsyncMock(
-        return_value=MagicMock(version=3)
-    )
+    exec_repo.upsert_user_preference_deterministic = AsyncMock(return_value=MagicMock(version=3))
     v = await exec_repo.upsert_user_preference(
         tenant_id=uuid4(),
         user_id="u",
@@ -571,9 +561,7 @@ async def test_link_interaction_to_flow_run(exec_repo: ExecutionRepository) -> N
     res.scalar_one_or_none = MagicMock(return_value=inst)
     session.execute = AsyncMock(side_effect=[res, AsyncMock()])
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.link_interaction_to_flow_run(
-        interaction_id=uuid4(), flow_run_id=uuid4()
-    )
+    await exec_repo.link_interaction_to_flow_run(interaction_id=uuid4(), flow_run_id=uuid4())
     session.commit.assert_awaited_once()
 
 
@@ -585,9 +573,7 @@ async def test_link_interaction_not_found(exec_repo: ExecutionRepository) -> Non
     session.execute = AsyncMock(return_value=res)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
     with pytest.raises(NotFoundServiceException, match="interaction_not_found"):
-        await exec_repo.link_interaction_to_flow_run(
-            interaction_id=uuid4(), flow_run_id=uuid4()
-        )
+        await exec_repo.link_interaction_to_flow_run(interaction_id=uuid4(), flow_run_id=uuid4())
 
 
 @pytest.mark.asyncio
@@ -628,7 +614,7 @@ async def test_list_execution_events(exec_repo: ExecutionRepository) -> None:
     session.execute = AsyncMock(return_value=res)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
     out = await exec_repo.list_execution_events(
-        flow_run_id=uuid4(), correlation_id=uuid4(), limit=10
+        tenant_id=uuid4(), flow_run_id=uuid4(), correlation_id=uuid4(), limit=10
     )
     assert out == [ev]
 
@@ -797,9 +783,7 @@ async def test_create_response_artifact_for_tool_run(exec_repo: ExecutionReposit
     session = AsyncMock()
     session.add = MagicMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    rid = await exec_repo.create_response_artifact_for_tool_run(
-        tool_run_id=uuid4(), payload={}
-    )
+    rid = await exec_repo.create_response_artifact_for_tool_run(tool_run_id=uuid4(), payload={})
     assert rid is not None
 
 
@@ -811,9 +795,7 @@ async def test_create_response_artifact_for_flow_run(exec_repo: ExecutionReposit
     session = AsyncMock()
     session.add = MagicMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    rid = await exec_repo.create_response_artifact_for_flow_run(
-        flow_run_id=uuid4(), payload={}
-    )
+    rid = await exec_repo.create_response_artifact_for_flow_run(flow_run_id=uuid4(), payload={})
     assert rid is not None
 
 
@@ -825,9 +807,7 @@ async def test_create_response_artifact_missing_interaction(
     fr.interaction_id = None
     exec_repo.get_flow_run = AsyncMock(return_value=fr)
     with pytest.raises(DomainValidationException, match="flow_run_missing_interaction"):
-        await exec_repo.create_response_artifact_for_flow_run(
-            flow_run_id=uuid4(), payload={}
-        )
+        await exec_repo.create_response_artifact_for_flow_run(flow_run_id=uuid4(), payload={})
 
 
 @pytest.mark.asyncio
@@ -932,9 +912,7 @@ async def test_upsert_graph_state_insert(exec_repo: ExecutionRepository) -> None
     session.execute = AsyncMock(return_value=res)
     session.add = MagicMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    await exec_repo.upsert_graph_state(
-        flow_run_id=uuid4(), state={"a": 1}, last_node_run_id=None
-    )
+    await exec_repo.upsert_graph_state(flow_run_id=uuid4(), state={"a": 1}, last_node_run_id=None)
     session.commit.assert_awaited_once()
     exec_repo.cache_adapter.delete.assert_awaited()
 
@@ -968,9 +946,7 @@ async def test_get_flow_version_cache_hit(exec_repo: ExecutionRepository) -> Non
 @pytest.mark.asyncio
 async def test_get_active_flow_version_id_cache_hit(exec_repo: ExecutionRepository) -> None:
     tid = uuid4()
-    exec_repo.cache_adapter.get = AsyncMock(
-        return_value={"flow_version_id": str(uuid4())}
-    )
+    exec_repo.cache_adapter.get = AsyncMock(return_value={"flow_version_id": str(uuid4())})
     assert await exec_repo.get_active_flow_version_id(tid) is not None
 
 
@@ -1027,9 +1003,7 @@ async def test_get_agent_version_cache_hit(exec_repo: ExecutionRepository) -> No
 
 @pytest.mark.asyncio
 async def test_get_active_agent_version_id_cache_hit(exec_repo: ExecutionRepository) -> None:
-    exec_repo.cache_adapter.get = AsyncMock(
-        return_value={"agent_version_id": str(uuid4())}
-    )
+    exec_repo.cache_adapter.get = AsyncMock(return_value={"agent_version_id": str(uuid4())})
     assert await exec_repo.get_active_agent_version_id(uuid4()) is not None
 
 
@@ -1069,9 +1043,7 @@ async def test_get_active_billing_policy_version_id_cache_hit(
     exec_repo: ExecutionRepository,
 ) -> None:
     vid = str(uuid4())
-    exec_repo.cache_adapter.get = AsyncMock(
-        return_value={"billing_policy_version_id": vid}
-    )
+    exec_repo.cache_adapter.get = AsyncMock(return_value={"billing_policy_version_id": vid})
     out = await exec_repo.get_active_billing_policy_version_id(uuid4())
     assert str(out) == vid
 
@@ -1081,9 +1053,7 @@ async def test_get_active_memory_policy_version_id_cache_hit(
     exec_repo: ExecutionRepository,
 ) -> None:
     vid = str(uuid4())
-    exec_repo.cache_adapter.get = AsyncMock(
-        return_value={"memory_policy_version_id": vid}
-    )
+    exec_repo.cache_adapter.get = AsyncMock(return_value={"memory_policy_version_id": vid})
     out = await exec_repo.get_active_memory_policy_version_id(uuid4())
     assert str(out) == vid
 
@@ -1109,17 +1079,19 @@ async def test_get_agent_run_by_agent_version_and_flow(exec_repo: ExecutionRepos
     res.scalar_one_or_none = MagicMock(return_value=row)
     session.execute = AsyncMock(return_value=res)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    assert (
-        await exec_repo.get_agent_run_by_agent_version_and_flow(uuid4(), uuid4()) is row
-    )
+    assert await exec_repo.get_agent_run_by_agent_version_and_flow(uuid4(), uuid4()) is row
 
 
 @pytest.mark.asyncio
 async def test_create_agent_run(exec_repo: ExecutionRepository) -> None:
     session = AsyncMock()
     session.add = MagicMock()
+    agent_id_result = MagicMock()
+    agent_id_result.scalar_one = MagicMock(return_value=uuid4())
+    session.execute = AsyncMock(return_value=agent_id_result)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
     rid = await exec_repo.create_agent_run(
+        tenant_id=uuid4(),
         node_run_id=uuid4(),
         agent_version_id=uuid4(),
         correlation_id=uuid4(),
@@ -1178,9 +1150,7 @@ async def test_acquire_flow_run_lock_creates_row(exec_repo: ExecutionRepository)
     session.execute = AsyncMock(side_effect=[MagicMock(), lock_res])
     session.add = MagicMock()
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    assert (
-        await exec_repo.acquire_flow_run_lock(uuid4(), "owner", uuid4()) is True
-    )
+    assert await exec_repo.acquire_flow_run_lock(uuid4(), "owner", uuid4()) is True
 
 
 @pytest.mark.asyncio
@@ -1193,9 +1163,7 @@ async def test_list_node_runs_with_flow_filter(exec_repo: ExecutionRepository) -
     res.scalars.return_value = scalars
     session.execute = AsyncMock(return_value=res)
     exec_repo.db.get_session = MagicMock(return_value=_session_cm(session))
-    out = await exec_repo.list_node_runs(
-        tenant_id=uuid4(), flow_run_id=uuid4(), limit=5
-    )
+    out = await exec_repo.list_node_runs(tenant_id=uuid4(), flow_run_id=uuid4(), limit=5)
     assert out == [n]
 
 
@@ -1546,9 +1514,7 @@ async def test_create_response_artifact_tool_run_flow_run_gone(
     exec_repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=uuid4())
     exec_repo.get_flow_run = AsyncMock(return_value=None)
     with pytest.raises(DomainValidationException, match="flow_run_missing_interaction"):
-        await exec_repo.create_response_artifact_for_tool_run(
-            tool_run_id=uuid4(), payload={}
-        )
+        await exec_repo.create_response_artifact_for_tool_run(tool_run_id=uuid4(), payload={})
 
 
 @pytest.mark.asyncio

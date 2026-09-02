@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from domain.execution.services.graph_runtime.types import (
+    FINALIZED_RESULTS_STATE_KEY,
+    RETRY_COUNTS_STATE_KEY,
+    RETRY_OPERATION_IDS_STATE_KEY,
     ExecutionContext,
     NodeExecutionStatus,
     NodeExecutor,
@@ -44,7 +47,7 @@ class ToolErrorHandlerNode(NodeExecutor):
             max_retries = max(0, int(max_retries_raw))
         except (TypeError, ValueError):
             max_retries = 0
-        retry_counts = current_state.get("retry_counts")
+        retry_counts = current_state.get(RETRY_COUNTS_STATE_KEY)
         if not isinstance(retry_counts, dict):
             retry_counts = {}
         normalized_retry_counts: dict[str, int] = {}
@@ -93,8 +96,9 @@ class ToolErrorHandlerNode(NodeExecutor):
         }
         next_state = {
             **current_state,
-            "retry_counts": retry_counts,
-            "finalized_results": finalized_results,
+            RETRY_COUNTS_STATE_KEY: retry_counts,
+            RETRY_OPERATION_IDS_STATE_KEY: retry_operation_ids,
+            FINALIZED_RESULTS_STATE_KEY: finalized_results,
         }
         return NodeResult(
             node=self.node_type,

@@ -8,12 +8,16 @@ import settings
 
 from domain.execution.services.graph_runtime.execution_plan import ExecutionPlan
 from domain.execution.schemas.trace import TraceContext
-from pydantic import BaseModel, ValidationError, Field, ConfigDict
+from pydantic import BaseModel, ValidationError
 from infra.database.models.conversation.session import Session as SessionModel
 from domain.common.schemas.versioning import VersionStatus
 from domain.execution.adapters.idempotency_service import IdempotencyService
 from domain.execution.ports.service import ExecutionServicePort
 from domain.execution.repositories.execution_repository import ExecutionRepository
+from domain.execution.schemas.graph_state import GraphStateSnapshot
+from domain.execution.ports.tool_run_scheduler import ToolRunSchedulerPort
+from domain.execution.ports.workflow_engine import WorkflowEnginePort
+from domain.execution.schemas.workflow_dispatch import FlowRunDispatchRequest
 from domain.execution.schemas.execution import (
     AgentRun,
     AgentRunCreate,
@@ -75,7 +79,6 @@ from domain.llm.services.cost_engine import CostEngine
 from domain.llm.services.circuit_breaker import CircuitBreaker
 from domain.execution.services.guardrails.guardrail_engine import GuardrailEngine
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from adapters.observability.langfuse_runtime_tracer import LangfuseRuntimeTracer
 from domain.governance.repositories.llm_provider_repository import LLMProviderRepository
 from domain.governance.repositories.llm_model_mapping_repository import (
     LLMModelMappingRepository,
@@ -136,12 +139,7 @@ from domain.user_input.normalizer import UserInputNormalizer
 from infra.http_tool_executor import HttpToolExecutor
 
 
-class _GraphStateSnapshot(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    current_node_id: str | None = None
-    resume_to_node_id: str | None = None
-    state: dict[str, object] = Field(default_factory=dict)
-    memory: list[dict[str, object]] = Field(default_factory=list)
+_GraphStateSnapshot = GraphStateSnapshot
 
 
 class ExecutionService(ExecutionServicePort):
@@ -159,8 +157,12 @@ class ExecutionService(ExecutionServicePort):
         llm_moderation_provider: ModerationProviderPort | None = None,
         human_sla_service: HumanSLAService | None = None,
         user_input_normalizer: UserInputNormalizer | None = None,
+        workflow_engine: WorkflowEnginePort | None = None,
+        tool_run_scheduler: ToolRunSchedulerPort | None = None,
     ) -> None:
         self.repository = repository
+        self.workflow_engine = workflow_engine
+        self.tool_run_scheduler = tool_run_scheduler
         self._user_input_normalizer = user_input_normalizer
         self.idempotency = idempotency
         self.lifecycle = lifecycle
@@ -186,7 +188,7 @@ class ExecutionService(ExecutionServicePort):
         )
         cost_engine = CostEngine(pricing_repo, tracer=tracer)
         guardrail_engine = GuardrailEngine(tracer, self.cache_adapter, cost_engine)
-        self.tracer = tracer or LangfuseRuntimeTracer()
+        self.tracer = tracer
         prompt_repository = PromptRepository(repository.db, tracer=tracer)
         prompt_service = PromptService(
             repository=prompt_repository, execution_repository=repository, tracer=tracer
@@ -369,6 +371,7 @@ class ExecutionService(ExecutionServicePort):
                 agents_repository=self.agents_repository,
                 llm_moderation_provider=llm_moderation_provider,
                 human_sla_service=human_sla_service,
+                tool_run_scheduler=tool_run_scheduler,
             ),
             tracer=self.tracer,
             hook=self.hook,
@@ -485,10 +488,12 @@ class ExecutionService(ExecutionServicePort):
         request_id: str | None = None,
         trace_id: str | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        wait: bool = False,
     ) -> FlowRun:
         with self.tracer.observe(
             as_type="agent",
             name="domain.execution.execution_service.select_flow_version_and_path",
+            metadata={"tenant_id": str(tenant_id)},
             input={
                 "flow_id": str(flow_run.flow_id) if flow_run.flow_id else None,
                 "flow_version_id": str(flow_run.flow_version_id)
@@ -749,7 +754,7 @@ class ExecutionService(ExecutionServicePort):
             correlation_id=correlation_id,
             started_at=None,
             finished_at=None,
-            input=flow_run.input.model_dump(mode="json"),
+            input=flow_run.input.model_dump(mode="json") if flow_run.input else {},
             output={},
             error={},
             trace_id=trace_uuid,
@@ -782,9 +787,37 @@ class ExecutionService(ExecutionServicePort):
             schema_version=1,
         )
 
+        if settings.TEMPORAL_ENABLED:
+            await self._dispatch_flow_run(
+                flow_run_id=flow_run_id,
+                tenant_id=tenant_id,
+                session_id=flow_run.session_id,
+                user_id=flow_run.user_id,
+                flow_id=flow_id,
+                flow_version_id=selected_flow_version_id,
+                interaction_id=interaction_id,
+                correlation_id=correlation_id,
+                trace_uuid=trace_uuid,
+                trace_context=trace_context,
+                channel=channel,
+                start_node_id=origin_start_node_id,
+                wait=wait,
+            )
+            flow_run_result = await self.repository.get_flow_run(flow_run_id)
+            response = self._merge_flow_run_result(response, flow_run_result)
+            await self.idempotency.set_result(
+                key,
+                {
+                    "flow_run_id": str(flow_run_id),
+                    "response": response.model_dump(),
+                },
+            )
+            return response
+
         with self.tracer.observe(
             as_type="retriever",
             name="domain.execution.execution_service.cache_get_plan",
+            metadata={"tenant_id": str(tenant_id)},
             input={"graph_hash": graph_snapshot.graph_hash},
         ) as retriever_handle:
             cached_plan = await self.cache_adapter.get(graph_snapshot.graph_hash)
@@ -819,7 +852,7 @@ class ExecutionService(ExecutionServicePort):
         try:
             with self.tracer.flow(
                 trace=trace_context,
-                input=flow_run.input.user_input,
+                input=flow_run.input.user_input if flow_run.input else None,
             ) as flow_handle:
                 with self.tracer.observe(
                     as_type="chain",
@@ -877,22 +910,7 @@ class ExecutionService(ExecutionServicePort):
         finally:
             await self.repository.end_event_batching(flow_run_id)
 
-        if flow_run_result:
-            response = response.model_copy(
-                update={
-                    "status": RunStatus(flow_run_result.status),
-                    "canonical_status": FlowRunStatus(flow_run_result.canonical_status),
-                    "started_at": flow_run_result.started_at.isoformat()
-                    if flow_run_result.started_at
-                    else None,
-                    "finished_at": flow_run_result.finished_at.isoformat()
-                    if flow_run_result.finished_at
-                    else None,
-                    "output": flow_run_result.output or {},
-                    "error": flow_run_result.error or {},
-                    "root_observation_id": flow_run_result.root_observation_id,
-                }
-            )
+        response = self._merge_flow_run_result(response, flow_run_result)
 
         await self.idempotency.set_result(
             key,
@@ -902,6 +920,94 @@ class ExecutionService(ExecutionServicePort):
             },
         )
         return response
+
+    @staticmethod
+    def _merge_flow_run_result(response: FlowRun, flow_run_result) -> FlowRun:
+        if not flow_run_result:
+            return response
+        return response.model_copy(
+            update={
+                "status": RunStatus(flow_run_result.status),
+                "canonical_status": FlowRunStatus(flow_run_result.canonical_status),
+                "started_at": flow_run_result.started_at.isoformat()
+                if flow_run_result.started_at
+                else None,
+                "finished_at": flow_run_result.finished_at.isoformat()
+                if flow_run_result.finished_at
+                else None,
+                "output": flow_run_result.output or {},
+                "error": flow_run_result.error or {},
+                "root_observation_id": flow_run_result.root_observation_id,
+                "temporal_workflow_id": flow_run_result.temporal_workflow_id,
+                "temporal_run_id": flow_run_result.temporal_run_id,
+            }
+        )
+
+    async def _dispatch_flow_run(
+        self,
+        *,
+        flow_run_id: UUID,
+        tenant_id: UUID,
+        session_id: UUID,
+        user_id: str,
+        flow_id: UUID,
+        flow_version_id: UUID,
+        interaction_id: UUID,
+        correlation_id: UUID,
+        trace_uuid: UUID,
+        trace_context: TraceContext,
+        channel: Channel,
+        start_node_id: str | None,
+        wait: bool,
+        turn_index: int = 0,
+    ) -> None:
+        if self.workflow_engine is None:
+            raise DomainValidationException(message="workflow_engine_unavailable")
+
+        if trace_context.root_observation_id:
+            await self.repository.set_root_observation_id(
+                flow_run_id=flow_run_id,
+                root_observation_id=trace_context.root_observation_id,
+            )
+
+        request = FlowRunDispatchRequest(
+            flow_run_id=flow_run_id,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            user_id=user_id,
+            flow_id=flow_id,
+            flow_version_id=flow_version_id,
+            interaction_id=interaction_id,
+            correlation_id=correlation_id,
+            trace_id=trace_uuid,
+            root_observation_id=trace_context.root_observation_id,
+            start_node_id=start_node_id,
+            channel=channel,
+            run_timeout_ms=settings.TEMPORAL_WORKFLOW_RUN_TIMEOUT_MS,
+            turn_index=turn_index,
+        )
+        if turn_index > 0:
+            dispatch = await self.workflow_engine.start_resume_turn(request=request)
+            dispatch_status = RunStatus.RUNNING
+            dispatch_canonical_status = FlowRunStatus.RUNNING
+        else:
+            dispatch = await self.workflow_engine.start_flow_run(request=request)
+            dispatch_status = RunStatus.QUEUED
+            dispatch_canonical_status = FlowRunStatus.CREATED
+
+        await self.repository.set_flow_run_dispatch(
+            flow_run_id=flow_run_id,
+            temporal_workflow_id=dispatch.workflow_id,
+            temporal_run_id=dispatch.run_id,
+            status=dispatch_status,
+            canonical_status=dispatch_canonical_status,
+        )
+
+        if wait:
+            await self.workflow_engine.await_flow_run_turn(
+                dispatch=dispatch,
+                timeout_ms=settings.TEMPORAL_TURN_WAIT_TIMEOUT_MS,
+            )
 
     async def resume_flow_run(
         self,
@@ -1075,6 +1181,35 @@ class ExecutionService(ExecutionServicePort):
         initial_state = snapshot.state
         initial_memory = snapshot.memory
 
+        if settings.TEMPORAL_ENABLED:
+            await self.repository.set_flow_run_input(
+                flow_run_id=flow_run_id,
+                input_payload=FlowRunInput(user_input=input_payload.user_input).model_dump(
+                    mode="json"
+                ),
+            )
+            turn_index = await self.repository.next_flow_run_turn_index(flow_run_id=flow_run_id)
+            await self._dispatch_flow_run(
+                flow_run_id=flow_run_id,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=user_id,
+                flow_id=flow_id,
+                flow_version_id=flow_version.flow_version_id,
+                interaction_id=interaction_id,
+                correlation_id=flow_run.correlation_id,
+                trace_uuid=trace_uuid,
+                trace_context=trace_context,
+                channel=channel,
+                start_node_id=resume_to_node_id,
+                wait=True,
+                turn_index=turn_index,
+            )
+            flow_run_result = await self.repository.get_flow_run(flow_run_id)
+            if flow_run_result is None:
+                raise NotFoundServiceException(message="flow_run_not_found")
+            return FlowRun.from_model(flow_run_result)
+
         self.repository.start_event_batching(flow_run_id)
         try:
             with self.tracer.flow(
@@ -1083,6 +1218,7 @@ class ExecutionService(ExecutionServicePort):
             ):
                 await self.runtime.run(
                     tenant_id=tenant_id,
+                    interaction_id=interaction_id,
                     session_id=session_id,
                     input_payload=FlowRunInput(user_input=input_payload.user_input),
                     flow_id=flow_id,
@@ -1168,7 +1304,7 @@ class ExecutionService(ExecutionServicePort):
             if rc is None or rc.tenant_id != tenant_id:
                 raise RagNotAllowedException(message="rag_not_allowed_for_task")
             ck = rc.corpus_kind
-            if ck == RagCorpusKind.TENANT_KNOWLEDGE or ck == RagCorpusKind.TOOL_CATALOG:
+            if ck in (RagCorpusKind.TENANT_KNOWLEDGE, RagCorpusKind.TOOL_CATALOG):
                 if not bool(node.allow_rag_tenant):
                     raise RagNotAllowedException(message="rag_not_allowed_for_task")
             elif ck == RagCorpusKind.USER_MEMORY:
@@ -1217,6 +1353,7 @@ class ExecutionService(ExecutionServicePort):
 
         correlation_id = agent_run.correlation_id or uuid4()
         agent_run_id = await self.repository.create_agent_run(
+            tenant_id=tenant_id,
             node_run_id=agent_run.node_run_id,
             agent_version_id=agent_run.agent_version_id,
             correlation_id=correlation_id,
@@ -1288,7 +1425,6 @@ class ExecutionService(ExecutionServicePort):
         if existing_agent_run is None:
             raise NotFoundServiceException(message="agent_run_not_found")
         node_run = await self.repository.get_node_run(existing_agent_run.node_run_id)
-        (node_run.flow_run_id if node_run else raw_output.get("flow_run_id"))
         normalized_output = raw_output
         try:
             if (
@@ -1299,7 +1435,7 @@ class ExecutionService(ExecutionServicePort):
                 normalized_output = output_schema.model_validate(raw_output).model_dump()
         except ValidationError as exc:
             if node_run is None:
-                raise DomainValidationException(message="node_run_not_found")
+                raise DomainValidationException(message="node_run_not_found") from exc
             session_id, tenant_id = await self.repository.get_flow_context(node_run.flow_run_id)
             await self.repository.append_execution_event(
                 tenant_id=tenant_id,
@@ -1579,7 +1715,7 @@ class ExecutionService(ExecutionServicePort):
         for event in reversed(all_events):
             if event.type == ExecutionEventType.FlowFailed:
                 reason_str = (
-                    event.tool_run.get("reason") if isinstance(event.payload, dict) else None
+                    event.payload.get("reason") if isinstance(event.payload, dict) else None
                 )
                 if reason_str:
                     try:
@@ -1672,12 +1808,16 @@ class ExecutionService(ExecutionServicePort):
     async def list_execution_events(
         self,
         *,
+        tenant_id: UUID,
         flow_run_id: UUID | None = None,
         correlation_id: UUID | None = None,
         limit: int = 200,
     ) -> list[ExecutionEvent]:
         events = await self.repository.list_execution_events(
-            flow_run_id=flow_run_id, correlation_id=correlation_id, limit=limit
+            tenant_id=tenant_id,
+            flow_run_id=flow_run_id,
+            correlation_id=correlation_id,
+            limit=limit,
         )
         return [
             ExecutionEvent(

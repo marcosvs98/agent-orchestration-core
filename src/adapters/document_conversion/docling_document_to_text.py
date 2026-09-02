@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -22,6 +23,10 @@ class DoclingDocumentToText(DocumentToTextPort):
         if mime_type != "application/pdf":
             raise DomainValidationException(message="unsupported_media_mime_type")
 
+        return await asyncio.to_thread(self._convert, data)
+
+    @staticmethod
+    def _convert(data: bytes) -> str:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
             tmp.write(data)
             tmp.flush()

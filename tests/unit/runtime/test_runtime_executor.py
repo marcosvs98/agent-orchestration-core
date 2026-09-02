@@ -16,7 +16,12 @@ from domain.execution.services.graph_runtime.types import (
 )
 from domain.execution.schemas.execution import FlowFailureReason, FlowRunInput
 from domain.prompts.schemas.prompt import NodeType
-from domain.flows.schemas.graph import EdgeKind, FlowGraphDefinition, FlowGraphEdge, FlowGraphNodeSpec
+from domain.flows.schemas.graph import (
+    EdgeKind,
+    FlowGraphDefinition,
+    FlowGraphEdge,
+    FlowGraphNodeSpec,
+)
 from domain.flows.services.flow_graph_compiler import FlowGraphCompiler
 
 
@@ -231,9 +236,7 @@ class _StubRuntimeRegistry(NodeRegistry):
                     merged = {"execution_status": "SUCCESS", "result": []}
                     merged.update(cfg.get("output") or {})
                     ok = merged.get("execution_status") != "ERROR"
-                    st = (
-                        NodeExecutionStatus.SUCCESS if ok else NodeExecutionStatus.ERROR
-                    )
+                    st = NodeExecutionStatus.SUCCESS if ok else NodeExecutionStatus.ERROR
                     ns = {**(context.state or {}), NodeType.ToolExecutor.value: merged}
                     return NodeResult(
                         node=NodeType.ToolExecutor,
@@ -603,7 +606,9 @@ async def test_runtime_executor_persists_state_and_memory():
                 to_node=node_b,
                 condition="validation_status == 'VALID' and confidence >= 0.85",
             ),
-            FlowGraphEdge(from_node=node_b, to_node=node_c, condition="execution_status == 'SUCCESS'"),
+            FlowGraphEdge(
+                from_node=node_b, to_node=node_c, condition="execution_status == 'SUCCESS'"
+            ),
         ],
     )
     await executor.run(
@@ -644,7 +649,9 @@ async def test_runtime_executor_handles_tool_execution_error():
         },
         edges=[
             FlowGraphEdge(from_node=node_a, to_node=node_b, condition="1 == 1"),
-            FlowGraphEdge(from_node=node_b, to_node=node_c, condition="execution_status == 'ERROR'"),
+            FlowGraphEdge(
+                from_node=node_b, to_node=node_c, condition="execution_status == 'ERROR'"
+            ),
         ],
     )
     await executor.run(
@@ -678,17 +685,19 @@ async def test_runtime_executor_handles_clarification_node():
         start_node=node_a,
         nodes={
             node_a: FlowGraphNodeSpec(type="ToolResolver"),
-            node_b: FlowGraphNodeSpec(
-                type="QueryClarifier", config={"resume_to_node_id": node_a}
-            ),
+            node_b: FlowGraphNodeSpec(type="QueryClarifier", config={"resume_to_node_id": node_a}),
             node_c: FlowGraphNodeSpec(type="ResponseBuilder"),
         },
         edges=[
-            FlowGraphEdge(from_node=node_a, to_node=node_b, condition="validation_status == 'MISSING_FIELDS'"),
+            FlowGraphEdge(
+                from_node=node_a, to_node=node_b, condition="validation_status == 'MISSING_FIELDS'"
+            ),
             FlowGraphEdge(from_node=node_b, to_node=node_c, condition="1 == 1"),
         ],
     )
-    definition.nodes[node_a].config = {"output": {"validation_status": "MISSING_FIELDS", "confidence": 0.5}}
+    definition.nodes[node_a].config = {
+        "output": {"validation_status": "MISSING_FIELDS", "confidence": 0.5}
+    }
     await executor.run(
         tenant_id=uuid.uuid4(),
         interaction_id=uuid.uuid4(),
@@ -742,9 +751,7 @@ async def test_runtime_executor_handles_next_state_and_memory_snapshot():
             return super().resolve(node_type)
 
     repo = _FakeRepository()
-    executor = RuntimeExecutor(
-        repo, _FakeTracer(), registry=_RegistryWithCustomTool(_FakeTracer())
-    )
+    executor = RuntimeExecutor(repo, _FakeTracer(), registry=_RegistryWithCustomTool(_FakeTracer()))
     node_a = str(uuid.uuid4())
     node_b = str(uuid.uuid4())
     definition = FlowGraphDefinition(
@@ -844,3 +851,169 @@ async def test_runtime_executor_enforces_loop_limit():
 
     reasons = [e["payload"]["reason"] for e in repo.events if "reason" in e["payload"]]
     assert FlowFailureReason.EDGE_EVALUATION_ERROR in reasons
+
+
+def _resolved_policy(definition: dict):
+    from domain.governance.schemas.runtime_policy import (
+        ResolvedRuntimePolicy,
+        RuntimePolicyDefinition,
+        RuntimePolicyScope,
+        RuntimePolicySource,
+    )
+
+    return ResolvedRuntimePolicy(
+        source=RuntimePolicySource.TENANT,
+        runtime_policy_id=None,
+        version="1",
+        definition=RuntimePolicyDefinition.model_validate(definition),
+        scope=RuntimePolicyScope.TENANT,
+        flow_id=None,
+    )
+
+
+def _self_loop_plan(node_a: str) -> ExecutionPlan:
+    edge_loop = CompiledEdge(
+        from_node=node_a,
+        to_node=node_a,
+        edge_kind=EdgeKind.LOOP,
+        compiled_condition=EdgeEvaluator.compile_condition("1 == 1"),
+        order=0,
+    )
+    return ExecutionPlan(
+        start_node_id=node_a,
+        ordered_nodes=[node_a],
+        adjacency_map={node_a: [edge_loop]},
+        terminal_nodes=set(),
+        structural_hash="x",
+        nodes={node_a: {"type": "ToolResolver", "config": None}},
+    )
+
+
+async def _run_with_policy(repo, plan, policy, start_node_id=None):
+    executor = RuntimeExecutor(repo, _FakeTracer(), registry=_stub_registry())
+    await executor.run(
+        tenant_id=uuid.uuid4(),
+        interaction_id=uuid.uuid4(),
+        trace_context=SimpleNamespace(user_id="test-user"),
+        flow_id=uuid.uuid4(),
+        flow_version_id=uuid.uuid4(),
+        flow_run_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        input_payload=FlowRunInput(),
+        correlation_id=uuid.uuid4(),
+        trace_id=uuid.uuid4(),
+        plan=plan,
+        runtime_policy=policy,
+        start_node_id=start_node_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_executor_honours_policy_loop_limit():
+    repo = _FakeRepository()
+    node_a = str(uuid.uuid4())
+    policy = _resolved_policy({"limits": {"max_loop_iterations": 2}})
+
+    await _run_with_policy(repo, _self_loop_plan(node_a), policy)
+
+    reasons = [e["payload"]["reason"] for e in repo.events if "reason" in e["payload"]]
+    assert FlowFailureReason.EDGE_EVALUATION_ERROR in reasons
+    assert len(repo.node_runs) == 3
+
+
+@pytest.mark.asyncio
+async def test_runtime_executor_falls_back_to_default_loop_limit_on_bad_policy_value():
+    repo = _FakeRepository()
+    node_a = str(uuid.uuid4())
+    policy = _resolved_policy({"limits": {"max_loop_iterations": 0}})
+
+    await _run_with_policy(repo, _self_loop_plan(node_a), policy)
+
+    reasons = [e["payload"]["reason"] for e in repo.events if "reason" in e["payload"]]
+    assert FlowFailureReason.EDGE_EVALUATION_ERROR in reasons
+    assert len(repo.node_runs) == 11
+
+
+@pytest.mark.asyncio
+async def test_runtime_executor_seeds_user_context_gate_when_policy_enables_it():
+    repo = _FakeRepository()
+    definition, node_a, node_b = _make_definition()
+    policy = _resolved_policy({"user_context_enrichment": {"enabled": True, "gating": True}})
+
+    await _run_with_policy(repo, _compile_plan(definition), policy)
+
+    seeded = repo.graph_states[0]["state"]["state"]["user_context_enrichment"]
+    assert seeded["enabled"] is True
+    assert seeded["published"] is False
+    assert seeded["mode"] == "GATED"
+
+
+@pytest.mark.asyncio
+async def test_runtime_executor_user_context_gate_defaults_to_legacy_mode():
+    repo = _FakeRepository()
+    definition, node_a, node_b = _make_definition()
+    policy = _resolved_policy({"user_context_enrichment": {"enabled": True, "gating": False}})
+
+    await _run_with_policy(repo, _compile_plan(definition), policy)
+
+    seeded = repo.graph_states[0]["state"]["state"]["user_context_enrichment"]
+    assert seeded["mode"] == "LEGACY"
+
+
+@pytest.mark.asyncio
+async def test_runtime_executor_requires_a_trace_user_id():
+    from exceptions.service_exceptions import DomainValidationException
+
+    repo = _FakeRepository()
+    definition, _, _ = _make_definition()
+    executor = RuntimeExecutor(repo, _FakeTracer(), registry=_stub_registry())
+
+    with pytest.raises(DomainValidationException):
+        await executor.run(
+            tenant_id=uuid.uuid4(),
+            interaction_id=uuid.uuid4(),
+            trace_context=SimpleNamespace(user_id=None),
+            flow_id=uuid.uuid4(),
+            flow_version_id=uuid.uuid4(),
+            flow_run_id=uuid.uuid4(),
+            session_id=uuid.uuid4(),
+            input_payload=FlowRunInput(),
+            correlation_id=uuid.uuid4(),
+            trace_id=uuid.uuid4(),
+            plan=_compile_plan(definition),
+        )
+
+
+@pytest.mark.asyncio
+async def test_runtime_executor_stamps_fallback_reason_for_the_fallback_node():
+    repo = _FakeRepository()
+    executor = RuntimeExecutor(repo, _FakeTracer(), registry=_stub_registry())
+    node_a = str(uuid.uuid4())
+    node_b = str(uuid.uuid4())
+    definition = FlowGraphDefinition(
+        start_node=node_a,
+        nodes={
+            node_a: FlowGraphNodeSpec(type="ToolResolver"),
+            node_b: FlowGraphNodeSpec(type="HumanFallback"),
+        },
+        edges=[FlowGraphEdge(from_node=node_a, to_node=node_b, condition="1 == 1")],
+    )
+
+    await executor.run(
+        tenant_id=uuid.uuid4(),
+        interaction_id=uuid.uuid4(),
+        trace_context=SimpleNamespace(user_id="test-user"),
+        flow_id=uuid.uuid4(),
+        flow_version_id=uuid.uuid4(),
+        flow_run_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        input_payload=FlowRunInput(),
+        correlation_id=uuid.uuid4(),
+        trace_id=uuid.uuid4(),
+        plan=_compile_plan(definition),
+    )
+
+    fallback_run = next(run for run in repo.node_runs if str(run["node_id"]) == node_b)
+    metadata = fallback_run["input_payload"]["metadata"]
+    assert metadata["fallback_source_node"] == node_a
+    assert metadata["fallback_reason"] == "LOW_CONFIDENCE"

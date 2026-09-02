@@ -3,13 +3,13 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.prompts.repositories.prompt_repository import PromptRepository
-from domain.prompts.schemas.prompt import NodePrompt, NodePromptCreate, NodeType
+from domain.prompts.schemas.prompt import NodePromptCreate, NodeType
 
 
 def _fake_tracer() -> MagicMock:

@@ -62,9 +62,7 @@ async def test_resolve_config_merges_runtime_policy_and_call_config(
     tracer: MagicMock,
 ) -> None:
     provider = MagicMock()
-    provider.moderate = AsyncMock(
-        return_value=ModerationResult(flagged=False, categories={})
-    )
+    provider.moderate = AsyncMock(return_value=ModerationResult(flagged=False, categories={}))
     node = ContentModeration(tracer=tracer, llm_moderation_provider=provider)
     ctx = _ctx()
     await node.execute(ctx, config={"call_only": True})

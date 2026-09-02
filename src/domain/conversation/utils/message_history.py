@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-_FORBIDDEN_METADATA_KEYS = {
-    "uora_end_user_authorization",
+from domain.common.interaction_metadata import (
+    ACCEPTED_END_USER_AUTHORIZATION_METADATA_KEYS,
+)
+
+_FORBIDDEN_METADATA_KEYS = set(ACCEPTED_END_USER_AUTHORIZATION_METADATA_KEYS) | {
     "tenant_id",
     "user_id",
     "current_date",

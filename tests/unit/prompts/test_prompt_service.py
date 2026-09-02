@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -11,7 +11,6 @@ from domain.execution.repositories.execution_repository import ExecutionReposito
 from domain.prompts.repositories.prompt_repository import PromptRepository
 from domain.prompts.schemas.prompt import NodePrompt, NodePromptCreate, NodeType
 from domain.prompts.services.prompt_service import PromptService
-from exceptions.service_exceptions import DomainValidationException
 
 
 def _fake_tracer() -> MagicMock:
@@ -45,6 +44,7 @@ class TestPromptService:
         service = PromptService(tracer=_fake_tracer(), repository=repo)
 
         import time
+
         cache_entry = PromptCacheEntry(prompt=prompt, timestamp=time.time(), ttl=3600)
         service._cache[NodeType.ToolResolver.value] = cache_entry
 
@@ -203,6 +203,7 @@ class TestPromptService:
         service = PromptService(tracer=_fake_tracer(), repository=repo)
 
         import time
+
         cache_entry = PromptCacheEntry(prompt=prompt, timestamp=time.time(), ttl=3600)
         service._cache[NodeType.ToolResolver.value] = cache_entry
 

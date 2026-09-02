@@ -25,8 +25,7 @@ class RagUsageCounter(ORMBaseModel):
 
     __table_args__ = (
         CheckConstraint(
-            "(scope = 'TENANT' AND user_id IS NULL) OR "
-            "(scope = 'USER' AND user_id IS NOT NULL)",
+            "(scope = 'TENANT' AND user_id IS NULL) OR (scope = 'USER' AND user_id IS NOT NULL)",
             name="ck_rag_usage_counter_scope_user",
         ),
         CheckConstraint(

@@ -140,8 +140,7 @@ class LLMExecutor(LLMExecutorPort):
                 raise DomainValidationException(message="llm_policy_cost_exceeded")
         if request.max_latency_ms is not None and result.latency_ms is not None:
             if result.latency_ms > request.max_latency_ms:
-                print("Que merda")
-                # raise DomainValidationException(message="llm_policy_latency_exceeded")
+                raise DomainValidationException(message="llm_policy_latency_exceeded")
 
     async def execute_llm(
         self,

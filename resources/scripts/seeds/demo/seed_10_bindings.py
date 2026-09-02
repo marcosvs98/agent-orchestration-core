@@ -29,11 +29,11 @@ from seeds.demo.ids import (
     TOOL_CONFIG_DEMO_ID,
     TOOL_DEMO_ID,
 )
-from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
+from seeds.demo.demo_tool_catalog import fetch_demo_tool_rows
 
 
 async def seed_bindings() -> None:
-    rows = await fetch_uora_platform_tool_rows(
+    rows = await fetch_demo_tool_rows(
         demo_tool_id=TOOL_DEMO_ID,
         demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
     )

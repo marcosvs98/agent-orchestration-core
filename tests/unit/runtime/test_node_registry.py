@@ -1,8 +1,11 @@
 import contextlib
 
+import pytest
+
 from domain.execution.services.graph_runtime.nodes import (
     ContextSummarizer,
     HumanFallback,
+    IntentClassifier,
     QueryClarifier,
     ResponseBuilder,
     ToolExecutor,
@@ -73,3 +76,45 @@ def test_node_registry_resolves_context_summarizer():
     summarize_cls = registry.resolve(ContextSummarizer.node_type)
     assert summarize_cls is not None
     assert issubclass(summarize_cls, ContextSummarizer)
+
+
+def test_node_registry_resolves_intent_classifier():
+    registry = NodeRegistry(tracer=_FakeTracer())
+    intent_cls = registry.resolve(IntentClassifier.node_type)
+    assert intent_cls is not None
+    assert issubclass(intent_cls, IntentClassifier)
+
+
+@pytest.mark.parametrize(
+    "node_type",
+    [
+        ContextSummarizer.node_type,
+        HumanFallback.node_type,
+        IntentClassifier.node_type,
+        QueryClarifier.node_type,
+        ResponseBuilder.node_type,
+        ToolExecutor.node_type,
+        ToolInputFiller.node_type,
+    ],
+)
+def test_node_registry_resolved_classes_are_constructible(node_type):
+    registry = NodeRegistry(
+        tracer=_FakeTracer(),
+        llm_executor=object(),
+        prompt_resolver=object(),
+        tool_orchestrator=object(),
+        execution_repository=object(),
+        memory_write_service=object(),
+        agent_runtime_resolver=object(),
+        completion_budget_policy=object(),
+        tool_catalog_retriever=object(),
+        agents_repository=object(),
+        llm_moderation_provider=object(),
+        human_sla_service=object(),
+    )
+
+    node_cls = registry.resolve(node_type)
+    assert node_cls is not None
+
+    instance = node_cls()
+    assert callable(instance.execute)

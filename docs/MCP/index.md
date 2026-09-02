@@ -6,7 +6,7 @@ This section explains how **tenant-scoped MCP servers** are registered in the **
 
 | Layer | Responsibility |
 |-------|----------------|
-| **MCP registry (domain)** | Persist `mcp_server`, bind tool configs / vector stores / user prompts / optional flow ids; issue **API keys**; build an **`McpServerBuildSpec`** for the gateway. |
+| **MCP registry (domain)** | Persist `mcp_server`, bind tool configs / vector stores / user prompts / optional flow ids; issue **API keys**; manage the **outbound authorization fallback**; build an **`McpServerBuildSpec`** for the gateway. |
 | **Tenant MCP gateway (adapter)** | Match `/core/v1/mcp-servers/{id}/mcp`, verify API key, load spec, serve a **FastMCP** HTTP app: HTTP-proxy tools, optional **`search_knowledge`**, **prompts**. |
 
 The **MCP wire protocol** (Streamable HTTP / FastMCP) is **not** implemented inside `domain/mcp_registry/` — it lives in `src/adapters/mcp/tenant_mcp_gateway.py`.
@@ -44,8 +44,9 @@ Typical flow:
 
 | Step | Document |
 |------|----------|
-| 1 | [Registry and API](registry-and-api.md) — create/list/get servers, validations, credential handling, how **`McpServerBuildSpec`** is built. |
-| 2 | [Gateway and runtime](gateway-and-runtime.md) — URL pattern, auth, `_McpHttpProxyTool`, `search_knowledge`, caching. |
+| 1 | [OpenAPI to MCP](../Tools/openapi-to-mcp.md) — turn an `openapi.json` into published tool configs before binding them. |
+| 2 | [Registry and API](registry-and-api.md) — create/list/get servers, validations, credential handling, how **`McpServerBuildSpec`** is built. |
+| 3 | [Gateway and runtime](gateway-and-runtime.md) — URL pattern, auth, `_McpHttpProxyTool`, `search_knowledge`, caching. |
 
 ## Package map
 

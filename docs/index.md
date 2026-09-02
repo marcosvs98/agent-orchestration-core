@@ -1,6 +1,6 @@
 # agent-orchestration-core
 
-Multi-tenant **cognitive orchestration**: natural language and API events in, **deterministic graph execution**, retrieval, and **governance** out. The canonical shape of the system is in [Architecture overview](Architecture/ARCHITECTURE.md); this page is the **MkDocs home** — quick entry points and operations.
+A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it.
 
 ## Start here
 
@@ -8,6 +8,7 @@ Multi-tenant **cognitive orchestration**: natural language and API events in, **
 - **[Glossary](Glossary/index.md)** — domain terms and [persistence tables](Glossary/persistence-tables.md).
 - **[Architecture overview](Architecture/ARCHITECTURE.md)** — bounded contexts, hexagonal layout, full context table.
 - **[Runtime vs authoring](Architecture/runtime-vs-authoring.md)** — design-time vs execution-time rules.
+- **[Context and cache strategy](Architecture/context-and-cache-strategy.md)** — RAG and CAG techniques in one map.
 - **[Domain model overview](Models/domain-overview.md)** — entities and relationships across contexts.
 
 ## Domain documentation (overview)
@@ -32,7 +33,7 @@ Use the sidebar **Domain documentation** for the full tree (persistence, integra
 - [Tracing and cost](Develop/tracing-and-cost.md)
 - [Token cost and context strategy](Develop/token-cost-and-context-strategy.md) — budgets, caches, RAG/context, consulting costs
 - [System events reference](Develop/system-events-reference.md) — execution, authoring, and SSE catalogues
-- [Coverage incremental loop](Develop/coverage-incremental-loop.md), [Dead code pipeline](Develop/dead-code-pipeline.md)
+- [Known limitations](Develop/limitations.md) — what does not work the way you would assume
 - [Deployment](Deployment/docker.md)
 
 ## Contributing

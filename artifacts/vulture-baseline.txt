@@ -1,2 +1,0 @@
-src/domain/context/services/rag_activation_service.py:55: unused variable 'intent_metadata' (100% confidence)
-src/domain/llm/adapters/slm_local_provider.py:33: unreachable code after 'return' (100% confidence)

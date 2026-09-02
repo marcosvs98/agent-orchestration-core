@@ -15,6 +15,12 @@ from infra.database.models.agent.agent_version import AgentVersion as AgentVersi
 from infra.database.models.agent.node_agent_binding import (
     NodeAgentBinding as NodeAgentBindingModel,
 )
+from infra.database.models.ai_policy.execution_policy import (
+    AIExecutionPolicy as AIExecutionPolicyModel,
+)
+from infra.database.models.ai_policy.execution_policy_version import (
+    AIExecutionPolicyVersion as AIExecutionPolicyVersionModel,
+)
 from infra.database.models.flow.node import Node as NodeModel
 from infra.database.models.flow.flow import Flow as FlowModel
 from infra.database.models.flow.flow_version import FlowVersion as FlowVersionModel
@@ -339,6 +345,7 @@ class AgentsRepository:
         supported_tool_config_hash_prefix: str | None = None,
         persona_config: dict | None = None,
         system_prompt: str | None = None,
+        ai_execution_policy_version_id: UUID | None = None,
         created_by: str,
     ) -> AgentVersionModel:
         async with self.db.get_session() as session:
@@ -386,6 +393,8 @@ class AgentsRepository:
                     persona_config = source.persona_config
                 if system_prompt is None:
                     system_prompt = source.system_prompt
+                if ai_execution_policy_version_id is None:
+                    ai_execution_policy_version_id = source.ai_execution_policy_version_id
 
             if version_major is None or version_minor is None or version_patch is None:
                 stmt_last = (
@@ -448,11 +457,32 @@ class AgentsRepository:
                     supported_tool_config_hash_prefix=supported_tool_config_hash_prefix,
                     persona_config=persona_config,
                     system_prompt=system_prompt,
+                    ai_execution_policy_version_id=ai_execution_policy_version_id,
                 )
                 session.add(instance)
                 await session.commit()
                 await session.refresh(instance)
                 return instance
+
+    async def ai_execution_policy_version_belongs_to_tenant(
+        self, *, tenant_id: UUID, ai_execution_policy_version_id: UUID
+    ) -> bool:
+        async with self.db.get_session() as session:
+            stmt = (
+                select(AIExecutionPolicyVersionModel.ai_execution_policy_version_id)
+                .join(
+                    AIExecutionPolicyModel,
+                    AIExecutionPolicyModel.ai_execution_policy_id
+                    == AIExecutionPolicyVersionModel.ai_execution_policy_id,
+                )
+                .where(
+                    AIExecutionPolicyVersionModel.ai_execution_policy_version_id
+                    == ai_execution_policy_version_id,
+                    AIExecutionPolicyModel.tenant_id == tenant_id,
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none() is not None
 
     async def create_node_agent_binding(
         self, *, node_id: UUID, agent_version_id: UUID, created_by: str

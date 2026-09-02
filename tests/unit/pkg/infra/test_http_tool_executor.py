@@ -40,9 +40,7 @@ class _FakeTracer:
 
 class TestHttpToolExecutor:
     @pytest.mark.asyncio
-    async def test_execute_http_returns_status_headers_body_and_sanitized_trace(
-        self, monkeypatch
-    ):
+    async def test_execute_http_returns_status_headers_body_and_sanitized_trace(self, monkeypatch):
         async def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, headers={"x-test": "1"}, text="ok")
 

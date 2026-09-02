@@ -7,12 +7,14 @@ from uuid import UUID
 
 from jose import jwt
 
+from adapters.cache.redis_adapter import RedisAdapter
 from domain.auth.repositories.inbound_service_key_repository import (
     InboundServiceKeyRepository,
 )
 from domain.governance.repositories.authoring_event_repository import (
     AuthoringEventRepository,
 )
+from domain.governance.schemas.scopes import Scope
 from domain.tenants.repositories.tenants_repository import TenantsRepository
 from domain.auth.schemas.auth import TenantTokenResponse
 from fastapi import status
@@ -36,6 +38,8 @@ _TENANT_TOKEN_RATE_MAX_REQUESTS = 20
 _rate_store: dict[str, list[float]] = defaultdict(list)
 _rate_lock = Lock()
 
+NON_DELEGABLE_SCOPES: frozenset[str] = frozenset({Scope.TenantsCreate.value})
+
 
 class AuthService:
     def __init__(
@@ -43,13 +47,15 @@ class AuthService:
         tenants_repository: TenantsRepository,
         authoring_event_repository: AuthoringEventRepository,
         inbound_service_key_repository: InboundServiceKeyRepository,
+        cache_adapter: RedisAdapter | None = None,
     ) -> None:
         self.tenants_repository = tenants_repository
         self.authoring_event_repository = authoring_event_repository
         self.inbound_service_key_repository = inbound_service_key_repository
+        self.cache_adapter = cache_adapter
 
     @staticmethod
-    def _check_rate_limit(principal_id: str) -> None:
+    def _check_local_rate_limit(principal_id: str) -> None:
         now = time.time()
         cutoff = now - _TENANT_TOKEN_RATE_WINDOW_SECONDS
         with _rate_lock:
@@ -58,12 +64,26 @@ class AuthService:
                 raise RateLimitExceededException(message="tenant_token_rate_limit")
             _rate_store[principal_id].append(now)
 
+    async def _check_rate_limit(self, principal_id: str) -> None:
+        if self.cache_adapter is None:
+            self._check_local_rate_limit(principal_id)
+            return
+        used = await self.cache_adapter.incr_with_ttl(
+            f"auth:tenant_token_rate:{principal_id}",
+            ttl=_TENANT_TOKEN_RATE_WINDOW_SECONDS,
+        )
+        if not isinstance(used, int):
+            self._check_local_rate_limit(principal_id)
+            return
+        if used > _TENANT_TOKEN_RATE_MAX_REQUESTS:
+            raise RateLimitExceededException(message="tenant_token_rate_limit")
+
     async def issue_tenant_token(
         self,
         tenant_id: UUID,
         auth: AuthContext,
     ) -> TenantTokenResponse:
-        self._check_rate_limit(auth.principal_id)
+        await self._check_rate_limit(auth.principal_id)
 
         tenant = await self.tenants_repository.get_tenant(tenant_id)
         if tenant is None:
@@ -71,6 +91,7 @@ class AuthService:
 
         now = int(time.time())
         exp = now + JWT_TENANT_TOKEN_EXPIRES_SECONDS
+        delegated_scopes = sorted(auth.scopes - NON_DELEGABLE_SCOPES)
         payload = {
             "iss": JWT_ISSUER,
             "aud": JWT_AUDIENCE,
@@ -78,7 +99,7 @@ class AuthService:
             "tenant_id": str(tenant_id),
             "principal_id": auth.principal_id,
             "principal_type": auth.principal_type,
-            "scopes": list(auth.scopes),
+            "scopes": delegated_scopes,
             "sub": auth.principal_id,
         }
 

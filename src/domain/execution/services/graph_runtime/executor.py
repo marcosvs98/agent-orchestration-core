@@ -1,42 +1,34 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Dict, List
+from typing import Any, Dict
 from uuid import UUID
-from domain.execution.services.graph_runtime.types import NodeExecutor
-from domain.execution.services.graph_runtime.types import NodeResult
 from domain.execution.schemas.execution import FlowRunInput
 from domain.execution.repositories.execution_repository import ExecutionRepository
 from domain.execution.schemas.events import ExecutionEventType
 from domain.execution.schemas.execution import FlowFailureReason
-from domain.execution.services.graph_runtime.edge_evaluator import EdgeEvaluator
+from domain.execution.services.graph_runtime.node_step_runner import (
+    NodeStepRunner,
+    NodeStepStatus,
+)
 from domain.execution.services.graph_runtime.registry import NodeRegistry
 from domain.execution.services.graph_runtime.types import (
-    NODE_OUTPUTS_BY_NODE_ID_KEY,
     USER_CONTEXT_READ_GATE_STATE_KEY,
     ExecutionContext,
-    NodeExecutionStatus,
     UserContextEnrichmentMode,
 )
-from domain.execution.services.graph_runtime.execution_plan import (
-    ExecutionPlan,
-    CompiledEdge,
-)
+from domain.execution.services.graph_runtime.execution_plan import ExecutionPlan
 from domain.execution.services.observability.hooks import ExecutionEventHook
 from domain.execution.services.state_machine import (
     FlowRunStatus,
-    NodeRunStatus,
     RunStatus,
 )
-from domain.flows.schemas.graph import EdgeKind
-from domain.flows.services.flow_graph_validator import TERMINAL_NODE_TYPES
 from exceptions.service_exceptions import (
     format_exception,
     DomainValidationException,
 )
 from domain.governance.schemas.runtime_policy import ResolvedRuntimePolicy
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
-from domain.prompts.schemas.prompt import NodeType
 
 
 class RuntimeExecutor:
@@ -52,6 +44,12 @@ class RuntimeExecutor:
         self.tracer = tracer
         self.hook = hook
         self._default_loop_limit = 10
+        self.step_runner = NodeStepRunner(
+            repository=repository,
+            tracer=tracer,
+            registry=self.registry,
+            hook=hook,
+        )
 
     async def run(
         self,
@@ -139,7 +137,6 @@ class RuntimeExecutor:
             context.state[gate_key] = merged_handle
 
         adjacency = plan.adjacency_map
-        node_specs = plan.nodes
 
         edge_count = sum(len(v) for v in adjacency.values()) or 1
         max_steps = max(
@@ -147,187 +144,35 @@ class RuntimeExecutor:
             loop_limit * max(len(adjacency), 1) + 2,
         )
         for _ in range(max_steps):
-            edges = adjacency.get(context.current_node_id, [])
-            spec = node_specs.get(context.current_node_id)
-            if spec is None:
+            outcome = await self.step_runner.run_step(
+                context=context,
+                plan=plan,
+                iteration_counters=context.iteration_counters,
+                loop_limit=loop_limit,
+            )
+            context = outcome.context or context
+
+            if outcome.status == NodeStepStatus.FAILED:
                 await self._fail_flow(
                     tenant_id=tenant_id,
                     user_id=context.user_id,
                     session_id=session_id,
                     flow_run_id=flow_run_id,
                     correlation_id=correlation_id,
-                    reason=FlowFailureReason.NODE_NOT_FOUND,
+                    reason=outcome.failure_reason,
+                    exc=outcome.failure_exception,
                 )
                 return
 
-            node_type = spec.get("type")
-            node_cls = self.registry.resolve(node_type)
-            if node_cls is None:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    user_id=context.user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.UNKNOWN_NODE_TYPE,
-                )
-                return
-
-            context_metadata = dict(context.metadata or {})
-            context_metadata["current_node_type"] = node_type
-            context = context.model_copy(update={"metadata": context_metadata})
-
-            node: NodeExecutor = node_cls()
-
-            node_run_id = await self.repository.create_node_run(
-                flow_run_id=flow_run_id,
-                node_id=UUID(context.current_node_id),
-                correlation_id=correlation_id,
-                input_payload={
-                    "input_payload": input_payload.model_dump(mode="json"),
-                    "state": context.state,
-                    "memory": context.memory,
-                    "metadata": context.metadata,
-                },
-                output_payload={},
-                status=NodeRunStatus.RUNNING,
-                canonical_status=NodeRunStatus.RUNNING,
-            )
-
-            context = context.model_copy(update={"current_node_run_id": node_run_id})
-
-            if self.hook:
-                await self.hook.on_node_start(
-                    tenant_id=tenant_id,
-                    user_id=trace_user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    node_id=UUID(context.current_node_id) if context.current_node_id else None,
-                    payload={"node_id": context.current_node_id},
-                    causation_id=None,
-                    schema_version=1,
-                )
-            else:
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.NodeStarted,
-                    payload={"node_id": context.current_node_id},
-                    correlation_id=correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                )
-
-            config = spec.get("config") or {}
-            with self.tracer.observe(
-                as_type="span",
-                name=f"domain.execution.graph_runtime.executor.node.{node_type}",
-                input=context.snapshot(),
-                metadata={"node_type": node_type},
-            ) as node_handle:
-                try:
-                    node_result: NodeResult = await node.execute(context, config)
-                except Exception as exc:
-                    if node_handle:
-                        node_handle.error(
-                            error_type=type(exc).__name__,
-                            error_message=str(exc),
-                            output={"status": "failed"},
-                        )
-                    await self._fail_flow(
-                        tenant_id=tenant_id,
-                        user_id=context.user_id,
-                        session_id=session_id,
-                        flow_run_id=flow_run_id,
-                        correlation_id=correlation_id,
-                        reason=FlowFailureReason.STRUCTURAL_ERROR,
-                        exc=exc,
-                    )
-                    return
-                if node_handle and node_result is not None:
-                    node_handle.success(output=node_result.model_dump(mode="json"))
-            context.node_output = node_result.data
-
-            status = self._map_status(node_result.status)
-            await self.repository.update_node_run_result(
-                node_run_id=node_run_id,
-                output_payload=node_result.model_dump(),
-                status=status,
-                canonical_status=status,
-            )
-
-            new_state = dict(node_result.next_state or context.state)
-            snap = dict(new_state.get(NODE_OUTPUTS_BY_NODE_ID_KEY) or {})
-            if context.current_node_id:
-                out_data = node_result.data if isinstance(node_result.data, dict) else {}
-                snap[str(context.current_node_id)] = out_data
-            new_state[NODE_OUTPUTS_BY_NODE_ID_KEY] = snap
-            if node_result.memory is not None:
-                new_memory = list(node_result.memory)
-            else:
-                new_memory = list(context.memory)
-            resume_to_node_id = None
-            if node_result.status == NodeExecutionStatus.NEEDS_INPUT:
-                resume_to_node_id = config.get("resume_to_node_id") or context.current_node_id
-
-            if self.hook:
-                await self.hook.on_node_complete(
-                    tenant_id=tenant_id,
-                    user_id=trace_user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    node_id=UUID(context.current_node_id) if context.current_node_id else None,
-                    payload={
-                        "node_id": context.current_node_id,
-                        "status": node_result.status,
-                        "payload": node_result.data,
-                        "error": node_result.error,
-                        "metrics": node_result.metrics,
-                    },
-                    causation_id=None,
-                    schema_version=1,
-                )
-            else:
-                await self.repository.append_execution_event(
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    event_type=ExecutionEventType.NodeCompleted,
-                    payload={
-                        "node_id": context.current_node_id,
-                        "status": node_result.status,
-                        "payload": node_result.data,
-                        "error": node_result.error,
-                        "metrics": node_result.metrics,
-                    },
-                    correlation_id=correlation_id,
-                    causation_id=None,
-                    schema_version=1,
-                )
-            await self.repository.upsert_graph_state(
-                flow_run_id=flow_run_id,
-                state={
-                    "current_node_id": context.current_node_id,
-                    "state": new_state,
-                    "memory": new_memory,
-                    "resume_to_node_id": resume_to_node_id,
-                    "metadata": context.metadata,
-                },
-                last_node_run_id=node_run_id,
-            )
-
-            if node_result.status == NodeExecutionStatus.NEEDS_INPUT:
+            if outcome.status == NodeStepStatus.NEEDS_INPUT:
                 await self.repository.set_flow_run_output(
                     flow_run_id=flow_run_id,
-                    output=node_result.data or {},
+                    output=outcome.node_data,
                 )
                 await self.repository.set_current_interaction_result_for_flow_run(
                     flow_run_id=flow_run_id,
-                    output=node_result.data or {},
-                    result_node_run_id=node_run_id,
+                    output=outcome.node_data,
+                    result_node_run_id=outcome.node_run_id,
                 )
                 await self.repository.set_flow_run_status(
                     flow_run_id=flow_run_id,
@@ -336,114 +181,16 @@ class RuntimeExecutor:
                 )
                 return
 
-            if node_type in TERMINAL_NODE_TYPES:
-                await self.repository.complete_flow_run(
-                    flow_run_id=flow_run_id,
-                    status=FlowRunStatus.COMPLETED,
-                    output=node_result.data,
-                )
-                await self.repository.set_current_interaction_result_for_flow_run(
-                    flow_run_id=flow_run_id,
-                    output=node_result.data or {},
-                    result_node_run_id=node_run_id,
-                )
-                memory_extraction_config = None
-                if isinstance(context.metadata, dict):
-                    runtime_policy = context.metadata.get("runtime_policy")
-                    if isinstance(runtime_policy, dict):
-                        extracted_config = runtime_policy.get("memory_extraction")
-                        if isinstance(extracted_config, dict):
-                            memory_extraction_config = extracted_config
-                if self.hook:
-                    await self.hook.on_flow_complete(
-                        tenant_id=tenant_id,
-                        user_id=trace_user_id,
-                        session_id=session_id,
-                        flow_run_id=flow_run_id,
-                        correlation_id=correlation_id,
-                        payload={
-                            "terminated_at": context.current_node_id,
-                            "payload": node_result.data,
-                            "memory_extraction_config": memory_extraction_config,
-                        },
-                        causation_id=None,
-                        schema_version=1,
-                    )
-                else:
-                    await self.repository.append_execution_event(
-                        tenant_id=tenant_id,
-                        session_id=session_id,
-                        flow_run_id=flow_run_id,
-                        event_type=ExecutionEventType.FlowCompleted,
-                        payload={
-                            "terminated_at": context.current_node_id,
-                            "payload": node_result.data,
-                            "memory_extraction_config": memory_extraction_config,
-                        },
-                        correlation_id=correlation_id,
-                        causation_id=None,
-                        schema_version=1,
-                    )
-                return
-
-            try:
-                matching = await self._evaluate_edges(
-                    edges,
-                    context.current_node_id,
-                    node_result.data,
-                    iteration_counters=context.iteration_counters,
-                    loop_limit=loop_limit,
-                    tenant_id=tenant_id,
-                    user_id=context.user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                )
-            except DomainValidationException as exc:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    user_id=context.user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.EDGE_EVALUATION_ERROR,
-                    exc=exc,
-                )
-                return
-            if not matching:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    user_id=context.user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.NO_MATCHING_EDGE,
-                )
-                return
-            if len(matching) > 1:
-                await self._fail_flow(
-                    tenant_id=tenant_id,
-                    user_id=context.user_id,
-                    session_id=session_id,
-                    flow_run_id=flow_run_id,
-                    correlation_id=correlation_id,
-                    reason=FlowFailureReason.MULTIPLE_MATCHING_EDGES,
+            if outcome.status == NodeStepStatus.TERMINAL:
+                await self._complete_flow(
+                    context=context,
+                    node_run_id=outcome.node_run_id,
+                    node_data=outcome.node_data,
+                    trace_user_id=trace_user_id,
                 )
                 return
 
-            next_node_id = matching[0]
-            update_payload: Dict[str, Any] = {
-                "current_node_id": next_node_id,
-                "state": new_state,
-                "memory": new_memory,
-                "node_output": node_result.data,
-            }
-            next_spec = node_specs.get(next_node_id)
-            if next_spec is not None and next_spec.get("type") == NodeType.HumanFallback.value:
-                new_metadata = dict(context.metadata or {})
-                new_metadata["fallback_source_node"] = context.current_node_id
-                update_payload["metadata"] = new_metadata
-            context = context.model_copy(update=update_payload)
+            context = context.model_copy(update={"current_node_id": outcome.next_node_id})
         await self._fail_flow(
             tenant_id=tenant_id,
             user_id=context.user_id,
@@ -453,90 +200,56 @@ class RuntimeExecutor:
             reason=FlowFailureReason.MAX_STEPS_EXCEEDED,
         )
 
-    async def _evaluate_edges(
-        self,
-        edges: List[CompiledEdge],
-        current_node_id: str,
-        node_output: Dict[str, object],
-        iteration_counters: Dict[str, int],
-        *,
-        loop_limit: int,
-        tenant_id: UUID,
-        user_id: str,
-        session_id: UUID,
-        flow_run_id: UUID,
-        correlation_id: UUID,
-    ) -> List[str]:
-        candidates: List[str] = []
-        for edge in edges:
-            if edge.from_node != current_node_id:
-                continue
-            if edge.edge_kind == EdgeKind.LOOP:
-                key = f"{edge.from_node}->{edge.to_node}"
-                iteration_counters[key] = iteration_counters.get(key, 0) + 1
-                if iteration_counters[key] > loop_limit:
-                    raise DomainValidationException(message="loop_iteration_limit_exceeded")
-            result = EdgeEvaluator.is_true(
-                "",
-                node_output,
-                compiled_condition=edge.compiled_condition,
-            )
-            candidates.append(edge.to_node if result else None)
-            await self._emit_edge_evaluated(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                session_id=session_id,
-                flow_run_id=flow_run_id,
-                correlation_id=correlation_id,
-                current_node_id=current_node_id,
-                to_node=edge.to_node,
-                result=result,
-            )
-        candidates = [c for c in candidates if c is not None]
-        return candidates
-
-    async def _emit_edge_evaluated(
+    async def _complete_flow(
         self,
         *,
-        tenant_id: UUID,
-        user_id: str,
-        session_id: UUID,
-        flow_run_id: UUID,
-        correlation_id: UUID,
-        current_node_id: str,
-        to_node: str,
-        result: bool,
+        context: ExecutionContext,
+        node_run_id: UUID | None,
+        node_data: Dict[str, Any],
+        trace_user_id: str,
     ) -> None:
+        flow_run_id = context.flow_run_id
+        await self.repository.complete_flow_run(
+            flow_run_id=flow_run_id,
+            status=FlowRunStatus.COMPLETED,
+            output=node_data,
+        )
+        await self.repository.set_current_interaction_result_for_flow_run(
+            flow_run_id=flow_run_id,
+            output=node_data,
+            result_node_run_id=node_run_id,
+        )
+        memory_extraction_config = None
+        if isinstance(context.metadata, dict):
+            runtime_policy = context.metadata.get("runtime_policy")
+            if isinstance(runtime_policy, dict):
+                extracted_config = runtime_policy.get("memory_extraction")
+                if isinstance(extracted_config, dict):
+                    memory_extraction_config = extracted_config
+        payload = {
+            "terminated_at": context.current_node_id,
+            "payload": node_data,
+            "memory_extraction_config": memory_extraction_config,
+        }
         if self.hook:
-            edge_id = f"{current_node_id}->{to_node}"
-            await self.hook.on_edge_evaluated(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                session_id=session_id,
+            await self.hook.on_flow_complete(
+                tenant_id=context.tenant_id,
+                user_id=trace_user_id,
+                session_id=context.session_id,
                 flow_run_id=flow_run_id,
-                correlation_id=correlation_id,
-                node_id=UUID(current_node_id) if current_node_id else None,
-                edge_id=edge_id,
-                payload={
-                    "from_node": current_node_id,
-                    "to_node": to_node,
-                    "result": result,
-                },
+                correlation_id=context.correlation_id,
+                payload=payload,
                 causation_id=None,
                 schema_version=1,
             )
         else:
             await self.repository.append_execution_event(
-                tenant_id=tenant_id,
-                session_id=session_id,
+                tenant_id=context.tenant_id,
+                session_id=context.session_id,
                 flow_run_id=flow_run_id,
-                event_type=ExecutionEventType.EdgeEvaluated,
-                payload={
-                    "from_node": current_node_id,
-                    "to_node": to_node,
-                    "result": result,
-                },
-                correlation_id=correlation_id,
+                event_type=ExecutionEventType.FlowCompleted,
+                payload=payload,
+                correlation_id=context.correlation_id,
                 causation_id=None,
                 schema_version=1,
             )
@@ -584,14 +297,6 @@ class RuntimeExecutor:
                 causation_id=None,
                 schema_version=1,
             )
-
-    @staticmethod
-    def _map_status(status: NodeExecutionStatus) -> NodeRunStatus:
-        if status == NodeExecutionStatus.SUCCESS:
-            return NodeRunStatus.COMPLETED
-        if status == NodeExecutionStatus.ERROR:
-            return NodeRunStatus.FAILED
-        return NodeRunStatus.PENDING
 
 
 GraphExecutor = RuntimeExecutor

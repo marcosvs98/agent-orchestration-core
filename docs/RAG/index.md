@@ -37,4 +37,5 @@ Indexing can start from **linear text** (batch `RagDocumentCreate`) or from **st
 - [Runtime and integration](runtime-and-integration.md) — retrievers, policies, validation script, HTTP API; **ingest:** batch text (`documents:ingest`) vs [media (`documents:ingestFromMedia`)](runtime-and-integration.md#ingest-from-media)
 - [Data model reference](data-model-reference.md) — tables, ER diagrams, ORM pointers
 - [GLM-OCR (external)](glm-ocr.md) — optional OCR preprocessing for ingest pipelines
+- `examples/rag/` (repository root) — four runnable examples: the chunking-strategy catalog, the `embedding` / `indexing_embedding` pair and Matryoshka truncation, retrieval tuning (`top_k`, `similarity_threshold`, `filters_override`), and the activation gate chain. Two need no infrastructure.
 - [Glossary index](../Glossary/index.md), [Domain overview](../Models/domain-overview.md)

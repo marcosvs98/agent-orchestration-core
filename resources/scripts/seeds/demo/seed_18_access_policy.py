@@ -36,7 +36,7 @@ async def seed_access_policy() -> None:
             access_policy = AccessPolicy(
                 access_policy_id=ACCESS_POLICY_DEMO_ID,
                 tenant_id=TENANT_DEMO_ID,
-                name="Uora - Access Policy",
+                name="Demo - Access Policy",
             )
             session.add(access_policy)
             await session.commit()

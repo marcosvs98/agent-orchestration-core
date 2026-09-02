@@ -38,7 +38,10 @@ class RateLimitService:
                 "action": action,
                 "principal_type": principal_type,
             },
-            metadata={"guardrail_type": "rate_limit"},
+            metadata={
+                "guardrail_type": "rate_limit",
+                "tenant_id": str(tenant_id),
+            },
         ) as enforce_handle:
             policy = await self.repository.get_default_policy_for_tenant(tenant_id)
             if enforce_handle:
@@ -67,7 +70,10 @@ class RateLimitService:
                 "key": key,
                 "window_seconds": int(version.window_seconds),
             },
-            metadata={"tool_name": "redis.incr_with_ttl"},
+            metadata={
+                "tool_name": "redis.incr_with_ttl",
+                "tenant_id": str(tenant_id),
+            },
         ) as tool_handle:
             value = await self.redis.incr_with_ttl(key, int(version.window_seconds))
             if tool_handle:

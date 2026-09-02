@@ -14,6 +14,7 @@ Accepts **`McpServerCreateRequest`** with optional lists:
 - `vector_store_ids`
 - `user_prompt_ids`
 - Optional `name`, `flow_snapshot_id`, `flow_deployment_id`
+- Optional `outbound_authorization_secret_ref` — see [outbound authorization fallback](gateway-and-runtime.md#outbound-authorization-fallback)
 
 #### Validation (tenant ownership)
 
@@ -56,7 +57,7 @@ sequenceDiagram
   S->>R: create_server_with_bindings
   R-->>S: server id + hashed credential
   S-->>Ctrl: endpoint + api_key + id
-  Ctrl-->>C: 200 + JSON
+  Ctrl-->>C: 201 + JSON
 ```
 
 ### `list_servers` / `get_server`
@@ -73,13 +74,34 @@ Return summaries or detail including the **public MCP path** pattern and binding
 
 Router prefix: **`/core/v1/tenants`** — the **tenant** comes from **auth** (`auth.tenant_id`), not from a path segment.
 
-| Method | Path | Permission scope |
-|--------|------|------------------|
-| POST | `/mcp-servers` | `McpServersCreate` |
-| GET | `/mcp-servers` | `McpServersList` |
-| GET | `/mcp-servers/{mcp_server_id}` | `McpServersGet` |
+| Method | Path | Status | Permission scope |
+|--------|------|--------|------------------|
+| POST | `/mcp-servers` | 201 | `McpServersCreate` |
+| GET | `/mcp-servers` | 200 | `McpServersList` |
+| GET | `/mcp-servers/{mcp_server_id}` | 200 | `McpServersGet` |
+| PATCH | `/mcp-servers/{mcp_server_id}/outbound-authorization` | 200 | `McpServersCreate` |
 
 `create_mcp_server` passes `PUBLIC_BASE_URL` or `request.base_url` as **`endpoint_base`** so the returned **`endpoint`** is usable by off-host clients.
+
+### `PATCH .../outbound-authorization`
+
+Sets or clears the server's **outbound authorization fallback**. Body is
+**`McpServerPatchOutboundAuthRequest`** — a single nullable field:
+
+```json
+{"outbound_authorization_secret_ref": "vault://tenants/acme/mcp-outbound"}
+```
+
+Send `null` to remove the fallback. The response is a full **`McpServerDetail`**, whose
+**`outbound_authorization_fallback_configured`** boolean is the only place the configured state is
+exposed — the `secret_ref` itself is never returned. The same field may also be set at creation time
+on **`McpServerCreateRequest`**.
+
+Note the scope: this route reuses **`McpServersCreate`**, not a dedicated update scope. It changes
+which credential outbound tool calls carry, so gate it accordingly.
+
+Behaviour at request time is described in
+[Gateway and runtime — outbound authorization fallback](gateway-and-runtime.md#outbound-authorization-fallback).
 
 ## `McpRegistryRepository` (selected behaviour)
 

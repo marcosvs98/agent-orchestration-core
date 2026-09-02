@@ -47,6 +47,33 @@ Loads the run, validates user and wait state, rebuilds plan from cached snapshot
 - `get_flow_run`, `get_graph_state` — read persisted run and graph state JSON.
 - `list_node_runs`, `list_agent_runs`, `list_execution_events` — list helpers over the repository.
 
+## HTTP surface — the execution plane
+
+`ExecutionPlaneController` (`src/domain/execution/controllers/execution_plane_controller.py`) mounts
+at **`/core/v1/executions`** behind `get_auth_context`, and calls `ExecutionBoundary` (rate limit +
+access policy) rather than `ExecutionService` directly.
+
+| Method | Path | Status | Notes |
+|--------|------|--------|-------|
+| POST | `/flow-runs` | 201 (202 async) | Requires `Idempotency-Key`. `?wait=false` returns 202. |
+| GET | `/flow-runs/{flow_run_id}` | 200 | Run detail. |
+| POST | `/flow-runs/{flow_run_id}:resume` | 200 | Resumes a `WAITING_INPUT` run as a new turn — see [Durable execution](durable-execution.md#resuming-a-waiting-run). |
+| GET | `/flow-runs/{flow_run_id}/graph-state` | 200 | Persisted `graph_state` document. |
+| POST | `/tool-runs` | 201 | Requires `Idempotency-Key`. Body `ToolRunCreate`. |
+| POST | `/tool-runs/{tool_run_id}:execute` | 200 | Executes an existing tool run; returns the raw result dict. |
+| GET | `/node-runs` | 200 | List, filterable by `flow_run_id`. |
+| GET | `/execution-events` | 200 | List, filterable by `flow_run_id`. |
+
+Agent runs live on the same prefix but are served by `AgentRunController` — see
+[Agent runtime → HTTP API](agent-runtime.md#http-api).
+
+!!! note "The `tool-runs` routes are an operator/debug surface"
+
+    Graph execution creates and executes tool runs internally through `ToolExecutor` and
+    `ToolOrchestrator`; nothing in the normal request path calls these two endpoints. They exist to
+    create or re-drive a single tool run out of band. Because `:execute` runs the side effect
+    immediately, treat it as a write, not an inspection call.
+
 ## Related
 
 - [Graph runtime overview](graph-runtime/index.md)

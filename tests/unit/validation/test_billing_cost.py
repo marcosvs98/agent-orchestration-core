@@ -19,7 +19,11 @@ def test_replay_does_not_duplicate_cost():
     run_id = str(uuid4())
     runs = [
         {"agent_run_id": run_id, "tenant_id": tenant, "estimated_cost": 0.5},
-        {"agent_run_id": run_id, "tenant_id": tenant, "estimated_cost": 0.5},  # replayed view of same run
+        {
+            "agent_run_id": run_id,
+            "tenant_id": tenant,
+            "estimated_cost": 0.5,
+        },  # replayed view of same run
         {"agent_run_id": str(uuid4()), "tenant_id": tenant, "estimated_cost": 1.0},
     ]
     totals = aggregate_cost(runs)

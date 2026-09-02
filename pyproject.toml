@@ -1,44 +1,40 @@
 [project]
 name = "agent-orchestration-core"
 version = "1.0.0"
-description = "Agent Router for AB project"
-requires-python = ">=3.12,<3.13"
+description = "A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it."
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.135.0",
+    "starlette>=0.40.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.12.5",
-    "langgraph>=1.0.0",
     "openai>=1.54.0",
-    "redis==5.0.1",
     "redis[hiredis]==5.0.1",
     "httpx>=0.28.0",
-    "sqlalchemy>=2.0.36",
+    "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
-    "python-dateutil>=2.9.0.post0",
     "structlog>=25.4.0",
-    "tenacity==8.2.3",
     "dependency-injector>=4.41.0",
     "python-decouple>=3.8",
     "gunicorn>=20.1.0",
-    "langfuse>=3.12.0",
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-sdk>=1.39.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.39.1",
+    "opentelemetry-semantic-conventions>=0.60b1",
     "pgvector>=0.3.0",
     "tiktoken>=0.7.0",
-    "greenlet>=3.3.0",
     "jinja2>=3.1.0",
-    "PyJWT>=2.8.0",
     "python-jose[cryptography]>=3.3.0",
-    "requests>=2.31.0",
-    "pydantic-settings>=2.12.0",
-    "pydantic-core>=2.41.5",
     "jsonschema>=4.0.0",
+    "orjson>=3.10.0",
+    "numpy>=1.26.0",
     "pyyaml>=6.0.0",
     "arq",
     "pyparsing>=3.3.2",
     "llama-cpp-python>=0.3.16",
-    "huggingface-hub>=1.5.0",
-    "instructor>=1.14.5",
     "fastmcp>=3.1.1",
+    "temporalio>=1.20.0",
 ]
 
 [project.optional-dependencies]
@@ -72,8 +68,14 @@ packages = ["src"]
 
 [tool.coverage.run]
 source = ["src"]
-# Unit-coverage budget toward --cov-fail-under=95: large repositories and low-ROI modules
-# omitted from the aggregate denominator (see docs/Develop/coverage-incremental-loop.md).
+# Files below are OUTSIDE the measured surface, so the gate says nothing about them.
+#
+# Measured surface: ~13,456 statements at ~90%.
+# Whole codebase:   ~20,712 statements at ~74%  (uv run pytest --cov-config=/dev/null).
+#
+# The list is being retired in tranches; security- and execution-adjacent modules were removed
+# first and are now measured. Do not add entries to buy headroom — write the test instead.
+# See docs/Develop/coverage-incremental-loop.md.
 omit = [
     "*/tests/*",
     "tests/*",
@@ -84,16 +86,13 @@ omit = [
     "*/domain/llm/utils/model_path.py",
     "*/domain/llm/adapters/openai_provider.py",
     "*/domain/ai_policy/repositories/ai_repository.py",
-    "*/domain/tenants/services/tenant_summary_service.py",
     "*/domain/ai_policy/services/ai_service.py",
     "*/domain/user_prompts/repositories/user_prompts_repository.py",
     "*/domain/onboarding/repositories/onboarding_repository.py",
     "*/domain/governance/services/memory_policy_service.py",
-    "*/domain/tools/services/tools_service.py",
     "*/domain/mcp_registry/repositories/mcp_registry_repository.py",
     "*/domain/governance/repositories/runtime_policy_repository.py",
     "*/domain/context/services/memory_extraction_processor.py",
-    "*/domain/governance/services/governance_policies_service.py",
     "*/domain/context/services/memory_writer.py",
     "*/domain/rag/services/rag_flow_snapshot_materialization.py",
     "*/domain/governance/repositories/billing_policy_repository.py",
@@ -108,21 +107,17 @@ omit = [
     "*/domain/governance/repositories/rate_limit_policy_repository.py",
     "*/domain/llm/adapters/moderation_openai_adapter.py",
     "*/domain/rag/adapters/openai_embedding_adapter.py",
-    "*/adapters/observability/langfuse_runtime_tracer.py",
     "*/domain/conversation/repositories/conversation_read_repository.py",
     "*/domain/conversation/repositories/tenant_mcp_credential_repository.py",
     "*/domain/governance/repositories/llm_provider_repository.py",
     "*/domain/mcp_registry/services/mcp_registry_service.py",
     "*/domain/tenants/repositories/tenant_summary_repository.py",
     "*/domain/context/services/scope_resolver.py",
-    "*/domain/rag/utils/rag_snapshot_hash.py",
     "*/domain/flows/repositories/flows_repository.py",
     "*/application/prompts/prompt_resolver.py",
     "*/domain/governance/repositories/llm_model_mapping_repository.py",
-    "*/domain/conversation/services/conversation_service.py",
     "*/domain/llm/adapters/moderation_slm_adapter.py",
     "*/domain/tools/repositories/tools_repository.py",
-    "*/domain/tools/services/tool_catalog_retriever.py",
     "*/rest.py",
     "*/domain/governance/services/rag_policy_service.py",
     "*/domain/llm/services/structured_output_schema_composer.py",
@@ -133,25 +128,19 @@ omit = [
     "*/domain/llm/adapters/slm_local_provider.py",
     "*/domain/llm/services/context_builder.py",
     "*/domain/rag/services/embedding_executor.py",
-    "*/domain/governance/services/rate_limit_service.py",
     "*/domain/llm/services/semantic_cache_service.py",
     "*/adapters/secrets/env_secret_resolver.py",
-    "*/domain/auth/repositories/inbound_service_key_repository.py",
     "*/domain/conversation/controllers/conversation_controller.py",
     "*/domain/governance/repositories/authoring_event_repository.py",
     "*/domain/llm/services/completion_budget_policy.py",
-    "*/domain/auth/services/auth_service.py",
     "*/domain/flows/services/flows_service.py",
     "*/domain/context/services/session_context.py",
-    "*/domain/conversation/services/sse_writer.py",
     "*/domain/llm/services/provider_factory.py",
     "*/domain/context/services/retrievers.py",
     "*/domain/user_prompts/services/user_prompts_service.py",
     "*/domain/conversation/services/stream_bridge.py",
     "*/domain/prompts/repositories/prompt_repository.py",
-    "*/domain/governance/controllers/governance_policies_controller.py",
     # Additional omit (greedy on residual) to reach ≥85% measured surface
-    "*/domain/llm/services/provider_selector.py",
     "*/domain/rag/controllers/rag_controller.py",
     "*/domain/human_sla/repositories/human_sla_repository.py",
     "*/infra/database/models/base.py",
@@ -159,29 +148,11 @@ omit = [
     "*/domain/agents/controllers/agents_controller.py",
     "*/domain/context/services/memory_retrieval.py",
     "*/domain/flows/controllers/flows_controller.py",
-    "*/domain/auth/controllers/auth_controller.py",
     "*/adapters/cache/redis_adapter.py",
     "*/domain/agents/services/agents_service.py",
-    "*/utils/auth.py",
     "*/domain/flows/services/flow_graph_draft_validator.py",
-    "*/domain/tools/services/tool_orchestrator.py",
-    "*/domain/tools/services/openapi_parser.py",
     "*/domain/ai_policy/controllers/ai_controller.py",
     "*/domain/rag/services/rag_service.py",
-    "*/domain/tenants/controllers/tenants_controller.py",
-    "*/adapters/jobs/arq_embedding_queue.py",
-    "*/domain/rag/services/embedding_adapter_factory.py",
-    "*/infra/database/dependencies.py",
-    "*/domain/governance/services/access_policy_service.py",
-    "*/services/execution_boundary.py",
-    "*/domain/tools/controllers/tools_controller.py",
-    "*/domain/onboarding/controllers/onboarding_controller.py",
-    "*/domain/llm/services/llm_executor.py",
-    "*/domain/rag/services/embedding_provider_selector.py",
-    "*/domain/governance/services/execution_limit_service.py",
-    "*/infra/http_tool_executor.py",
-    "*/domain/onboarding/services/onboarding_service.py",
-    "*/adapters/mcp/tenant_mcp_gateway.py",
 ]
 
 [tool.coverage.report]
@@ -214,25 +185,13 @@ addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
-    "--ignore=tests/unit/validation",
-    "--ignore=tests/unit/execution/test_langfuse_enforcement.py",
-    "--ignore=tests/unit/llm/test_provider_selector.py",
-    "--ignore=tests/unit/observability/test_langfuse_tracer.py",
-    "--ignore=tests/unit/pkg/domain/ai_policy/test_ai_service.py",
-    "--ignore=tests/unit/pkg/domain/context/test_memory_extraction_processor.py",
-    "--ignore=tests/unit/pkg/domain/context/test_memory_writer.py",
-    "--ignore=tests/unit/pkg/domain/tenants/test_tenant_operational_summary.py",
-    "--ignore=tests/unit/pkg/domain/tools/test_tool_catalog_retriever.py",
-    "--ignore=tests/unit/pkg/domain/tools/test_tools_service.py",
-    "--ignore=tests/unit/pkg/infra/test_planning9_models.py",
-    "--ignore=tests/unit/runtime/test_llm_node_executor_extra_system_context.py",
     "-m",
     "not validation_integration",
     "--cov=src",
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
-    "--cov-fail-under=95",
+    "--cov-fail-under=90",
 ]
 markers = [
     "unit: unit tests",
@@ -246,7 +205,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 namespace_packages = true
 explicit_package_bases = true
 disallow_untyped_defs = true
@@ -262,13 +221,10 @@ module = [
     "openai.*",
     "structlog.*",
     "sqlalchemy.*",
-    "langgraph.*",
-    "langchain.*",
     "redis.*",
     "httpx.*",
     "asyncpg.*",
     "alembic.*",
-    "langfuse.*",
     "opentelemetry.*",
     "decouple",
     "examples.*",
@@ -287,7 +243,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 src = ["src"]
 exclude = [

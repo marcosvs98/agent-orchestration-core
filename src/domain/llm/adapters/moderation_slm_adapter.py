@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class ModerationSLMAdapter:
     def __init__(
         self,
-        slm_provider: SLMLocalProvider | None,
+        slm_provider: SLMLocalProvider,
         prompt_text: str | None,
         output_schema: dict[str, object] | None,
         prompt_service: PromptService | None,
@@ -56,8 +56,6 @@ class ModerationSLMAdapter:
     async def moderate(
         self, text: str, config: dict[str, object] | None = None
     ) -> ModerationResult:
-        if self.slm_provider is None:
-            raise RuntimeError("slm_provider_unavailable")
         cfg = config or {}
         prompt_text = cfg.get("prompt_text")
         output_schema = cfg.get("output_schema")
@@ -115,3 +113,30 @@ class ModerationSLMAdapter:
                 "score": float(value.get("score", 0.0)),
             }
         return categories
+
+
+def build_moderation_slm_adapter(
+    *,
+    slm_provider: SLMLocalProvider | None,
+    prompt_text: str | None,
+    output_schema: dict[str, object] | None,
+    prompt_service: PromptService | None,
+    prompt_key: str,
+    model_alias: str,
+    slm_timeout_s: float,
+    temperature: float,
+    max_tokens: int,
+) -> ModerationSLMAdapter | None:
+    if slm_provider is None:
+        return None
+    return ModerationSLMAdapter(
+        slm_provider=slm_provider,
+        prompt_text=prompt_text,
+        output_schema=output_schema,
+        prompt_service=prompt_service,
+        prompt_key=prompt_key,
+        model_alias=model_alias,
+        slm_timeout_s=slm_timeout_s,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )

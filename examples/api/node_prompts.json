@@ -1,0 +1,382 @@
+[
+    {
+        "created_by": "examples",
+        "description": "Prompt for ContentModeration",
+        "node_type": "ContentModeration",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "flagged": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "flagged"
+            ],
+            "type": "object"
+        },
+        "template_text": "You are a moderation classifier.\nReturn JSON only.\n{\n \"flagged\": boolean\n}\n\nflagged = true if the text contains hate, harassment, sexual content,\nself harm, violence, or offensive language."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for ToolResolver",
+        "node_type": "ToolResolver",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "result": {
+                    "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                            "confidence": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                            },
+                            "intent_type": {
+                                "enum": [
+                                    "query",
+                                    "command",
+                                    "conversation"
+                                ],
+                                "type": "string"
+                            },
+                            "selected_tool": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "tool_config_id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "tool_config_id"
+                                ],
+                                "type": "object"
+                            }
+                        },
+                        "required": [
+                            "intent_type",
+                            "selected_tool",
+                            "confidence"
+                        ],
+                        "type": "object"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "result"
+            ],
+            "type": "object"
+        },
+        "template_text": "# Task\nSelect the best matching tool(s) for the user's intent. Return one entry per distinct intent.\n\n# Available tools\n{{ ctx.meta.available_tools | tojson }}\n\n# Intent-to-method mapping\n- When the user wants to CREATE, REGISTER, ADD, RECORD, or INSERT something new → prefer tools with method POST.\n- When the user wants to LIST, VIEW, SHOW, SEARCH, or CONSULT existing data → prefer tools with method GET.\n- Match the user's ACTION VERB to the correct HTTP method. Do NOT use a GET/list tool when the user clearly wants to create or register.\n\n# Constraints\n- selected_tool must reference a tool from available_tools by name and tool_config_id.\n- confidence between 0 and 1.\n- intent_type: \"query\" for GET tools, \"command\" for POST/PUT/PATCH/DELETE tools."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for ToolInputFiller",
+        "node_type": "ToolInputFiller",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "result": {
+                    "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                            "blocking": {
+                                "type": "boolean"
+                            },
+                            "depends_on": {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            "missing_fields": {
+                                "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "field": {
+                                            "type": "string"
+                                        },
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "field",
+                                        "reason"
+                                    ],
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            "operation_id": {
+                                "type": "string"
+                            },
+                            "params": {
+                                "additionalProperties": false,
+                                "properties": {},
+                                "required": [],
+                                "type": "object"
+                            },
+                            "status": {
+                                "enum": [
+                                    "ready",
+                                    "incomplete"
+                                ],
+                                "type": "string"
+                            },
+                            "tool_name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "operation_id",
+                            "tool_name",
+                            "status",
+                            "params",
+                            "missing_fields",
+                            "depends_on",
+                            "blocking"
+                        ],
+                        "type": "object"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "result"
+            ],
+            "type": "object"
+        },
+        "template_text": "# Task\nExtract parameters from user input to fill the request schema.\nYou can use context from the previous conversation to complete slots.\n\n# Selected Tools\n{{ ctx.derived.selected_tools | tojson }}\n\n# Constraints\n- Use only names that appear in the request schema for `params` and for `missing_fields[].field`.\n- When the user’s wording clearly matches a field, fill it in the format the schema expects; do not add values or entities they did not convey.\n- `ready` when every required field in the schema is satisfied; otherwise `incomplete` and list only what is still missing.\n"
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for QueryClarifier",
+        "node_type": "QueryClarifier",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "result": {
+                    "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                            "missing_fields": {
+                                "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "field": {
+                                            "type": "string"
+                                        },
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "field",
+                                        "reason"
+                                    ],
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            "operation_id": {
+                                "type": "string"
+                            },
+                            "tool_name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "operation_id",
+                            "tool_name",
+                            "missing_fields"
+                        ],
+                        "type": "object"
+                    },
+                    "type": "array"
+                },
+                "system_output": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "system_output",
+                "result"
+            ],
+            "type": "object"
+        },
+        "template_text": "# Task\nAsk the user for missing required information.\n\n# Intent\n{{ ctx.input.input_payload.intent | default('') }}\n\n# Missing Fields\n{{ ctx.derived.missing_fields | tojson }}\n\n# Constraints\n- Be concise and polite.\n- Ask only for missing fields.\n- Do not reference schemas or system internals.\n"
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for ToolExecutor",
+        "node_type": "ToolExecutor",
+        "output_schema": null,
+        "template_text": "Deterministic node. The node record requires a prompt reference; this text is never sent to an LLM."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for ToolErrorHandlerNode",
+        "node_type": "ToolErrorHandlerNode",
+        "output_schema": null,
+        "template_text": "Deterministic node. The node record requires a prompt reference; this text is never sent to an LLM."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for HumanFallback",
+        "node_type": "HumanFallback",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "new_priority": {
+                    "type": "string"
+                },
+                "system_output": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "system_output",
+                "new_priority"
+            ],
+            "type": "object"
+        },
+        "template_text": "Classify the user message.\n\nhigh = system error blocking usage\nmedium = insults, aggression, anger, legal threats\nlow = frustration, cancellation or normal question\n\nNever downgrade priority.\n\nReply in English using this template:\n\"Your ticket is <ticket> and it will be resolved within <time>.\"\n\ntime:\nhigh = 4 hours\nmedium = 8 hours\nlow = 24 hours\n\nReturn only JSON:\n\n{\n  \"system_output\": \"...\",\n  \"new_priority\": \"high | medium | low\"\n}"
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for MemoryCommitNode",
+        "node_type": "MemoryCommitNode",
+        "output_schema": null,
+        "template_text": "Deterministic node. The node record requires a prompt reference; this text is never sent to an LLM."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for ResponseBuilder",
+        "node_type": "ResponseBuilder",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "operations_summary": {
+                    "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                            "operation_id": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "operation_id",
+                            "status"
+                        ],
+                        "type": "object"
+                    },
+                    "type": "array"
+                },
+                "system_output": {
+                    "type": "string"
+                },
+                "turn_status": {
+                    "enum": [
+                        "completed",
+                        "partial_success",
+                        "clarification_required",
+                        "escalated",
+                        "failed"
+                    ],
+                    "type": "string"
+                }
+            },
+            "required": [
+                "system_output",
+                "operations_summary",
+                "turn_status"
+            ],
+            "type": "object"
+        },
+        "template_text": "# Task\n{% if ctx.tool_response %}\nIf tool_response is present and non-empty: format it as a natural language message for the user in one concise sentence.\n{% endif %}\nIf tool_response is empty or absent: the user asked an informative question (e.g. how to do something). Answer using the retrieved context and user_input; be short and helpful.\nYou can use context from the previous conversation to complete slots.\n\n{% if ctx.input.input_payload.original_intent %}\n# Intent\n{{ ctx.input.input_payload.original_intent }}\n{% endif %}\n\n{% if ctx.tool_response %}\n# Tool Response\n{{ ctx.tool_response | tojson }}\n{% endif %}\n\n# Output Guidelines\n{% if ctx.tool_response %}\n- When tool_response is present: generate only one concise sentence; use product-oriented language; do not list fields or bullets; if success is true, confirm the expense was registered.\n{% endif %}\n- When tool_response is empty: answer the user question using the provided context; be concise.\n- Do not mention status codes, endpoints, requests, or payloads."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for IntentClassifier",
+        "node_type": "IntentClassifier",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "overall_confidence": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                },
+                "result": {
+                    "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                            "confidence": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                            },
+                            "intent_type": {
+                                "enum": [
+                                    "query",
+                                    "command",
+                                    "conversation",
+                                    "update_user_preferences"
+                                ],
+                                "type": "string"
+                            },
+                            "priority": {
+                                "minimum": 1,
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "intent_type",
+                            "confidence",
+                            "priority"
+                        ],
+                        "type": "object"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "result",
+                "overall_confidence"
+            ],
+            "type": "object"
+        },
+        "template_text": "# Task\nClassify all user intents types and confidence."
+    },
+    {
+        "created_by": "examples",
+        "description": "Prompt for ContextSummarizer",
+        "node_type": "ContextSummarizer",
+        "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+                "prepared_memory_data": {
+                    "type": "object"
+                },
+                "reason_code": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "prepared_memory_data"
+            ],
+            "type": "object"
+        },
+        "template_text": "# Task\nCompress the raw ToolInputFiller-related payload for durable user memory.\n\n# Raw payload (JSON)\n{{ ctx.input.input_payload.memory_payload_raw | tojson }}\n\n# Rules\n- Return only valid JSON matching the output schema.\n- Preserve semantically important fields; drop noise.\n- Do not add facts that are not supported by the raw payload."
+    }
+]

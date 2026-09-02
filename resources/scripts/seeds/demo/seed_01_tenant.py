@@ -31,19 +31,19 @@ async def seed_tenant() -> None:
         if existing is None:
             tenant = Tenant(
                 tenant_id=TENANT_DEMO_ID,
-                name="Uora",
-                description="Agente financeiro conversacional via WhatsApp: controle financeiro pessoal com integração bancária (Open Finance), categorização de gastos, relatórios, metas financeiras e compromissos.",
+                name="Demo Tenant",
+                description="Conversational financial agent over WhatsApp: personal finance management with banking integration (Open Finance), spending categorization, reports, financial goals, and commitments.",
                 is_active=True,
-                timezone="America/Sao_Paulo",
-                currency="BRL",
-                language="pt-BR",
+                timezone="UTC",
+                currency="USD",
+                language="en_US",
             )
             session.add(tenant)
 
         # Alembic migration may skip this row (tenant did not exist yet). App-platform
         # calls /auth/tenant-token with X-Inbound-Service-Key == AOC_API_KEY.
         plain = os.getenv(
-            "UORA_DEMO_INBOUND_SERVICE_KEY",
+            "DEMO_INBOUND_SERVICE_KEY",
             "aoc-dev-inbound-service-key-tenant-100-v1",
         ).strip()
         digest = hashlib.sha256(plain.encode("utf-8")).hexdigest()

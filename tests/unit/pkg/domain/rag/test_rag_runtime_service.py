@@ -9,7 +9,6 @@ from domain.rag.repositories.rag_repository import RagRepository
 from domain.rag.services.embedding_executor import EmbeddingExecutor
 from domain.rag.schemas.rag import (
     DEFAULT_EMBEDDING_DIMENSION,
-    RagConfigOptions,
     RagDocumentCreate,
 )
 from domain.rag.services.rag_runtime_service import RagRuntimeService
@@ -53,15 +52,15 @@ class TestRagRuntimeServiceEmbeddingDimension:
     def embedding_executor(self) -> MagicMock:
         ex = MagicMock(spec=EmbeddingExecutor)
         ex.execute = AsyncMock(return_value=[0.1] * DEFAULT_EMBEDDING_DIMENSION)
-        ex.execute_batch = AsyncMock(
-            return_value=[[0.1] * DEFAULT_EMBEDDING_DIMENSION]
-        )
+        ex.execute_batch = AsyncMock(return_value=[[0.1] * DEFAULT_EMBEDDING_DIMENSION])
         return ex
 
     @pytest.fixture
     def tracer(self) -> MagicMock:
         tracer = MagicMock()
-        tracer.observe = MagicMock(return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock()))
+        tracer.observe = MagicMock(
+            return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock())
+        )
         return tracer
 
     @pytest.fixture
@@ -212,12 +211,10 @@ class TestRagRuntimeServiceEmbeddingDimension:
             side_effect=[MagicMock(), Exception("boom"), MagicMock()]
         )
 
-        succeeded_count, failed_count = (
-            await rag_runtime_service.ingest_documents_batch(
-                tenant_id=tenant_id,
-                rag_config_id=rag_config_id,
-                documents=documents,
-            )
+        succeeded_count, failed_count = await rag_runtime_service.ingest_documents_batch(
+            tenant_id=tenant_id,
+            rag_config_id=rag_config_id,
+            documents=documents,
         )
 
         assert succeeded_count == 2
@@ -248,9 +245,7 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
     def embedding_executor(self) -> MagicMock:
         ex = MagicMock(spec=EmbeddingExecutor)
         ex.execute = AsyncMock(return_value=[0.1] * DEFAULT_EMBEDDING_DIMENSION)
-        ex.execute_batch = AsyncMock(
-            return_value=[[0.1] * DEFAULT_EMBEDDING_DIMENSION]
-        )
+        ex.execute_batch = AsyncMock(return_value=[[0.1] * DEFAULT_EMBEDDING_DIMENSION])
         return ex
 
     @pytest.fixture
@@ -533,10 +528,7 @@ class TestRagRuntimeServiceEmbeddingModelCatalog:
                 rag_config_id=rag_config_id,
                 user_input="q",
             )
-        assert (
-            excinfo.value.message
-            == "rag_retrieval_embedding_dimension_vector_store_mismatch"
-        )
+        assert excinfo.value.message == "rag_retrieval_embedding_dimension_vector_store_mismatch"
 
 
 class TestRagRuntimeServiceUserMemoryVectorDocumentCap:
@@ -559,9 +551,7 @@ class TestRagRuntimeServiceUserMemoryVectorDocumentCap:
     def tracer(self) -> MagicMock:
         tracer = MagicMock()
         tracer.observe = MagicMock(
-            return_value=MagicMock(
-                __enter__=MagicMock(), __exit__=MagicMock()
-            )
+            return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock())
         )
         return tracer
 

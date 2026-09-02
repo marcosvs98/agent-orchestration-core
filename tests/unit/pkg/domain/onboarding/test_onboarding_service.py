@@ -8,7 +8,6 @@ from domain.onboarding.repositories.onboarding_repository import OnboardingRepos
 from domain.onboarding.schemas.onboarding import (
     OnboardingCreate,
     OnboardingRunCreate,
-    StepRunAdvance,
 )
 from domain.onboarding.services.onboarding_service import OnboardingService
 from exceptions.service_exceptions import (
@@ -35,9 +34,7 @@ class TestOnboardingService:
 
     @pytest.fixture
     def onboarding_service(self, repository, authoring_events):
-        return OnboardingService(
-            repository=repository, authoring_events=authoring_events
-        )
+        return OnboardingService(repository=repository, authoring_events=authoring_events)
 
     @pytest.mark.asyncio
     async def test_list_onboardings_returns_empty_list_when_no_results(
@@ -49,9 +46,7 @@ class TestOnboardingService:
         result = await onboarding_service.list_onboardings(tenant_id=tenant_id, limit=200)
 
         assert result == []
-        repository.list_onboardings.assert_called_once_with(
-            tenant_id=tenant_id, limit=200
-        )
+        repository.list_onboardings.assert_called_once_with(tenant_id=tenant_id, limit=200)
 
     @pytest.mark.asyncio
     async def test_list_onboardings_returns_onboardings_filtered_by_tenant(
@@ -60,9 +55,7 @@ class TestOnboardingService:
         tenant_id = uuid4()
         onboarding_id = uuid4()
         mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id,
-            name="Test Onboarding",
-            created_by="user-123"
+            onboarding_id=onboarding_id, name="Test Onboarding", created_by="user-123"
         )
         repository.list_onboardings = AsyncMock(return_value=[mock_onboarding])
 
@@ -72,9 +65,7 @@ class TestOnboardingService:
         assert result[0].id == onboarding_id
         assert result[0].name == "Test Onboarding"
         assert result[0].created_by == "user-123"
-        repository.list_onboardings.assert_called_once_with(
-            tenant_id=tenant_id, limit=200
-        )
+        repository.list_onboardings.assert_called_once_with(tenant_id=tenant_id, limit=200)
 
     @pytest.mark.asyncio
     async def test_create_onboarding_creates_onboarding_with_success(
@@ -86,9 +77,7 @@ class TestOnboardingService:
         principal_id = "user-123"
 
         mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id,
-            name="New Onboarding",
-            created_by=principal_id
+            onboarding_id=onboarding_id, name="New Onboarding", created_by=principal_id
         )
         repository.create_onboarding = AsyncMock(return_value=mock_onboarding)
 
@@ -119,9 +108,7 @@ class TestOnboardingService:
     ):
         tenant_id = uuid4()
         onboarding_id = uuid4()
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         repository.get_onboarding = AsyncMock(return_value=mock_onboarding)
         repository.list_onboarding_versions = AsyncMock(return_value=[])
 
@@ -153,9 +140,7 @@ class TestOnboardingService:
         tenant_id = uuid4()
         other_tenant_id = uuid4()
         onboarding_id = uuid4()
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=other_tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=other_tenant_id)
         repository.get_onboarding = AsyncMock(return_value=mock_onboarding)
 
         with pytest.raises(NotFoundServiceException, match="onboarding_not_found"):
@@ -177,12 +162,8 @@ class TestOnboardingService:
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         repository.get_onboarding_version = AsyncMock(return_value=mock_version)
         repository.get_onboarding = AsyncMock(return_value=mock_onboarding)
         repository.create_onboarding_run = AsyncMock(return_value=mock_run)
@@ -216,15 +197,11 @@ class TestOnboardingService:
         version_id = uuid4()
         run_id = uuid4()
 
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         repository.get_onboarding_run = AsyncMock(return_value=mock_run)
         repository.get_onboarding_version = AsyncMock(return_value=mock_version)
         repository.get_onboarding = AsyncMock(return_value=mock_onboarding)
@@ -245,15 +222,11 @@ class TestOnboardingService:
         version_id = uuid4()
         run_id = uuid4()
 
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         repository.get_onboarding_run = AsyncMock(return_value=mock_run)
         repository.get_onboarding_version = AsyncMock(return_value=mock_version)
         repository.get_onboarding = AsyncMock(return_value=mock_onboarding)
@@ -274,15 +247,11 @@ class TestOnboardingService:
         version_id = uuid4()
         run_id = uuid4()
 
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         repository.get_onboarding_run = AsyncMock(return_value=mock_run)
         repository.get_onboarding_version = AsyncMock(return_value=mock_version)
         repository.get_onboarding = AsyncMock(return_value=mock_onboarding)
@@ -303,15 +272,11 @@ class TestOnboardingService:
         version_id = uuid4()
         run_id = uuid4()
 
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         mock_step1 = SimpleNamespace(status="COMPLETED")
         mock_step2 = SimpleNamespace(status="COMPLETED")
         repository.get_onboarding_run = AsyncMock(return_value=mock_run)
@@ -338,15 +303,11 @@ class TestOnboardingService:
         input_payload = {"key": "value"}
         principal_id = "user-123"
 
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         mock_step_run = SimpleNamespace(
             step_run_id=step_run_id,
             onboarding_run_id=run_id,
@@ -402,15 +363,11 @@ class TestOnboardingService:
         step_run_id = uuid4()
         input_payload = {"key": "value"}
 
-        mock_run = SimpleNamespace(
-            onboarding_run_id=run_id, onboarding_version_id=version_id
-        )
+        mock_run = SimpleNamespace(onboarding_run_id=run_id, onboarding_version_id=version_id)
         mock_version = SimpleNamespace(
             onboarding_version_id=version_id, onboarding_id=onboarding_id
         )
-        mock_onboarding = SimpleNamespace(
-            onboarding_id=onboarding_id, tenant_id=tenant_id
-        )
+        mock_onboarding = SimpleNamespace(onboarding_id=onboarding_id, tenant_id=tenant_id)
         mock_step_run = SimpleNamespace(
             step_run_id=step_run_id,
             onboarding_run_id=run_id,

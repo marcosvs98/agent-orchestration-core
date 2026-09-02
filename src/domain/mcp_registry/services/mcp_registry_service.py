@@ -135,9 +135,7 @@ class McpRegistryService:
             user_prompt_ids,
         ) = await self.repository.list_server_binding_ids(mcp_server_id=mcp_server_id)
         base = self.public_base_url.rstrip("/")
-        ob = outbound_authorization_secret_ref_from_server_metadata(
-            getattr(server, "metadata_col", None)
-        )
+        ob = outbound_authorization_secret_ref_from_server_metadata(server.server_metadata)
         return McpServerDetail(
             mcp_server_id=server.mcp_server_id,
             name=server.name,
@@ -158,9 +156,7 @@ class McpRegistryService:
         mcp_server_id: UUID,
         body: McpServerPatchOutboundAuthRequest,
     ) -> McpServerDetail:
-        ref = _normalize_outbound_authorization_secret_ref(
-            body.outbound_authorization_secret_ref
-        )
+        ref = _normalize_outbound_authorization_secret_ref(body.outbound_authorization_secret_ref)
         ok = await self.repository.patch_mcp_server_outbound_authorization_secret_ref(
             tenant_id=tenant_id,
             mcp_server_id=mcp_server_id,

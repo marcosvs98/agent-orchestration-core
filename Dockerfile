@@ -1,4 +1,4 @@
-FROM python:3.13
+FROM python:3.14
 
 LABEL maintainer="agent-orchestration-core"
 #LABEL version="1.0.0"
@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+ENV PATH="/app/.venv/bin:/root/.local/bin:$PATH"
+ENV UV_PYTHON_DOWNLOADS=never
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 
 RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser appuser \
     && mkdir -p /home/appuser \
@@ -21,7 +23,7 @@ ENV HOME=/home/appuser
 WORKDIR /app
 
 # Install dependencies
-COPY --chown=appuser:appuser ./pyproject.toml ./install.sh ./
+COPY --chown=appuser:appuser ./pyproject.toml ./uv.lock ./install.sh ./
 RUN uv --version && \
     chmod +x install.sh && \
     ./install.sh

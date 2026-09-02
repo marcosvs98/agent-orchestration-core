@@ -81,9 +81,21 @@ class MemoryCommitNodeConfigSchema(BaseModel):
     literal_overlay: Dict[str, Any] | None = None
 
 
+class ToolSchedulingConfigSchema(BaseModel):
+    mode: Literal["immediate", "scheduled"] = "immediate"
+    delay_seconds: int | None = Field(default=None, ge=0)
+    run_at_param: str | None = None
+    tool_names: List[str] | None = None
+
+
+class ToolExecutorNodeConfigSchema(BaseModel):
+    scheduling: ToolSchedulingConfigSchema | Dict[str, Any] | None = None
+
+
 class ContextSummarizerNodeConfigSchema(BaseModel):
     source_node_id: str
     min_payload_bytes_to_run: int = Field(default=1, ge=0)
+    replace_source_output: bool = False
     llm: LlmNodeConfigSchema | Dict[str, Any] | None = None
 
 
@@ -104,6 +116,7 @@ def validate_node_config(node_type: str, config: Dict[str, Any] | None) -> None:
         "ContentModeration": ModerationNodeConfigSchema,
         "MemoryCommitNode": MemoryCommitNodeConfigSchema,
         "ContextSummarizer": ContextSummarizerNodeConfigSchema,
+        "ToolExecutor": ToolExecutorNodeConfigSchema,
     }
     schema_class = type_to_schema.get(node_type)
     if schema_class is not None:

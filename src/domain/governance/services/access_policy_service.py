@@ -31,7 +31,10 @@ class AccessPolicyService(AccessPolicyServicePort):
                 "principal_type": principal_type,
                 "principal_id": principal_id,
             },
-            metadata={"guardrail_type": "access_policy"},
+            metadata={
+                "guardrail_type": "access_policy",
+                "tenant_id": str(tenant_id),
+            },
         ) as guardrail_handle:
             policy = await self.repository.get_default_policy_for_tenant(tenant_id)
 

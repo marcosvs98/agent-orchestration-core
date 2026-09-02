@@ -177,6 +177,7 @@ class GovernancePoliciesService:
     async def activate_runtime_policy(
         self,
         *,
+        tenant_id: UUID,
         runtime_policy_id: UUID,
         principal_id: str,
         change_request: ChangeRequest,
@@ -184,7 +185,7 @@ class GovernancePoliciesService:
         if not change_request.justification.strip():
             raise DomainValidationException(message="justification_required")
         policy = await self.runtime_repository.get_policy(runtime_policy_id)
-        if policy is None:
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="runtime_policy_not_found")
         RuntimePolicyDefinition.model_validate(policy.policy_definition or {})
         active = await self.runtime_repository.activate_policy(
@@ -236,10 +237,10 @@ class GovernancePoliciesService:
         )
 
     async def create_access_policy_version(
-        self, *, access_policy_id: UUID, payload: AccessPolicyVersionCreate
+        self, *, tenant_id: UUID, access_policy_id: UUID, payload: AccessPolicyVersionCreate
     ) -> AccessPolicyVersionResponse:
         policy = await self.access_repository.get_policy(access_policy_id=access_policy_id)
-        if policy is None:
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="access_policy_not_found")
         rules_dict = payload.rules.model_dump(mode="json", exclude_none=True)
         created = await self.access_repository.create_version(
@@ -261,12 +262,15 @@ class GovernancePoliciesService:
         )
 
     async def publish_access_policy_version(
-        self, *, access_policy_version_id: UUID
+        self, *, tenant_id: UUID, access_policy_version_id: UUID
     ) -> AccessPolicyVersionResponse:
         version = await self.access_repository.get_version(
             access_policy_version_id=access_policy_version_id
         )
         if version is None:
+            raise NotFoundServiceException(message="access_policy_version_not_found")
+        policy = await self.access_repository.get_policy(access_policy_id=version.access_policy_id)
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="access_policy_version_not_found")
         await self.access_repository.set_version_status(
             access_policy_version_id=access_policy_version_id, status="PUBLISHED"
@@ -325,12 +329,16 @@ class GovernancePoliciesService:
         )
 
     async def create_rate_limit_policy_version(
-        self, *, rate_limit_policy_id: UUID, payload: RateLimitPolicyVersionCreate
+        self,
+        *,
+        tenant_id: UUID,
+        rate_limit_policy_id: UUID,
+        payload: RateLimitPolicyVersionCreate,
     ) -> RateLimitPolicyVersionResponse:
         policy = await self.rate_limit_repository.get_policy(
             rate_limit_policy_id=rate_limit_policy_id
         )
-        if policy is None:
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rate_limit_policy_not_found")
         created = await self.rate_limit_repository.create_version(
             rate_limit_policy_id=rate_limit_policy_id,
@@ -357,12 +365,17 @@ class GovernancePoliciesService:
         )
 
     async def publish_rate_limit_policy_version(
-        self, *, rate_limit_policy_version_id: UUID
+        self, *, tenant_id: UUID, rate_limit_policy_version_id: UUID
     ) -> RateLimitPolicyVersionResponse:
         version = await self.rate_limit_repository.get_version(
             rate_limit_policy_version_id=rate_limit_policy_version_id
         )
         if version is None:
+            raise NotFoundServiceException(message="rate_limit_policy_version_not_found")
+        policy = await self.rate_limit_repository.get_policy(
+            rate_limit_policy_id=version.rate_limit_policy_id
+        )
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rate_limit_policy_version_not_found")
         await self.rate_limit_repository.set_version_status(
             rate_limit_policy_version_id=rate_limit_policy_version_id,
@@ -423,10 +436,10 @@ class GovernancePoliciesService:
         )
 
     async def create_billing_policy_version(
-        self, *, billing_policy_id: UUID, payload: BillingPolicyVersionCreate
+        self, *, tenant_id: UUID, billing_policy_id: UUID, payload: BillingPolicyVersionCreate
     ) -> BillingPolicyVersionResponse:
         policy = await self.billing_repository.get_policy(billing_policy_id=billing_policy_id)
-        if policy is None:
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="billing_policy_not_found")
         created = await self.billing_repository.create_version(
             billing_policy_id=billing_policy_id,
@@ -447,12 +460,17 @@ class GovernancePoliciesService:
         )
 
     async def publish_billing_policy_version(
-        self, *, billing_policy_version_id: UUID
+        self, *, tenant_id: UUID, billing_policy_version_id: UUID
     ) -> BillingPolicyVersionResponse:
         version = await self.billing_repository.get_version(
             billing_policy_version_id=billing_policy_version_id
         )
         if version is None:
+            raise NotFoundServiceException(message="billing_policy_version_not_found")
+        policy = await self.billing_repository.get_policy(
+            billing_policy_id=version.billing_policy_id
+        )
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="billing_policy_version_not_found")
         await self.billing_repository.set_version_status(
             billing_policy_version_id=billing_policy_version_id,
@@ -487,6 +505,11 @@ class GovernancePoliciesService:
             billing_policy_version_id=billing_policy_version_id
         )
         if version is None:
+            raise NotFoundServiceException(message="billing_policy_version_not_found")
+        policy = await self.billing_repository.get_policy(
+            billing_policy_id=version.billing_policy_id
+        )
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="billing_policy_version_not_found")
         await self.billing_repository.set_active_version(
             tenant_id=tenant_id,
@@ -541,10 +564,10 @@ class GovernancePoliciesService:
         )
 
     async def create_memory_policy_version(
-        self, *, memory_policy_id: UUID, payload: MemoryPolicyVersionCreate
+        self, *, tenant_id: UUID, memory_policy_id: UUID, payload: MemoryPolicyVersionCreate
     ) -> MemoryPolicyVersionResponse:
         policy = await self.memory_repository.get_policy(memory_policy_id=memory_policy_id)
-        if policy is None:
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="memory_policy_not_found")
         definition = MemoryPolicyDefinition.model_validate(
             payload.definition.model_dump(mode="json")
@@ -571,12 +594,15 @@ class GovernancePoliciesService:
         )
 
     async def publish_memory_policy_version(
-        self, *, memory_policy_version_id: UUID
+        self, *, tenant_id: UUID, memory_policy_version_id: UUID
     ) -> MemoryPolicyVersionResponse:
         version = await self.memory_repository.get_version(
             memory_policy_version_id=memory_policy_version_id
         )
         if version is None:
+            raise NotFoundServiceException(message="memory_policy_version_not_found")
+        policy = await self.memory_repository.get_policy(memory_policy_id=version.memory_policy_id)
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="memory_policy_version_not_found")
         await self.memory_repository.set_version_status(
             memory_policy_version_id=memory_policy_version_id,
@@ -617,6 +643,9 @@ class GovernancePoliciesService:
             memory_policy_version_id=memory_policy_version_id
         )
         if version is None:
+            raise NotFoundServiceException(message="memory_policy_version_not_found")
+        policy = await self.memory_repository.get_policy(memory_policy_id=version.memory_policy_id)
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="memory_policy_version_not_found")
         await self.memory_repository.set_active_version(
             tenant_id=tenant_id,
@@ -670,10 +699,10 @@ class GovernancePoliciesService:
         )
 
     async def create_rag_policy_version(
-        self, *, rag_policy_id: UUID, payload: RagPolicyVersionCreate
+        self, *, tenant_id: UUID, rag_policy_id: UUID, payload: RagPolicyVersionCreate
     ) -> RagPolicyVersionResponse:
         policy = await self.rag_repository.get_policy(rag_policy_id=rag_policy_id)
-        if policy is None:
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rag_policy_not_found")
         definition = RagPolicyDefinition.model_validate(payload.definition.model_dump(mode="json"))
         created = await self.rag_repository.create_version(
@@ -695,10 +724,13 @@ class GovernancePoliciesService:
         )
 
     async def publish_rag_policy_version(
-        self, *, rag_policy_version_id: UUID
+        self, *, tenant_id: UUID, rag_policy_version_id: UUID
     ) -> RagPolicyVersionResponse:
         version = await self.rag_repository.get_version(rag_policy_version_id=rag_policy_version_id)
         if version is None:
+            raise NotFoundServiceException(message="rag_policy_version_not_found")
+        policy = await self.rag_repository.get_policy(rag_policy_id=version.rag_policy_id)
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rag_policy_version_not_found")
         await self.rag_repository.set_version_status(
             rag_policy_version_id=rag_policy_version_id,
@@ -730,6 +762,9 @@ class GovernancePoliciesService:
             raise DomainValidationException(message="justification_required")
         version = await self.rag_repository.get_version(rag_policy_version_id=rag_policy_version_id)
         if version is None:
+            raise NotFoundServiceException(message="rag_policy_version_not_found")
+        policy = await self.rag_repository.get_policy(rag_policy_id=version.rag_policy_id)
+        if policy is None or policy.tenant_id != tenant_id:
             raise NotFoundServiceException(message="rag_policy_version_not_found")
         await self.rag_repository.set_active_version(
             tenant_id=tenant_id,

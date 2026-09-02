@@ -29,6 +29,7 @@ class ExecutionServicePort(ABC):
         request_id: str | None = None,
         trace_id: str | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        wait: bool = False,
     ) -> FlowRun:
         raise NotImplementedServiceException()
 
@@ -66,6 +67,7 @@ class ExecutionServicePort(ABC):
     async def list_execution_events(
         self,
         *,
+        tenant_id: UUID,
         flow_run_id: UUID | None = None,
         correlation_id: UUID | None = None,
         limit: int = 200,

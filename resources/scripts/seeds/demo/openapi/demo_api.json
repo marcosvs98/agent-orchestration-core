@@ -1,87 +1,130 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.0.3",
   "info": {
-    "title": "Expense Management API",
-    "version": "1.0.0"
+    "title": "Demo Expenses API",
+    "version": "1.0.0",
+    "description": "Small sample domain used by the demo tenant to exercise tool selection, slot filling and tool execution."
   },
+  "servers": [
+    { "url": "http://demo-api:8088" }
+  ],
   "paths": {
-    "/createExpense": {
+    "/expenses": {
       "post": {
-        "summary": "Cria uma despesa",
-        "operationId": "createExpense",
+        "operationId": "create_expense",
+        "summary": "Record a new expense entry.",
+        "description": "Creates an expense record from an amount and a short description. Optional fields capture the currency, category, date, payment method and the account the money came from.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": ["amount", "description"],
                 "properties": {
                   "amount": {
                     "type": "number",
-                    "example": 16099.51
-                  },
-                  "currency": {
-                    "type": "string",
-                    "example": "BRL"
-                  },
-                  "bank_name": {
-                    "type": "string",
-                    "example": "Itaú Unibanco"
-                  },
-                  "account_alias": {
-                    "type": "string",
-                    "example": "PF"
+                    "description": "How much was spent, as a positive number."
                   },
                   "description": {
                     "type": "string",
-                    "example": "Fatura Cartão Itaú"
+                    "description": "Short free text describing what the money was spent on."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "ISO 4217 currency code, for example BRL, EUR or USD."
                   },
                   "category": {
                     "type": "string",
-                    "example": "Pagamento de Fatura"
+                    "description": "Spending category, for example food, transport or health."
+                  },
+                  "occurred_on": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Date of the expense as YYYY-MM-DD."
                   },
                   "payment_method": {
                     "type": "string",
-                    "example": "Débito Automático"
+                    "description": "How it was paid, for example PIX, card or cash."
                   },
-                  "date": {
+                  "account_label": {
                     "type": "string",
-                    "format": "date-time",
-                    "example": "2025-12-05T10:15:22Z"
-                  },
-                  "notes": {
-                    "type": "string",
-                    "example": "Pagamento Fatura"
-                  },
-                  "tags": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "example": ["Pagamento de Fatura"]
+                    "description": "Label of the account used, for example 'Santander PF'."
                   }
-                },
-                "required": ["amount", "currency", "bank_name", "account_alias", "description", "category", "payment_method", "date"]
+                }
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Despesa criada com sucesso",
+          "201": {
+            "description": "Expense recorded.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "expense_id": {
-                      "type": "string",
-                      "example": "exp_123456"
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "created"
-                    }
+                    "expense_id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "amount": { "type": "number" },
+                    "currency": { "type": "string" },
+                    "description": { "type": "string" },
+                    "category": { "type": "string" },
+                    "occurred_on": { "type": "string", "format": "date" },
+                    "payment_method": { "type": "string" },
+                    "account_label": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "list_expenses",
+        "summary": "List recorded expenses.",
+        "description": "Returns previously recorded expenses, optionally narrowed by category and date range.",
+        "parameters": [
+          { "name": "category", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Only return expenses in this category." },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Maximum number of expenses to return." }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded expenses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": { "type": "array", "items": { "type": "object" } },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expenses/summary": {
+      "get": {
+        "operationId": "get_expense_summary",
+        "summary": "Summarise expenses grouped by category.",
+        "description": "Returns spending totals grouped by category or by payment method.",
+        "parameters": [
+          { "name": "group_by", "in": "query", "required": false, "schema": { "type": "string", "enum": ["category", "payment_method"] }, "description": "How to group the totals." }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spending totals.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "group_by": { "type": "string" },
+                    "currency": { "type": "string" },
+                    "totals": { "type": "array", "items": { "type": "object" } }
                   }
                 }
               }

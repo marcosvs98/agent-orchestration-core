@@ -59,9 +59,7 @@ def test_build_merged_request_schema_path_query_and_json_body_merge() -> None:
         ],
         "requestBody": {
             "content": {
-                "application/json": {
-                    "schema": {"$ref": "#/components/schemas/CreatePayload"}
-                }
+                "application/json": {"schema": {"$ref": "#/components/schemas/CreatePayload"}}
             }
         },
     }

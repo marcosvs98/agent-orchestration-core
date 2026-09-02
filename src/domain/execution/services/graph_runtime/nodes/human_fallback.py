@@ -6,6 +6,8 @@ from typing import Any, Dict
 from domain.execution.ports.runtime_tracer import RuntimeTracerPort
 from domain.execution.services.graph_runtime.nodes._llm_base import LLMNodeExecutor
 from domain.execution.services.graph_runtime.types import (
+    FALLBACK_REASON_METADATA_KEY,
+    FALLBACK_SOURCE_NODE_METADATA_KEY,
     ExecutionContext,
     NodeExecutionStatus,
     NodeResult,
@@ -54,8 +56,10 @@ class HumanFallback(LLMNodeExecutor):
     ) -> NodeResult:
         if self.human_sla_service is not None and context.current_node_run_id is not None:
             metadata = context.metadata or {}
-            node = metadata.get("fallback_source_node") or metadata.get("current_node_type", "")
-            raw_reason = metadata.get("fallback_reason")
+            node = metadata.get(FALLBACK_SOURCE_NODE_METADATA_KEY) or metadata.get(
+                "current_node_type", ""
+            )
+            raw_reason = metadata.get(FALLBACK_REASON_METADATA_KEY)
             if isinstance(raw_reason, SLAFallbackReason):
                 fallback_reason = raw_reason
             elif isinstance(raw_reason, str) and raw_reason in (e.value for e in SLAFallbackReason):

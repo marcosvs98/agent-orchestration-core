@@ -36,6 +36,53 @@ services:
       timeout: 3s
       retries: 5
 
+  temporal:
+    image: temporalio/temporal:latest
+    container_name: router-temporal-dev
+    restart: unless-stopped
+    command:
+      - server
+      - start-dev
+      - --ip
+      - 0.0.0.0
+      - --db-filename
+      - /data/temporal.db
+      - --ui-port
+      - "8233"
+    volumes:
+      - ./docker-volumes/temporal:/data
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    networks:
+      - network-dev
+    healthcheck:
+      test: [ "CMD", "temporal", "workflow", "list", "--address", "127.0.0.1:7233" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  demo-api:
+    image: python:3.13-slim
+    container_name: router-demo-api-dev
+    restart: unless-stopped
+    working_dir: /app
+    command: >-
+      sh -c "pip install --no-cache-dir 'fastapi>=0.115' 'uvicorn>=0.32' &&
+      uvicorn main:app --host 0.0.0.0 --port 8088"
+    volumes:
+      - ./resources/demo-api:/app:ro
+    ports:
+      - "8088:8088"
+    networks:
+      - network-dev
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8088/health').status==200 else 1)\"" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
   app:
     build:
       context: .
@@ -53,10 +100,14 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      UORA_APP_PLATFORM_HTTP_BASE: ${UORA_APP_PLATFORM_HTTP_BASE:-http://host.docker.internal:8088}
-      LANGFUSE_HOST: ${LANGFUSE_HOST}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      TOOL_IMPORT_DEFAULT_BASE_URL: ${TOOL_IMPORT_DEFAULT_BASE_URL:-http://demo-api:8088}
+      DEMO_API_HTTP_BASE: ${DEMO_API_HTTP_BASE:-http://demo-api:8088}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-agent-orchestration-core}
+      TRACING_ENABLED: ${TRACING_ENABLED:-true}
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      TEMPORAL_ENABLED: ${TEMPORAL_ENABLED:-true}
+      TEMPORAL_HOST: temporal:7233
     ports:
       - "8000:8000"
     networks:
@@ -66,31 +117,172 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    #volumes:
-    #  - ./src:/app/src
-    #  - ./resources:/app/resources
+      temporal:
+        condition: service_healthy
+      demo-api:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
 
-  # Mock HTTP API legado (createExpense em :3001). Não faz parte do fluxo Uora.
-  # Só sobe com: docker compose --profile legacy-mock up -d
-  mock-api:
-    profiles:
-      - legacy-mock
-    image: python:3.12-slim
-    container_name: router-mock-api-dev
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: router-temporal-worker-dev
     restart: unless-stopped
-    working_dir: /app
-    command: sh -c "pip install fastapi uvicorn && python3 /app/resources/scripts/mock_api.py"
+    entrypoint: [ "python", "-m", "adapters.temporal.worker" ]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/agent_router
+      REDIS_URL: redis://redis:6379/3
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ENVIRONMENT: development
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
+      JWT_ISSUER: ${JWT_ISSUER:-dev-issuer}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-dev-audience}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      TOOL_IMPORT_DEFAULT_BASE_URL: ${TOOL_IMPORT_DEFAULT_BASE_URL:-http://demo-api:8088}
+      DEMO_API_HTTP_BASE: ${DEMO_API_HTTP_BASE:-http://demo-api:8088}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-agent-orchestration-core}
+      TRACING_ENABLED: ${TRACING_ENABLED:-true}
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      TEMPORAL_ENABLED: "true"
+      TEMPORAL_HOST: temporal:7233
+    networks:
+      - network-dev
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import asyncio,os,sys; sys.path.insert(0,'/app/src'); from temporalio.client import Client; asyncio.run(Client.connect(os.environ.get('TEMPORAL_HOST','temporal:7233'), namespace=os.environ.get('TEMPORAL_NAMESPACE','default')))\"" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      demo-api:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    container_name: router-otel-collector-dev
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./resources/observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      - "3001:3000"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+    networks:
+      - network-dev
+    depends_on:
+      - tempo
+      - loki
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: router-tempo-dev
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./resources/observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+    networks:
+      - network-dev
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: router-loki-dev
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./resources/observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - network-dev
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: router-prometheus-dev
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./resources/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - network-dev
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: router-grafana-dev
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION: "false"
+      GF_FEATURE_TOGGLES_ENABLE: traceToMetrics
+      AOC_POSTGRES_HOST: ${AOC_POSTGRES_HOST:-postgres:5432}
+      AOC_POSTGRES_DB: ${AOC_POSTGRES_DB:-agent_router}
+      AOC_POSTGRES_READONLY_USER: ${AOC_POSTGRES_READONLY_USER:-grafana_readonly}
+      AOC_POSTGRES_READONLY_PASSWORD: ${AOC_POSTGRES_READONLY_PASSWORD:-grafana_readonly}
+    volumes:
+      - ./resources/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./resources/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - network-dev
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+  docs:
+    profiles:
+      - docs
+    image: python:3.13-slim
+    container_name: router-docs-dev
+    restart: unless-stopped
+    working_dir: /docs
+    command: >-
+      sh -c "pip install --no-cache-dir 'mkdocs-material>=9.5.0' 'neoteroi-mkdocs>=1.2.0'
+      'pymdown-extensions>=10.0.0' && mkdocs serve --dev-addr 0.0.0.0:8000"
+    ports:
+      - "8001:8000"
     networks:
       - network-dev
     volumes:
-      - ./resources:/app/resources
+      - ./docs:/docs/docs
+      - ./mkdocs.yml:/docs/mkdocs.yml
+
+volumes:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:
 
 networks:
   network-dev:
     driver: bridge
-
-#volumes:
-#  postgres_dev_data:
-#  redis_dev_data:

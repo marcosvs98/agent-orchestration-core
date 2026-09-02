@@ -92,6 +92,7 @@ class AgentsController:
             methods=["POST"],
             response_model=AgentVersion,
             responses=self._resp405(),
+            include_in_schema=False,
         )
         r(
             "/agents/{agent_id}/versions/{agent_version_id}:disable",
@@ -99,6 +100,7 @@ class AgentsController:
             methods=["POST"],
             response_model=AgentVersion,
             responses=self._resp405(),
+            include_in_schema=False,
         )
         r(
             "/node-agent-bindings",
@@ -183,6 +185,7 @@ class AgentsController:
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
             system_prompt=model.system_prompt,
+            ai_execution_policy_version_id=model.ai_execution_policy_version_id,
         )
 
     async def publish_agent_version(
@@ -215,6 +218,7 @@ class AgentsController:
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
             system_prompt=model.system_prompt,
+            ai_execution_policy_version_id=model.ai_execution_policy_version_id,
         )
 
     async def activate_agent_version(
@@ -247,6 +251,7 @@ class AgentsController:
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
             system_prompt=model.system_prompt,
+            ai_execution_policy_version_id=model.ai_execution_policy_version_id,
         )
 
     async def rollback_agent_version(
@@ -279,6 +284,7 @@ class AgentsController:
             supported_tool_config_hash_prefix=model.supported_tool_config_hash_prefix,
             persona_config=persona_config,
             system_prompt=model.system_prompt,
+            ai_execution_policy_version_id=model.ai_execution_policy_version_id,
         )
 
     async def deprecate_agent_version(

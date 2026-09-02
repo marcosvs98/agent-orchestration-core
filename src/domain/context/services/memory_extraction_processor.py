@@ -48,6 +48,19 @@ class MemoryExtractionProcessor:
             return _DEFAULT_LLM_TASK_TYPE
         return _LLM_TASK_TYPE_BY_VALUE.get(key, _DEFAULT_LLM_TASK_TYPE)
 
+    def _emit_skipped(self, tenant_id: UUID, flow_run_id: UUID, reason_code: str) -> None:
+        with self.tracer.observe(
+            as_type="span",
+            name="domain.context.memory_extraction.skipped",
+            input={
+                "tenant_id": str(tenant_id),
+                "flow_run_id": str(flow_run_id),
+                "reason_code": reason_code,
+            },
+        ) as handle:
+            if handle:
+                handle.success(output={"reason_code": reason_code})
+
     async def execute(
         self,
         *,
@@ -64,12 +77,16 @@ class MemoryExtractionProcessor:
         try:
             config = MemoryExtractionConfig.model_validate(config_payload)
         except (ValidationError, TypeError):
+            self._emit_skipped(tenant_id, flow_run_id, "invalid_config")
             return
         if not config.enabled:
+            self._emit_skipped(tenant_id, flow_run_id, "disabled")
             return
         if not self.llm_executor:
+            self._emit_skipped(tenant_id, flow_run_id, "missing_llm_executor")
             return
         if not self.memory_write_service:
+            self._emit_skipped(tenant_id, flow_run_id, "missing_memory_write_service")
             return
         resolved_memory = await self.memory_policy_service.resolve(
             tenant_id=tenant_id,
@@ -77,6 +94,7 @@ class MemoryExtractionProcessor:
         definition = resolved_memory.definition
         allowed_sources = definition.allowed_sources if definition is not None else []
         if MemoryPolicySource.INFERRED_LLM not in allowed_sources:
+            self._emit_skipped(tenant_id, flow_run_id, "inferred_llm_not_allowed")
             return
 
         with self.tracer.observe(

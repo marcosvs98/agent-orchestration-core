@@ -33,8 +33,8 @@ from seeds.demo.ids import (
     TOOL_CONFIG_DEMO_ID,
     TOOL_DEMO_ID,
 )
-from seeds.demo.rag_payloads import uora_allowlisted_tool_catalog_documents
-from seeds.demo.uora_platform_tool_ids import fetch_uora_platform_tool_rows
+from seeds.demo.rag_payloads import demo_tool_catalog_documents
+from seeds.demo.demo_tool_catalog import fetch_demo_tool_rows
 
 
 class _SeedObservationHandle:
@@ -124,11 +124,11 @@ class _SeedTracer:
 
 async def seed_tool_catalog_rag() -> None:
     if not OPENAI_API_KEY:
-        print(
-            "Skipping tool catalog RAG seed: OPENAI_API_KEY is not set",
-            file=sys.stderr,
+        raise RuntimeError(
+            "OPENAI_API_KEY is required to seed the tool catalog RAG. Without it the tool "
+            "catalog has no embeddings, ToolResolver retrieves nothing, and flow runs complete "
+            "without ever selecting a tool."
         )
-        return
 
     cache_adapter = RedisAdapter()
     database_connection = DatabaseConnection(engine=engine, sessionmaker=async_session)
@@ -176,11 +176,11 @@ async def seed_tool_catalog_rag() -> None:
         embedding_executor=embedding_executor
     )
 
-    rows = await fetch_uora_platform_tool_rows(
+    rows = await fetch_demo_tool_rows(
         demo_tool_id=TOOL_DEMO_ID,
         demo_tool_config_id=TOOL_CONFIG_DEMO_ID,
     )
-    for document in uora_allowlisted_tool_catalog_documents(rows):
+    for document in demo_tool_catalog_documents(rows):
         await rag_runtime_service.ingest_document(
             tenant_id=TENANT_DEMO_ID,
             rag_config_id=RAG_CONFIG_DEMO_ID,

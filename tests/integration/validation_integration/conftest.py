@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import sessionmaker
 
+from infra.database.json_serialization import jsonb_serializer
+
 pytestmark = [pytest.mark.validation_integration, pytest.mark.asyncio]
 
 _engine: AsyncEngine | None = None
@@ -26,6 +28,7 @@ async def test_engine():
             database_url,
             poolclass=NullPool,
             echo_pool=False,
+            json_serializer=jsonb_serializer,
             connect_args={"server_settings": {"application_name": "agent-orchestration-core-test"}},
         )
         _async_session_factory = sessionmaker(

@@ -1,5 +1,7 @@
 # Architecture
 
+A self-hostable, multi-tenant agent orchestration platform where every run is pinned to the exact definitions and policies that governed it.
+
 This document is the canonical overview of **agent-orchestration-core**: bounded contexts, hexagonal boundaries, and how authoring relates to runtime.
 
 ## System context
@@ -19,7 +21,7 @@ flowchart LR
   subgraph Infra
     DB[(Postgres)]
     RD[(Redis)]
-    LF[Langfuse]
+    LF[OpenTelemetry Collector]
   end
   HTTP --> EX
   Jobs --> EX
@@ -34,7 +36,7 @@ flowchart LR
 ## Hexagonal view
 
 - **Domain** (`src/domain/**`): business rules, services, repositories (ports expressed as protocols / abstract collaborators where used).
-- **Adapters** (`src/adapters/**`): Langfuse tracer, LLM/RAG adapters, MCP gateways, messaging.
+- **Adapters** (`src/adapters/**`): OpenTelemetry tracer, LLM/RAG adapters, MCP gateways, messaging.
 - **Application** (`src/application/**`): orchestration of domain use cases where needed.
 - **Infrastructure** (`src/infra/**`): database models, HTTP helpers, persistence wiring.
 
@@ -88,7 +90,6 @@ Contexts map **one-to-one** to `src/domain/<package>/` except **`mcp_registry`**
 ## Related material
 
 - [Get Started: installation](../Get-Started/installation.md)
-- [Site architecture entry](../ARCHITECTURE.md) (short overview + links)
 - [Runtime vs authoring](runtime-vs-authoring.md)
 - [Domain model overview](../Models/domain-overview.md)
 - [Glossary](../Glossary/index.md)

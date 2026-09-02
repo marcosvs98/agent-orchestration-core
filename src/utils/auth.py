@@ -30,6 +30,7 @@ from settings import (
 security = HTTPBearer(auto_error=False)
 
 INBOUND_SERVICE_KEY_HEADER = "X-Inbound-Service-Key"
+ADMIN_PRINCIPAL_ID = "admin"
 
 
 class AuthContext:
@@ -143,9 +144,12 @@ def _jwt_auth_context_from_bearer(
 
 
 def get_auth_context(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Security(security),
 ) -> AuthContext:
-    return _jwt_auth_context_from_bearer(credentials)
+    context = _jwt_auth_context_from_bearer(credentials)
+    request.state.tenant_id = str(context.tenant_id)
+    return context
 
 
 async def get_tenant_token_m2m_auth(
@@ -200,6 +204,7 @@ async def get_auth_context_or_api_key(
             row = await InboundServiceKeyRepository.find_active_by_key_hash(session, digest)
         if row is None:
             raise AuthenticationFailedException(message="invalid_inbound_service_key")
+        request.state.tenant_id = str(row.tenant_id)
         return AuthContext(
             tenant_id=row.tenant_id,
             principal_type="machine",
@@ -212,7 +217,9 @@ async def get_auth_context_or_api_key(
             token_audience=str(JWT_AUDIENCE),
             expires_at=int(time.time()) + 3600,
         )
-    return _jwt_auth_context_from_bearer(credentials)
+    context = _jwt_auth_context_from_bearer(credentials)
+    request.state.tenant_id = str(context.tenant_id)
+    return context
 
 
 async def get_admin_auth(
