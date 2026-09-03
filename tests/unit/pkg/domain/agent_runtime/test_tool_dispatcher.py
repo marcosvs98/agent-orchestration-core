@@ -104,7 +104,7 @@ async def test_an_authorized_tool_runs_through_the_existing_tool_runtime(tracer,
     outcome = await dispatcher.dispatch(
         scope=scope,
         grant=grant,
-        tool_call=AgentToolCall(call_id="c1", name="search", arguments={"query": "uora"}),
+        tool_call=AgentToolCall(call_id="c1", name="search", arguments={"query": "weather"}),
         runner=MagicMock(),
     )
 
@@ -130,7 +130,7 @@ async def test_run_metadata_reaches_the_tool_header_resolver(tracer, tenant_id) 
         tools=[build_tool("search")], allow_agent_delegation=False, delegate_agent_ids=[]
     )
     scope = _scope(tenant_id).model_copy(
-        update={"interaction_metadata": {"uora_end_user_authorization": "Bearer abc"}}
+        update={"interaction_metadata": {"end_user_authorization": "Bearer abc"}}
     )
 
     await dispatcher.dispatch(
@@ -141,7 +141,7 @@ async def test_run_metadata_reaches_the_tool_header_resolver(tracer, tenant_id) 
     )
 
     kwargs = tool_orchestrator.execute_agent_tool_run.await_args.kwargs
-    assert kwargs["interaction_metadata"] == {"uora_end_user_authorization": "Bearer abc"}
+    assert kwargs["interaction_metadata"] == {"end_user_authorization": "Bearer abc"}
     assert kwargs["tenant_id"] == tenant_id
 
 

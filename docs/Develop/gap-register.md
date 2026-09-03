@@ -461,14 +461,14 @@ version, and the one dynamic element (LLM-chosen `tool_config_id`) is the securi
   at the repository root). It does not fix `seed-demo`; it removes the dependency from the critical
   path for a new developer.
 - ~~**`make seed-demo` fails outright on a clean machine.**~~ **Fixed (WS3).** A fixture OpenAPI
-  document is vendored at `resources/scripts/seeds/demo/openapi/uora_app_platform.json`, covering all
-  35 allowlisted operations with matching paths and `operationId`s, and
-  `fetch_uora_platform_tool_rows` now accepts an http(s) URL, a `file://` URL, or a filesystem path —
+  document is vendored at `resources/scripts/seeds/demo/openapi/demo_api.json`, covering all
+  35 allowlisted operations with matching paths and `operationId`s, and the tool-row fetcher
+  now accepts an http(s) URL, a `file://` URL, or a filesystem path —
   defaulting to the fixture. Verified end to end against the live Postgres: `seed_01` + `seed_05`
   completed with no external service and produced **35 published `tool_config` rows** for the demo
   tenant, and the full `make seed-demo` then completed twice: once with an OpenAI key (347 RAG
   documents, 310 chunks) and once with `OPENAI_API_KEY=""`, where the two RAG seeds skip loudly and
-  the bootstrap still reports success. `UORA_OPENAPI_URL` and `UORA_APP_PLATFORM_HTTP_BASE` are now
+  the bootstrap still reports success. `DEMO_OPENAPI_URL` and `DEMO_API_HTTP_BASE` are now
   documented in `env.example`, `README.md` and `docs/Get-Started/installation.md`.
 - **The documented run command failed.** `README.md` §5.3 said `uvicorn src.app:app --reload`, which
   raises `ModuleNotFoundError: No module named 'adapters'`. `PYTHONPATH=src` is required; `CLAUDE.md`

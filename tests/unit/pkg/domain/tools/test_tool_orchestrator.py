@@ -156,7 +156,7 @@ class TestToolOrchestrator:
                     "max_attempts": 1,
                     "headers": {
                         "Authorization": {
-                            "interaction_metadata_key": "uora_end_user_authorization",
+                            "interaction_metadata_key": "end_user_authorization",
                         },
                     },
                 },
@@ -166,7 +166,7 @@ class TestToolOrchestrator:
         flow_rid = uuid4()
         repo.get_flow_run_id_for_tool_run = AsyncMock(return_value=flow_rid)
         repo.get_interaction_metadata_for_flow_run = AsyncMock(
-            return_value={"uora_end_user_authorization": "Bearer user-jwt"}
+            return_value={"end_user_authorization": "Bearer user-jwt"}
         )
         repo.get_flow_context = AsyncMock(return_value=(uuid4(), uuid4()))
         repo.append_execution_event = AsyncMock()

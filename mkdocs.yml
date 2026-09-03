@@ -183,7 +183,6 @@ exclude_docs: |
   /Develop/gap-register.md
   /Develop/coverage-incremental-loop.md
   /Develop/dead-code-pipeline.md
-  /evolution/
 
 markdown_extensions:
   - admonition

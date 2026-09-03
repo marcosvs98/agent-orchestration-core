@@ -105,7 +105,7 @@ async def test_tool_calls_are_parsed_out_of_the_response() -> None:
                         "type": "function_call",
                         "call_id": "call-1",
                         "name": "search",
-                        "arguments": '{"query": "uora"}',
+                        "arguments": '{"query": "weather"}',
                     }
                 )
             ]
@@ -124,8 +124,8 @@ async def test_tool_calls_are_parsed_out_of_the_response() -> None:
         AgentToolCall(
             call_id="call-1",
             name="search",
-            arguments={"query": "uora"},
-            raw_arguments='{"query": "uora"}',
+            arguments={"query": "weather"},
+            raw_arguments='{"query": "weather"}',
         )
     ]
     assert completion.token_usage["input_tokens"] == 12

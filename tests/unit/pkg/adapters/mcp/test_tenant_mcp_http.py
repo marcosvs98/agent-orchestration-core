@@ -294,7 +294,7 @@ def test_mcp_named_tool_invoke_resolves_interaction_metadata_authorization(
         "timeout_seconds": 5,
         "headers": {
             "Authorization": {
-                "interaction_metadata_key": "uora_end_user_authorization",
+                "interaction_metadata_key": "end_user_authorization",
             },
         },
     }
@@ -390,7 +390,7 @@ def test_mcp_named_tool_invoke_outbound_authorization_env_fallback(
         ),
         vector_store_ids=tuple(),
         prompts=tuple(),
-        outbound_authorization_secret_ref="env:UORA_MCP_FALLBACK_JWT",
+        outbound_authorization_secret_ref="env:MCP_FALLBACK_JWT",
     )
     repo = _repo_with_spec(mcp_server_id, tenant_id, spec)
     repo.verify_api_key_and_load_bindings = AsyncMock(
@@ -410,7 +410,7 @@ def test_mcp_named_tool_invoke_outbound_authorization_env_fallback(
         "timeout_seconds": 5,
         "headers": {
             "Authorization": {
-                "interaction_metadata_key": "uora_end_user_authorization",
+                "interaction_metadata_key": "end_user_authorization",
             },
         },
     }
